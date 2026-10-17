@@ -5,7 +5,7 @@ Everything that extends a stock AnythingLLM, in one repository: an MCP server an
 | Part | Folder | Runs | Toolchain |
 | --- | --- | --- | --- |
 | Control server (MCP: chat and schedule) | `packages/control` | started by AnythingLLM, from its storage folder, with `node` | Node 18+, no dependencies shipped |
-| Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS; browser uses the Chrome AnythingLLM's image ships) |
+| Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS and ssh2; browser uses the Chrome AnythingLLM's image ships) |
 | Bridge to AnythingLLM's internal API, and the installer | `packages/bridge` | the command you run; the bridge beside AnythingLLM, as a service | Node 20.3+, no dependencies shipped |
 | Phone app (AnywhereLLM Lite) | `app` | on the phone | Flutter |
 

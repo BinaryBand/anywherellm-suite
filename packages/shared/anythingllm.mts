@@ -32,6 +32,17 @@ export function perProcess<T>(key: string, make: () => T): T {
   return g[at];
 }
 
+/** Counts a use of `id` (a key, a target) under `bucket`, unless it was used `limit` times in the
+ *  last minute in this process already; whether it was counted. */
+export function used(bucket: string, id: string, limit: number): boolean {
+  const now = Date.now();
+  const recent = perProcess(bucket, () => new Map<string, number[]>());
+  const times = (recent.get(id) || []).filter((t) => now - t < 60 * 1000);
+  if (times.length >= limit) return false;
+  recent.set(id, [...times, now]);
+  return true;
+}
+
 /** Runs `fn` after every earlier call with the same key in this process has finished. */
 export function serial<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
   const queue = perProcess(`serial.${key}`, () => ({ tail: Promise.resolve() as Promise<unknown> }));

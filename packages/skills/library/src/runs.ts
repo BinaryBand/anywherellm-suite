@@ -15,6 +15,7 @@ import { checkUrl, onSite } from "#shared/fence";
 import { LibraryError } from "./errors";
 import { check } from "./policy";
 import { send } from "./request";
+import * as targets from "./targets";
 import { run as runScript, type Kit, type Outcome } from "./sandbox";
 import * as store from "./store";
 import type { Fn, RunRecord, Toolkit } from "./store";
@@ -156,6 +157,7 @@ const logged = (v: unknown) => (typeof v === "string" ? v : (JSON.stringify(v) ?
 function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: { read: boolean; value: unknown; changed: boolean }, signal: AbortSignal): Kit {
   return {
     http: (req) => http(kit, f, (req ?? {}) as Request, budget, signal),
+    ssh: { exec: (req) => ssh(kit, f, (req ?? {}) as Record<string, unknown>, budget, signal) },
     log: (...args) => {
       if (budget.logs.length < LIMITS.logs) budget.logs.push(mask(args.map(logged).join(" "), budget.secrets).slice(0, LIMITS.logChars));
     },
@@ -197,9 +199,35 @@ interface Request {
   auth?: string | false;
 }
 
+/** What kit.ssh.exec takes. A target's host, port, login, key and fingerprint aren't among them:
+ *  they're the user's, saved on the Library page, and a function names the target alone. */
+const EXEC = ["target", "command", "stdin", "timeout_s", "max_bytes"];
+
+/** One command a function runs: on one of its toolkit's targets, by name. */
+async function ssh(kit: Toolkit, f: Fn, req: Record<string, unknown>, budget: Budget, signal: AbortSignal) {
+  const other = Object.keys(req).filter((k) => !EXEC.includes(k));
+  if (other.length) throw new LibraryError(`kit.ssh.exec takes ${EXEC.join(", ")}, not ${other.join(", ")}: a target's host, port, login, key and fingerprint are the user's, saved on the Library page`);
+  if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests and commands`);
+  const name = String(req.target ?? "").trim().toLowerCase();
+  if (!kit.targets.includes(name)) throw new LibraryError(`"${name}" isn't one of the ${kit.service} toolkit's targets (${kit.targets.join(", ") || "none"}): name it in the toolkit's targets`);
+  const command = String(req.command ?? "");
+  check({ op: "ssh", fn: `${kit.service}.${f.name}`, target: name, command });
+  const made = { method: "SSH", host: name, path: ` $ ${command.split("\n")[0].slice(0, 80)}`, ms: 0 };
+  const t0 = Date.now();
+  try {
+    const ran = await targets.exec(name, req, { deadline: budget.deadline, job: budget.start.trigger === "job", signal });
+    budget.made.push({ ...made, status: ran.exit ?? -1, ms: Date.now() - t0 });
+    return ran;
+  } catch (e) {
+    budget.made.push({ ...made, error: (e as Error).message.slice(0, 200), ms: Date.now() - t0 });
+    throw e;
+  }
+}
+
 /** One request a function sends: to its toolkit's hosts only, with its toolkit's key. */
 async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: AbortSignal) {
   if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests`);
+  if (!req.url && !kit.base_urls.length) throw new LibraryError(`the ${kit.service} toolkit has no base_urls: give a request its url`);
   const target = new URL(req.url ? checkUrl(req.url) : `${kit.base_urls[0]}/${String(req.path ?? "").replace(/^\//, "")}`);
   const hosts = store.hostsOf(kit);
   if (!hosts.some((h) => onSite(target.hostname, h))) throw new LibraryError(`${target.hostname} isn't one of the ${kit.service} toolkit's hosts (${hosts.join(", ")}): add it to the toolkit's hosts if its API sends there`);

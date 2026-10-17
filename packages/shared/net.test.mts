@@ -116,3 +116,22 @@ test("requests to the same host reuse a kept connection, opened through the fenc
   assert.notEqual(other, first, "another allow-list has connections of its own");
   s.close();
 });
+
+test("a TCP connection for another protocol is fenced as a request is: refused inside, checked at its lookup, stoppable", async () => {
+  const server = (await import("node:net")).createServer((sock) => sock.end("hello\n"));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. That's final/);
+  await assert.rejects(net.connect({ host: "pi", port, allow: [] }), /pi is a name on this machine or its network/);
+  const inside: Resolve = (host, options, callback) => callback(null, [{ address: "127.0.0.1", family: 4 }]);
+  await assert.rejects(net.connect({ host: "box.example", port, allow: [], resolve: inside }), /box\.example resolves to 127\.0\.0\.1/);
+  const sock = await net.connect({ host: "box.example", port, allow: ["box.example"], resolve: inside });
+  const said = await new Promise<string>((resolve) => sock.once("data", (d) => resolve(String(d))));
+  assert.equal(said, "hello\n", "a name let through goes to the address its lookup gave");
+  sock.destroy();
+  const stop = new AbortController();
+  stop.abort();
+  await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: ["127.0.0.1"], signal: stop.signal }), /the run stopped/);
+  await assert.rejects(net.connect({ host: "127.0.0.1", port: 1, allow: ["127.0.0.1"] }), (e: Error) => e.name === "Unreachable");
+  server.close();
+});

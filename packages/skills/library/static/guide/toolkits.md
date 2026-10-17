@@ -14,6 +14,7 @@ A toolkit is one service's API, as you found it. Save it with save, service (its
 - base_urls: where the API is; a function's path is relative to the first.
 - hosts: any other host its functions must reach (the base addresses' hosts are in already). A function reaches nothing else.
 - secrets: the keys its functions send (topic secrets); the first goes with a request unless it names another.
+- targets: the machines its functions run commands on (topic targets), by name. A toolkit with targets needs no base_urls.
 - notes: what a function needs to know and the docs don't make easy to find: endpoints, paging, limits, quirks. Keep them short; you'll read them again before writing the next function.
 
 Saving again replaces only what you give. save with remove "github" removes the toolkit and its functions (its keys stay); remove "github.list_issues" removes one function.

@@ -1,6 +1,7 @@
 // The Library page: the user's own view of the library, on any device, served by AnythingLLM from
 // its public folder (#shared/pages). It shows the secrets by name (never their values) and lets the
-// user add a key or an OAuth client, sealed on their device with the vault's public key; it shows
+// user add a key or an OAuth client, sealed on their device with the vault's public key, and
+// register a target (a machine the functions run commands on, with a key pasted or made here); it shows
 // the toolkits, their functions' sources and the recent runs, and lets the user delete a function or
 // a toolkit. It's where the user gives a key or an OAuth client, from any chat (AnywhereLLM Lite
 // too): the agent asks, the need shows at the top of the page, and the user enters it there. What the user does is
@@ -24,6 +25,7 @@ import { OAUTH_PAGE, PENDING_MS, finish, redirectFor, waiting } from "./oauth";
 import * as secrets from "./secrets";
 import { recentRuns } from "./runs";
 import * as store from "./store";
+import * as targets from "./targets";
 
 export const TITLE = "library-lean-event";
 /** How long the page is watched for events after it was last shown. */
@@ -34,7 +36,7 @@ const NEED_MS = 30 * 60 * 1000;
 interface Need {
   label: string;
   site: string;
-  kind: "key" | "client";
+  kind: "key" | "client" | "target";
   until: number;
 }
 
@@ -78,9 +80,10 @@ function state(p: PageFile, base: string | null) {
     redirect: redirectFor(base),
     needs: p.needs.filter((n) => n.until > now).map(({ label, site, kind }) => ({ label, site, kind })),
     secrets: secrets.secrets(),
+    targets: targets.targets(),
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
-      return { service, title: kit.title, base_urls: kit.base_urls, hosts: store.hostsOf(kit), secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
+      return { service, title: kit.title, base_urls: kit.base_urls, hosts: store.hostsOf(kit), secrets: kit.secrets.map((s) => s.label), reach: store.reach(kit), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
     }),
     runs: recentRuns(20).map((r) => ({ id: r.id, fn: r.fn, status: r.status, trigger: r.trigger, ended: r.ended, ms: r.ms, error: r.error ? `${r.error.name}: ${r.error.message}` : null, result: r.status === "ok" ? (JSON.stringify(r.result) ?? "null").slice(0, 500) : null })),
   };
@@ -123,9 +126,9 @@ export const need = (label: string, site: string, kind: Need["kind"]): Promise<v
 
 const text = (v: unknown, n = 500) => String(v ?? "").trim().slice(0, n);
 
-/** What applying an event did beyond the vault and the store: a need it met, a new link, or a
- *  function gone from the skill's description. */
-type Applied = { met?: string; rotate?: true; relist?: true } | null;
+/** What applying an event did beyond the vault and the store: a need it met, a new link, a
+ *  function gone from the skill's description, or a target to try signing in to. */
+type Applied = { met?: string; rotate?: true; relist?: true; check?: string } | null;
 
 /** Applies one event the page posted. */
 async function apply(e: Record<string, unknown>, secret: string): Promise<Applied> {
@@ -149,6 +152,16 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
     }
     case "key-delete":
       await secrets.removeSecret(label);
+      return null;
+    case "target-save": {
+      const sealed = text(e.sealed, 20000);
+      const name = await targets.save({ label, host: e.host, port: e.port, login: e.login, fingerprint: e.fingerprint, private: e.private, unattended: e.unattended, key: sealed ? vault.openSealed(sealed) : "" });
+      return { met: name, check: name };
+    }
+    case "target-check":
+      return { check: targets.nameOf(label) };
+    case "target-delete":
+      await targets.remove(label);
       return null;
     case "fn-delete": {
       const { service, name } = store.qualified(e.fn);
@@ -195,4 +208,7 @@ async function drain(base: string | null): Promise<void> {
     removePublic(pub(`${page.token}.json`));
     await show(base);
   } else writeState(now, base);
+  // A sign-in takes up to 20 s: tried after the turn, so neither the page nor the agent waits on it.
+  const checks = new Set(applied.flatMap((a) => (a?.check ? [a.check] : [])));
+  if (checks.size) void Promise.all([...checks].map(targets.check)).then(() => refresh(base), (e) => console.error(`library-lean couldn't try a target: ${(e as Error).message}`));
 }

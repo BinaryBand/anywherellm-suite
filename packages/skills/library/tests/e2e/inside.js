@@ -5,8 +5,10 @@
 // (posted as AnythingLLM's collector writes it), never on a question card; a function is saved and
 // tested in QuickJS on the image's own Node, a flow runs another, and a run with no workspace (as a
 // scheduled job's) is recorded as one; a job's run in a forked child, as AnythingLLM forks one, and
-// one whose child is killed mid-run, which the next chat is shown as interrupted.
-// Prints "ok" or throws.
+// one whose child is killed mid-run, which the next chat is shown as interrupted. With E2E_SSH_PORT
+// (beside.sh: a real OpenSSH server at 127.0.0.1), a target registered on the page with a pasted key
+// and a pinned host key, and a function's commands on it: their output, and a command past its time
+// stopped with TERM. Prints "ok" or throws.
 const assert = require("assert");
 const { fork } = require("child_process");
 const crypto = require("crypto");
@@ -106,6 +108,29 @@ const server = http.createServer((req, res) => {
   killed.child.kill("SIGKILL");
   await new Promise((r) => killed.child.once("exit", r));
   assert.match(await call({ action: "library" }), /^Finished since last shown [^\n]*\n- digest\.nap: interrupted \(Interrupted: [^\n]*from a scheduled job/);
+
+  if (process.env.E2E_SSH_PORT) {
+    // A private key is longer than RSA-OAEP seals: the page seals it with AES-GCM under a sealed key.
+    const aes = crypto.randomBytes(32);
+    const iv = crypto.randomBytes(12);
+    const gcm = crypto.createCipheriv("aes-256-gcm", aes, iv);
+    const box = Buffer.concat([gcm.update(process.env.E2E_SSH_KEY), gcm.final(), gcm.getAuthTag()]);
+    const sealedKey = ["h1", crypto.publicEncrypt({ key: pub, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, aes).toString("base64"), iv.toString("base64"), box.toString("base64")].join(".");
+    const target = { library_lean_event: 1, secret, ev: "target-save", label: "box", host: "127.0.0.1", port: process.env.E2E_SSH_PORT, login: "sandbox", fingerprint: process.env.E2E_SSH_FINGERPRINT, private: true, sealed: sealedKey };
+    fs.writeFileSync(path.join(events, `raw-${cfg.title}-${crypto.randomUUID()}.json`), JSON.stringify({ pageContent: JSON.stringify(target) }));
+    await call({ action: "library" });
+    const status = () => JSON.parse(fs.readFileSync(`${APP}/public/library-lean/${token}.json`, "utf8")).targets[0]?.status;
+    for (let i = 0; i < 100 && [undefined, "not tried yet"].includes(status()); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(status(), "signed in", "the pasted key signs in, the host key matching its fingerprint");
+    const run = { name: "run", description: "Runs a command.", inputs: { req: { type: "object", required: true } }, source: "async function main(i, kit) { return kit.ssh.exec(Object.assign({ target: 'box' }, i.req)); }" };
+    await call({ action: "save", service: "ops", toolkit: { title: "Ops", targets: ["box"] }, function: run });
+    const result = async (req) => JSON.parse((await call({ action: "run", name: "ops.run", inputs: { req } })).match(/Result \(JSON\):\n([\s\S]*?)\n\n/)[1]);
+    const hi = await result({ command: "echo hi; id -un; echo oops >&2; exit 4" });
+    assert.deepEqual([hi.exit, hi.stdout, hi.stderr], [4, "hi\nsandbox\n", "oops\n"]);
+    const slept = await result({ command: "sleep 30", timeout_s: 2 });
+    assert.deepEqual([slept.killed, slept.signal, slept.remote_may_run], ["timeout", "SIGTERM", false], `OpenSSH acts on TERM and says so: ${JSON.stringify(slept)}`);
+    assert.equal((await result({ command: "pgrep -x sleep || echo none" })).stdout, "none\n", "the command is gone from the machine");
+  }
 
   server.close();
   console.log("ok");
