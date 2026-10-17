@@ -9,7 +9,6 @@ export type Op =
   | { op: "save"; fn: string; source: string }
   | { op: "run"; fn: string; trigger: "chat" | "job" }
   | { op: "http"; fn: string | null; method: string; url: string; key: string | null }
-  | { op: "ssh"; fn: string; target: string; action: "exec"; command: string }
-  | { op: "ssh"; fn: string; target: string; action: "put" | "get"; path: string };
+  | { op: "ssh"; fn: string; target: string; action: "exec" | "put" | "get"; detail: string };
 
 export function check(_op: Op): void {}

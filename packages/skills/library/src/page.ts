@@ -83,7 +83,7 @@ function state(p: PageFile, base: string | null) {
     targets: targets.targets(),
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
-      return { service, title: kit.title, base_urls: kit.base_urls, hosts: store.hostsOf(kit), secrets: kit.secrets.map((s) => s.label), reach: store.reach(kit), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
+      return { service, title: kit.title, secrets: kit.secrets.map((s) => s.label), reach: store.reach(kit), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
     }),
     runs: recentRuns(20).map((r) => ({ id: r.id, fn: r.fn, status: r.status, trigger: r.trigger, ended: r.ended, ms: r.ms, error: r.error ? `${r.error.name}: ${r.error.message}` : null, result: r.status === "ok" ? (JSON.stringify(r.result) ?? "null").slice(0, 500) : null })),
   };

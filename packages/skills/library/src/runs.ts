@@ -203,15 +203,15 @@ interface Request {
  *  target's host, port, login, key and fingerprint aren't among them: they're the user's, saved on
  *  the Library page, and a function names the target alone. */
 const SSH = {
-  exec: { fields: ["target", "command", "stdin", "timeout_s", "max_bytes"], by: "command" },
-  put: { fields: ["target", "path", "content", "encoding", "mode", "append"], by: "path" },
-  get: { fields: ["target", "path", "offset", "bytes", "encoding"], by: "path" },
+  exec: { fields: ["target", "command", "stdin", "timeout_s", "max_bytes"], by: "command", mark: "$" },
+  put: { fields: ["target", "path", "content", "encoding", "mode", "append"], by: "path", mark: "put" },
+  get: { fields: ["target", "path", "offset", "bytes", "encoding"], by: "path", mark: "get" },
 } as const;
 type SshCall = keyof typeof SSH;
 
 /** One command a function runs, or one file it moves: on one of its toolkit's targets, by name. */
 async function ssh(call: SshCall, kit: Toolkit, f: Fn, req: Record<string, unknown>, budget: Budget, signal: AbortSignal) {
-  const { fields, by } = SSH[call];
+  const { fields, by, mark } = SSH[call];
   const other = Object.keys(req).filter((k) => !(fields as readonly string[]).includes(k));
   if (other.length) throw new LibraryError(`kit.ssh.${call} takes ${fields.join(", ")}, not ${other.join(", ")}: a target's host, port, login, key and fingerprint are the user's, saved on the Library page`);
   if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests and commands`);
@@ -219,8 +219,8 @@ async function ssh(call: SshCall, kit: Toolkit, f: Fn, req: Record<string, unkno
   if (!kit.targets.includes(name)) throw new LibraryError(`"${name}" isn't one of the ${kit.service} toolkit's targets (${kit.targets.join(", ") || "none"}): name it in the toolkit's targets`);
   const detail = String(req[by] ?? "");
   const fn = `${kit.service}.${f.name}`;
-  check(call === "exec" ? { op: "ssh", fn, target: name, action: call, command: detail } : { op: "ssh", fn, target: name, action: call, path: detail });
-  const made = { method: "SSH", host: name, path: ` ${call === "exec" ? "$" : call} ${detail.split("\n")[0].slice(0, 80)}`, ms: 0 };
+  check({ op: "ssh", fn, target: name, action: call, detail });
+  const made = { method: "SSH", host: name, path: ` ${mark} ${detail.split("\n")[0].slice(0, 80)}`, ms: 0 };
   const use = { deadline: budget.deadline, job: budget.start.trigger === "job", signal };
   const t0 = Date.now();
   try {

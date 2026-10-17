@@ -74,7 +74,7 @@ interface Entry extends vault.Entry {
 }
 
 const named = (label: string) => (e: Readonly<vault.Entry>): e is Entry => e.kind === "ssh" && e.user === label;
-const found = (label: string) => vault.entries().find(named(label)) as Entry | undefined;
+const found = (label: string) => vault.entries().find(named(label));
 const shown = (e: Readonly<Entry>): Target => ({
   label: e.user,
   host: e.site,
@@ -154,7 +154,8 @@ export async function save(given: Given): Promise<string> {
 export const remove = (label: string): Promise<boolean> =>
   vault.update((v) => {
     const before = v.entries.length;
-    v.entries = v.entries.filter((e) => !named(label)(e));
+    const is = named(label);
+    v.entries = v.entries.filter((e) => !is(e));
     return v.entries.length < before;
   });
 
@@ -171,7 +172,7 @@ export async function check(label: string): Promise<void> {
     said = err.message;
   }
   await vault.update((v) => {
-    const now = v.entries.find(named(label)) as Entry | undefined;
+    const now = v.entries.find(named(label));
     if (now) now.status = said;
   });
 }
@@ -210,7 +211,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
     signal?.addEventListener("abort", onAbort, { once: true });
     client.once("ready", () => (signal?.removeEventListener("abort", onAbort), resolve(client)));
     client.once("error", failed);
-    client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => (seen = fingerprintOf(key)) === e.fingerprint, tryKeyboard: false, agentForward: false });
+    client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => (seen = fingerprintOf(key)) === e.fingerprint });
   });
 }
 
@@ -394,7 +395,7 @@ export async function get(label: string, req: Record<string, unknown>, use: Use)
 /** Sends the command TERM. ssh2's own stream.signal sends nothing once our side is ended, and it is
  *  as soon as stdin is sent, so the request goes through its protocol (ssh2 is pinned exactly; a
  *  test checks these internals are there, and the e2e that OpenSSH acts on it). */
-export function term(stream: ClientChannel): void {
+function term(stream: ClientChannel): void {
   const channel = stream as unknown as { outgoing?: { id: number; state: string }; _client?: { _protocol?: { signal(id: number, name: string): void } } };
   if (channel.outgoing && ["open", "eof"].includes(channel.outgoing.state)) channel._client?._protocol?.signal(channel.outgoing.id, "TERM");
 }
