@@ -60,7 +60,10 @@ function serveFiles(sftp: ssh2.SFTPWrapper): void {
   });
   sftp.on("CLOSE", (id, handle) => (open.delete(handle.toString("hex")), sftp.status(id, S.OK)));
   sftp.on("FSTAT", (id, handle) => sftp.attrs(id, attrs(files.get(of(handle)!.path)!)));
-  sftp.on("STAT", (id, path) => (files.has(path) ? sftp.attrs(id, attrs(files.get(path)!)) : sftp.status(id, S.NO_SUCH_FILE)));
+  sftp.on("STAT", (id, path) => {
+    const f = files.get(links.get(path) ?? path); // STAT follows a link
+    return f ? sftp.attrs(id, attrs(f)) : sftp.status(id, S.NO_SUCH_FILE);
+  });
   const setMode = (path: string, mode: number | undefined) => mode !== undefined && files.has(path) && (files.get(path)!.mode = mode);
   sftp.on("SETSTAT", (id, path, a) => (setMode(path, a.mode), sftp.status(id, S.OK)));
   sftp.on("FSETSTAT", (id, handle, a) => (setMode(of(handle)!.path, a.mode), sftp.status(id, S.OK)));

@@ -118,10 +118,13 @@ export async function oauthPage(state: string): Promise<void> {
   await change((p) => void (p.watchUntil = Math.max(p.watchUntil, Date.now() + PENDING_MS + 60 * 1000)));
 }
 
+/** What makes a need the same as another: a key and a target can share a label. */
+const needId = (kind: Need["kind"], label: string) => `${kind}:${label}`;
+
 /** Shows a need at the top of the page: the agent asked for a key or a client the user gives there. */
 export const need = (label: string, site: string, kind: Need["kind"]): Promise<void> =>
   change((p) => {
-    p.needs = [...p.needs.filter((n) => !(n.kind === kind && n.label === label) && n.until > Date.now()), { label, site, kind, until: Date.now() + NEED_MS }];
+    p.needs = [...p.needs.filter((n) => needId(n.kind, n.label) !== needId(kind, label) && n.until > Date.now()), { label, site, kind, until: Date.now() + NEED_MS }];
   });
 
 const text = (v: unknown, n = 500) => String(v ?? "").trim().slice(0, n);
@@ -144,11 +147,11 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
   switch (e.ev) {
     case "key-save":
       await secrets.saveKey(secrets.siteChecked(e.site), secrets.labelOf(label), vault.openSealed(text(e.sealed, 20000)));
-      return { met: `key:${label}` };
+      return { met: needId("key", label) };
     case "oauth-client": {
       const sealed = text(e.sealed, 20000);
       await secrets.saveClient(label, text(e.client_id), sealed ? vault.openSealed(sealed) : null);
-      return { met: `client:${label}` };
+      return { met: needId("client", label) };
     }
     case "key-delete":
       await secrets.removeSecret(label);
@@ -156,7 +159,7 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
     case "target-save": {
       const sealed = text(e.sealed, 20000);
       const name = await targets.save({ label, host: e.host, port: e.port, login: e.login, fingerprint: e.fingerprint, private: e.private, unattended: e.unattended, key: sealed ? vault.openSealed(sealed) : "" });
-      return { met: `target:${name}`, check: name };
+      return { met: needId("target", name), check: name };
     }
     case "target-check":
       return { check: targets.nameOf(label) };
@@ -199,7 +202,7 @@ async function drain(base: string | null): Promise<void> {
   const rotate = applied.some((a) => a?.rotate);
   if (applied.some((a) => a?.relist)) listing.refresh();
   const now = await change((p) => {
-    p.needs = p.needs.filter((n) => !met.has(`${n.kind}:${n.label}`));
+    p.needs = p.needs.filter((n) => !met.has(needId(n.kind, n.label)));
     if (rotate) Object.assign(p, { token: newSecret(), secret: newSecret() });
     return p;
   });

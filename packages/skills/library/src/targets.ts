@@ -212,8 +212,12 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
       reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) couldn't be reached: ${err.message}`));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    // After sign-in a dropped connection ends the command's channel; its error needs a listener, or it is uncaught.
-    client.once("ready", () => (signal?.removeEventListener("abort", onAbort), client.on("error", () => {}), resolve(client)));
+    client.once("ready", () => {
+      signal?.removeEventListener("abort", onAbort);
+      // After sign-in a dropped connection ends the command's channel; its error needs a listener, or it is uncaught.
+      client.on("error", () => {});
+      resolve(client);
+    });
     client.once("error", failed);
     client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => (seen = fingerprintOf(key)) === e.fingerprint });
   });
@@ -357,8 +361,11 @@ export async function put(label: string, req: Record<string, unknown>, use: Use)
   try {
     return await withSftp(label, use, async (sftp) => {
       // A whole file goes over what the path leads to (a symlink stays one), keeping its mode unless one is given.
-      const real = append ? path : await asked<string>(`resolve ${path}`, (cb) => sftp.realpath(path, cb)).catch(() => path);
-      const kept = append || mode !== null ? null : await asked<{ mode: number }>(`stat ${real}`, (cb) => sftp.stat(real, cb)).then((a) => a.mode & 0o7777, () => null);
+      const [real, was] = append ? [path, null] : await Promise.all([
+        asked<string>(`resolve ${path}`, (cb) => sftp.realpath(path, cb)).catch(() => path),
+        mode === null ? asked<{ mode: number }>(`stat ${path}`, (cb) => sftp.stat(path, cb)).then((a) => a.mode & 0o7777, () => null) : null,
+      ]);
+      const perm = mode ?? was;
       const to = append ? path : (part = `${real}.part-${crypto.randomBytes(4).toString("hex")}`);
       let size = bytes.length;
       try {
@@ -366,7 +373,7 @@ export async function put(label: string, req: Record<string, unknown>, use: Use)
         try {
           // ssh2 splits a write into requests as big as the server takes (254 KB for OpenSSH).
           await asked(`write ${to}`, (cb) => sftp.write(handle, bytes, 0, bytes.length, 0, cb));
-          if (mode !== null || kept !== null) await asked(`set the mode of ${to}`, (cb) => sftp.fchmod(handle, mode ?? kept!, cb));
+          if (perm !== null) await asked(`set the mode of ${to}`, (cb) => sftp.fchmod(handle, perm, cb));
           if (append) size = (await asked<{ size: number }>(`stat ${to}`, (cb) => sftp.fstat(handle, cb))).size;
         } finally {
           await asked(`close ${to}`, (cb) => sftp.close(handle, cb));
@@ -387,38 +394,21 @@ export async function put(label: string, req: Record<string, unknown>, use: Use)
 
 /** Removes `path` on the target `label` over a connection of its own, as well as that can be done
  *  in a few seconds; nothing says if it couldn't. */
-async function unlinkAfter(label: string, path: string): Promise<void> {
-  const e = found(label);
-  if (!e) return;
-  try {
-    const client = await open(e, Date.now() + LIMITS.cleanupMs);
-    try {
-      const sftp = await asked<SFTPWrapper>("start SFTP", (cb) => client.sftp(cb));
-      await Promise.race([asked(`remove ${path}`, (cb) => sftp.unlink(path, cb)), new Promise((r) => setTimeout(r, LIMITS.cleanupMs))]);
-    } finally {
-      client.end();
-    }
-  } catch {
-    // the part file stays; there is nothing more to try
-  }
-}
+const unlinkAfter = (label: string, path: string): Promise<void> =>
+  withSftp(label, { deadline: Date.now() + LIMITS.cleanupMs, job: false }, (sftp) => asked<void>(`remove ${path}`, (cb) => sftp.unlink(path, cb))).catch(() => {});
 
-/** How much of `page` ends on a UTF-8 character: all of it, unless it ends inside one (and cutting
- *  that off leaves something). */
+/** How much of `page` ends on a UTF-8 character: all of it, unless a cut of up to 3 bytes off its end
+ *  makes valid text of it (it ended inside a character). */
 function whole(page: Buffer): number {
-  for (let back = 1; back <= Math.min(3, page.length - 1); back++) {
-    const b = page[page.length - back];
-    if ((b & 0xc0) === 0x80) continue; // a continuation byte: look further back for its start
-    const need = b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : b >= 0xc0 ? 2 : 1;
-    return need > back ? page.length - back : page.length;
-  }
+  if (isUtf8(page)) return page.length;
+  for (let cut = 1; cut <= Math.min(3, page.length - 1); cut++) if (isUtf8(page.subarray(0, page.length - cut))) return page.length - cut;
   return page.length;
 }
 
 /** Reads a page of `path` on the target `label`: up to `bytes` (LIMITS.fileBytes) from `offset`, as
  *  text when it's UTF-8 and base64 when it isn't (or when asked); a text page ends on a character, so
- *  it may be a few bytes short of `bytes`. `sha256` is of the page, so a
- *  whole file read at once (offset 0, eof) gives the file's own. */
+ *  it may be a few bytes short of `bytes`. `sha256` is of the page, so a whole file read at once
+ *  (offset 0, eof) gives the file's own. */
 export async function get(label: string, req: Record<string, unknown>, use: Use): Promise<{ content: string; encoding: "utf8" | "base64"; size: number; sha256: string; eof: boolean }> {
   const path = pathOf(req.path);
   const offset = req.offset === undefined || req.offset === null ? 0 : Number(req.offset);
