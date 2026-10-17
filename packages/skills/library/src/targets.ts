@@ -9,10 +9,12 @@
 // a target the user ticked "on my network", at its own host and port; FENCE_ALLOW plays no part.
 // The client is ssh2 (docs/notes/README.md): public-key sign-in only, no agent, no forwarding, no
 // X11, and a channel the machine opens toward us is refused (ssh2 refuses any it didn't ask for).
+// Files go over SFTP, the subsystem OpenSSH offers by default.
 
+import { isUtf8 } from "node:buffer";
 import crypto from "node:crypto";
 import net from "node:net";
-import { Client, utils, type ClientChannel } from "ssh2";
+import { Client, utils, type ClientChannel, type SFTPWrapper } from "ssh2";
 import { perProcess, used } from "#shared/anythingllm";
 import { NetError, hostRefused } from "#shared/fence";
 import { connect } from "#shared/net";
@@ -33,6 +35,8 @@ const LIMITS = {
   perMinute: 60,
   /** How long a stopped command has between TERM and its channel being closed. */
   killMs: 2000,
+  /** What kit.ssh.put writes, and kit.ssh.get reads, in one call. */
+  fileBytes: 1024 * 1024,
 };
 
 const NAME = /^[a-z][a-z0-9-]{1,30}$/;
@@ -210,14 +214,6 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
   });
 }
 
-/** What kit.ssh.exec takes, besides `target`. */
-export interface Exec {
-  command?: unknown;
-  stdin?: unknown;
-  timeout_s?: unknown;
-  max_bytes?: unknown;
-}
-
 export interface Ran {
   exit: number | null;
   /** The signal it ended by, as ssh2 names it ("SIGTERM"); null when it exited. */
@@ -240,32 +236,159 @@ const bounded = (v: unknown, fallback: number, max: number, what: string): numbe
   return Math.min(n, max);
 };
 
-/** Runs `command` on the target `label`, by `deadline` at the latest; a stopped `signal` stops it.
- *  `job`: the run is a scheduled job's, which uses only a target the user said it may. */
-export async function exec(label: string, req: Exec, { deadline, job, signal }: { deadline: number; job: boolean; signal?: AbortSignal }): Promise<Ran> {
+/** How a call uses a target: by when it must end, whether it's a scheduled job's (which uses only a
+ *  target the user said it may), and the run's stop. */
+export interface Use {
+  deadline: number;
+  job: boolean;
+  signal?: AbortSignal;
+}
+
+/** Runs `use` on a signed-in connection to the target `label`, ended after: the target's own checks
+ *  (saved; unattended only when ticked), its rate and its slots, by `until`. */
+async function withTarget<T>(label: string, { job, signal }: Use, until: number, use: (client: Client) => Promise<T>): Promise<T> {
   const e = found(label);
   if (!e) throw new LibraryError(`no target "${label}" is saved: ask the user for it with secret, kind "ssh"`);
   if (job && !e.unattended) throw new LibraryError(`scheduled jobs don't use the target "${label}": the user ticks "May run unattended" for it on the Library page`);
-  const command = typeof req.command === "string" ? req.command : "";
-  if (!command.trim() || command.length > LIMITS.commandChars || command.includes("\0")) throw new LibraryError(`kit.ssh.exec needs command, one line or a script of at most ${LIMITS.commandChars} characters`);
-  if (req.stdin !== undefined && typeof req.stdin !== "string") throw new LibraryError("stdin is text");
-  const stdin = (req.stdin as string | undefined) ?? "";
-  if (Buffer.byteLength(stdin) > LIMITS.stdinBytes) throw new LibraryError(`stdin is at most ${LIMITS.stdinBytes / 1024 / 1024} MB`);
-  const until = Math.min(Date.now() + bounded(req.timeout_s, LIMITS.execS, LIMITS.execMaxS, "timeout_s") * 1000, deadline);
-  const max = Math.floor(bounded(req.max_bytes, LIMITS.outBytes, LIMITS.outMaxBytes, "max_bytes"));
   if (!used("library-lean.ssh-uses", label, LIMITS.perMinute)) throw new LibraryError(`the target "${label}" was used ${LIMITS.perMinute} times in the last minute: wait a minute, and do more in each command`);
-  const t0 = Date.now();
   const done = await turn(label, until, signal);
   try {
     const client = await open(e, until, signal);
     try {
-      return { ...(await run(client, command, stdin, max, until, signal)), ms: Date.now() - t0 };
+      return await use(client);
     } finally {
       client.end();
     }
   } finally {
     done();
   }
+}
+
+/** Runs `command` on the target `label`, by the run's deadline at the latest; a stopped run stops it. */
+export async function exec(label: string, req: Record<string, unknown>, use: Use): Promise<Ran> {
+  const command = typeof req.command === "string" ? req.command : "";
+  if (!command.trim() || command.length > LIMITS.commandChars || command.includes("\0")) throw new LibraryError(`kit.ssh.exec needs command, one line or a script of at most ${LIMITS.commandChars} characters`);
+  if (req.stdin !== undefined && typeof req.stdin !== "string") throw new LibraryError("stdin is text");
+  const stdin = (req.stdin as string | undefined) ?? "";
+  if (Buffer.byteLength(stdin) > LIMITS.stdinBytes) throw new LibraryError(`stdin is at most ${LIMITS.stdinBytes / 1024 / 1024} MB`);
+  const until = Math.min(Date.now() + bounded(req.timeout_s, LIMITS.execS, LIMITS.execMaxS, "timeout_s") * 1000, use.deadline);
+  const max = Math.floor(bounded(req.max_bytes, LIMITS.outBytes, LIMITS.outMaxBytes, "max_bytes"));
+  const t0 = Date.now();
+  return withTarget(label, use, until, async (client) => ({ ...(await run(client, command, stdin, max, until, use.signal)), ms: Date.now() - t0 }));
+}
+
+/** A path on the machine as the account sees it; one starting "~/" is under its home, as a relative
+ *  one is (SFTP starts there). */
+function pathOf(raw: unknown): string {
+  const text = typeof raw === "string" ? raw.trim() : "";
+  if (!text || text.length > 4096 || text.includes("\0")) throw new LibraryError("a file on the target needs path, like \"report.csv\" or \"/tmp/job/out.txt\"");
+  return text === "~" ? "." : text.replace(/^~\//, "");
+}
+
+const encodingOf = (v: unknown): "utf8" | "base64" => {
+  if (v === undefined || v === null || v === "" || v === "utf8" || v === "utf-8") return "utf8";
+  if (v === "base64") return "base64";
+  throw new LibraryError('encoding is "utf8" or "base64"');
+};
+
+const sha256 = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
+
+/** One SFTP request as a promise; its failure said with what it was doing. */
+const asked = <T,>(what: string, ask: (cb: (err: Error | null | undefined, value?: T) => void) => void): Promise<T> =>
+  new Promise((resolve, reject) => ask((err, value) => (err ? reject(new LibraryError(`the target couldn't ${what}: ${err.message}`)) : resolve(value as T))));
+
+/** `work` on SFTP to the target `label`, with the default command time: ended, and its connection
+ *  with it, when that passes or the run stops, since a transfer has no TERM to send. */
+function withSftp<T>(label: string, use: Use, work: (sftp: SFTPWrapper) => Promise<T>): Promise<T> {
+  const until = Math.min(Date.now() + LIMITS.execS * 1000, use.deadline);
+  return withTarget(label, use, until, (client) => {
+    let end: (why: string) => void = () => {};
+    const ended = new Promise<never>((_, reject) => (end = (why) => (client.end(), reject(new LibraryError(`the transfer ended: ${why}`)))));
+    const timer = setTimeout(() => end("its time ran out"), Math.max(0, until - Date.now()));
+    const onAbort = () => end("the run stopped");
+    use.signal?.addEventListener("abort", onAbort, { once: true });
+    if (use.signal?.aborted) onAbort();
+    const sftp = asked<SFTPWrapper>("start SFTP (does its sshd offer it?)", (cb) => client.sftp(cb));
+    return Promise.race([sftp.then(work), ended]).finally(() => (clearTimeout(timer), use.signal?.removeEventListener("abort", onAbort)));
+  });
+}
+
+/** A failed move whose new content is still in its part file: that's kept, and said where. */
+class Kept extends LibraryError {}
+
+/** Moves `from` over `to`: in one step with OpenSSH's posix-rename. On a server without it, a plain
+ *  rename, which won't replace a file, so when `to` is there it's removed first; if the move then
+ *  fails, `from` stays (Kept), since it holds the only copy. */
+async function moveOver(sftp: SFTPWrapper, from: string, to: string): Promise<void> {
+  const what = `move ${from} to ${to}`;
+  try {
+    return await asked(what, (cb) => sftp.ext_openssh_rename(from, to, cb));
+  } catch (e) {
+    if (e instanceof LibraryError) throw e; // posix-rename is there, and the move failed
+  }
+  if (await asked(what, (cb) => sftp.rename(from, to, cb)).then(() => true, () => false)) return;
+  await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
+  await asked(what, (cb) => sftp.rename(from, to, cb)).catch((e) => {
+    throw new Kept(`${e.message}; the new content is kept at ${from}`);
+  });
+}
+
+/** Writes `content` to `path` on the target `label`: whole, through a temporary file moved over it,
+ *  or added to its end with `append`; at most LIMITS.fileBytes a call. `sha256` is of what it wrote. */
+export async function put(label: string, req: Record<string, unknown>, use: Use): Promise<{ path: string; size: number; sha256: string }> {
+  const path = pathOf(req.path);
+  if (typeof req.content !== "string") throw new LibraryError('kit.ssh.put needs content, text (or bytes as base64, with encoding "base64")');
+  const encoding = encodingOf(req.encoding);
+  if (encoding === "base64" && !/^[A-Za-z0-9+/=\s]*$/.test(req.content)) throw new LibraryError("content isn't base64");
+  const bytes = Buffer.from(req.content, encoding);
+  if (bytes.length > LIMITS.fileBytes) throw new LibraryError(`kit.ssh.put writes at most ${LIMITS.fileBytes / 1024 / 1024} MB a call: send a bigger file in parts, the first whole and the rest with append`);
+  const mode = req.mode === undefined || req.mode === null ? null : String(req.mode);
+  if (mode !== null && !/^[0-7]{3,4}$/.test(mode)) throw new LibraryError('mode is octal, like "644" or "755"');
+  const append = req.append === true;
+  return withSftp(label, use, async (sftp) => {
+    const to = append ? path : `${path}.part-${crypto.randomBytes(4).toString("hex")}`;
+    let size = bytes.length;
+    try {
+      const handle = await asked<Buffer>(`open ${to}`, (cb) => sftp.open(to, append ? "a" : "w", cb));
+      try {
+        // ssh2 splits a write into requests as big as the server takes (254 KB for OpenSSH).
+        await asked(`write ${to}`, (cb) => sftp.write(handle, bytes, 0, bytes.length, 0, cb));
+        if (mode !== null) await asked(`set the mode of ${to}`, (cb) => sftp.fchmod(handle, mode, cb));
+        if (append) size = (await asked<{ size: number }>(`stat ${to}`, (cb) => sftp.fstat(handle, cb))).size;
+      } finally {
+        await asked(`close ${to}`, (cb) => sftp.close(handle, cb));
+      }
+      if (!append) await moveOver(sftp, to, path);
+    } catch (e) {
+      if (!append && !(e instanceof Kept)) await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
+      throw e;
+    }
+    return { path, size, sha256: sha256(bytes) };
+  });
+}
+
+/** Reads a page of `path` on the target `label`: up to `bytes` (LIMITS.fileBytes) from `offset`, as
+ *  text when it's UTF-8 and base64 when it isn't (or when asked). `sha256` is of the page, so a
+ *  whole file read at once (offset 0, eof) gives the file's own. */
+export async function get(label: string, req: Record<string, unknown>, use: Use): Promise<{ content: string; encoding: "utf8" | "base64"; size: number; sha256: string; eof: boolean }> {
+  const path = pathOf(req.path);
+  const offset = req.offset === undefined || req.offset === null ? 0 : Number(req.offset);
+  if (!Number.isInteger(offset) || offset < 0) throw new LibraryError("offset is a whole number of bytes, 0 or more");
+  const want = Math.floor(bounded(req.bytes, LIMITS.fileBytes, LIMITS.fileBytes, "bytes"));
+  const base64 = encodingOf(req.encoding) === "base64";
+  return withSftp(label, use, async (sftp) => {
+    const handle = await asked<Buffer>(`open ${path}`, (cb) => sftp.open(path, "r", cb));
+    try {
+      const size = (await asked<{ size: number }>(`stat ${path}`, (cb) => sftp.fstat(handle, cb))).size;
+      let page = Buffer.alloc(Math.max(0, Math.min(want, size - offset)));
+      // ssh2 splits a read as it does a write; it answers how much it read in all.
+      if (page.length) page = page.subarray(0, await asked<number>(`read ${path}`, (cb) => sftp.read(handle, page, 0, page.length, offset, cb)));
+      const text = !base64 && isUtf8(page);
+      return { content: page.toString(text ? "utf8" : "base64"), encoding: text ? "utf8" : "base64", size, sha256: sha256(page), eof: offset + page.length >= size };
+    } finally {
+      await asked(`close ${path}`, (cb) => sftp.close(handle, cb)).catch(() => {});
+    }
+  });
 }
 
 /** Sends the command TERM. ssh2's own stream.signal sends nothing once our side is ended, and it is

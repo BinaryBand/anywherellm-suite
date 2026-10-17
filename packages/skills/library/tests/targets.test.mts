@@ -1,7 +1,7 @@
 // Targets: machines the library's functions run commands on over SSH (src/targets.ts), against a
 // stand-in machine, ssh2's own Server on 127.0.0.1, run here in the test. It accepts the one key it's
-// told to, runs a few named commands, and can misbehave: show another host key, open channels toward
-// the client, never end. The built handler.js does the client's side, as AnythingLLM loads it.
+// told to, runs a few named commands, serves files over SFTP from memory (`files`), and can
+// misbehave: show another host key, open channels toward the client, never end, stall a write. The built handler.js does the client's side, as AnythingLLM loads it.
 // ssh2's server ignores a signal once the client has ended stdin, which OpenSSH's doesn't, so that
 // TERM reaches a command is checked against a real sshd (tests/e2e), not here.
 
@@ -21,6 +21,56 @@ const hostKey = utils.generateKeyPairSync("ed25519");
 const otherHostKey = utils.generateKeyPairSync("ed25519");
 const fingerprint = (pub: string) => `SHA256:${crypto.createHash("sha256").update(Buffer.from(pub.split(" ")[1], "base64")).digest("base64").replace(/=+$/, "")}`;
 
+/** The stand-in's files, by path, as its SFTP keeps them. */
+const files = new Map<string, { data: Buffer; mode: number }>();
+
+/** The SFTP requests a put and a get make, answered from `files`; a write to "stall.bin" is never
+ *  answered. ssh2's server offers no posix-rename, so a put's move takes its fallback here. */
+function serveFiles(sftp: ssh2.SFTPWrapper): void {
+  const { STATUS_CODE: S, flagsToString } = utils.sftp;
+  const open = new Map<string, { path: string; append: boolean }>();
+  let n = 0;
+  const of = (handle: Buffer) => open.get(handle.toString("hex"));
+  const attrs = (f: { data: Buffer; mode: number }) => ({ size: f.data.length, mode: f.mode, uid: 0, gid: 0, atime: 0, mtime: 0 });
+  sftp.on("OPEN", (id, path, flags) => {
+    const how = flagsToString(flags) ?? "r";
+    if (how.startsWith("r") && !files.has(path)) return sftp.status(id, S.NO_SUCH_FILE, "No such file");
+    if (how.startsWith("w") || !files.has(path)) files.set(path, { data: Buffer.alloc(0), mode: 0o100644 });
+    const handle = Buffer.from(String(++n));
+    open.set(handle.toString("hex"), { path, append: how.startsWith("a") });
+    sftp.handle(id, handle);
+  });
+  sftp.on("WRITE", (id, handle, offset, data) => {
+    const h = of(handle)!;
+    if (h.path === "stall.bin") return; // never answered
+    const f = files.get(h.path)!;
+    const at = h.append ? f.data.length : offset;
+    const grown = Buffer.alloc(Math.max(f.data.length, at + data.length));
+    f.data.copy(grown);
+    data.copy(grown, at);
+    f.data = grown;
+    sftp.status(id, S.OK);
+  });
+  sftp.on("READ", (id, handle, offset, length) => {
+    const f = files.get(of(handle)!.path)!;
+    if (offset >= f.data.length) return sftp.status(id, S.EOF);
+    sftp.data(id, f.data.subarray(offset, offset + length));
+  });
+  sftp.on("CLOSE", (id, handle) => (open.delete(handle.toString("hex")), sftp.status(id, S.OK)));
+  sftp.on("FSTAT", (id, handle) => sftp.attrs(id, attrs(files.get(of(handle)!.path)!)));
+  sftp.on("STAT", (id, path) => (files.has(path) ? sftp.attrs(id, attrs(files.get(path)!)) : sftp.status(id, S.NO_SUCH_FILE)));
+  const setMode = (path: string, mode: number | undefined) => mode !== undefined && files.has(path) && (files.get(path)!.mode = mode);
+  sftp.on("SETSTAT", (id, path, a) => (setMode(path, a.mode), sftp.status(id, S.OK)));
+  sftp.on("FSETSTAT", (id, handle, a) => (setMode(of(handle)!.path, a.mode), sftp.status(id, S.OK)));
+  sftp.on("REMOVE", (id, path) => sftp.status(id, files.delete(path) ? S.OK : S.NO_SUCH_FILE));
+  sftp.on("RENAME", (id, from, to) => {
+    if (!files.has(from) || files.has(to)) return sftp.status(id, S.FAILURE);
+    files.set(to, files.get(from)!);
+    files.delete(from);
+    sftp.status(id, S.OK);
+  });
+}
+
 /** What the stand-in saw, for the tests to check: sign-ins tried, naps going at once, channels
  *  refused, hung commands started, and their connections closed. */
 const seen = { auths: 0, open: 0, most: 0, refused: [] as string[], hung: 0, closed: 0 };
@@ -38,6 +88,10 @@ const standIn = (key: string) =>
     client.on("ready", () => {
       client.on("session", (accept) => {
         const session = accept();
+        session.on("sftp", (acceptSftp) => {
+          serveFiles(acceptSftp());
+          client.on("close", () => seen.closed++);
+        });
         session.on("exec", (acceptExec, _reject, info) => {
           const command = info.command;
           const s = acceptExec();
@@ -83,7 +137,7 @@ async function register(fields: Record<string, unknown> = {}, pasted?: { private
   if (pasted) allowed = utils.parseKey(pasted.public) as ssh2.ParsedKey;
   post({ secret: pageConfig().secret, ev: "target-save", label: "box", host: "127.0.0.1", port: PORT, login: "sandbox", fingerprint: fingerprint(hostKey.public), private: true, sealed: pasted ? seal(pasted.private) : "", ...fields });
   await call({ action: "library" });
-  await until(() => boxState().status !== "not tried yet");
+  await until(() => boxState().status !== "not tried yet", 15_000); // past the 10 s a sign-in may take
   const saved = boxState();
   if (saved.public) allowed = utils.parseKey(saved.public) as ssh2.ParsedKey;
   return saved;
@@ -101,6 +155,7 @@ const result = (said: string) => JSON.parse(said.match(/Result \(JSON\):\n([\s\S
 test.beforeEach(() => {
   reset();
   Object.assign(seen, { auths: 0, open: 0, most: 0, refused: [], hung: 0, closed: 0 });
+  files.clear();
   allowed = null;
   delete process.env.LIBRARY_WAIT_MS;
 });
@@ -224,6 +279,73 @@ test("the ssh2 internals term() sends TERM through are where it reaches for them
   assert.equal(typeof channel.outgoing.id, "number");
   assert.equal(typeof channel._client._protocol.signal, "function");
   client.end();
+});
+
+/** A function "file" that makes one kit.ssh call (input.call: "put" or "get") and answers what it got,
+ *  a long content as its length. */
+async function fileFn() {
+  const source = "async function main(input, kit) { const out = await kit.ssh[input.call](Object.assign({ target: 'box' }, input.req)); return out.content && out.content.length > 2000 ? Object.assign({}, out, { content: out.content.length + ' characters' }) : out; }";
+  await call({ action: "save", service: "ops", function: { name: "file", description: "Moves a file.", inputs: { call: { type: "string", required: true }, req: { type: "object", required: true } }, source } });
+}
+const file = async (callName: string, req: Record<string, unknown>) => result(await call({ action: "run", name: "ops.file", inputs: { call: callName, req } }));
+const hex = (bytes: Buffer) => crypto.createHash("sha256").update(bytes).digest("hex");
+
+test("a file is put on the target and got back, as text or, for bytes, as base64, with its sha256", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  const text = "name,score\nada,3\n";
+  assert.deepEqual(await file("put", { path: "~/scores.csv", content: text, mode: "600" }), { path: "scores.csv", size: text.length, sha256: hex(Buffer.from(text)) });
+  assert.equal(files.get("scores.csv")!.mode & 0o777, 0o600);
+  assert.deepEqual([...files.keys()], ["scores.csv"], "the part file it was written to was moved over the path");
+  assert.deepEqual(await file("get", { path: "scores.csv" }), { content: text, encoding: "utf8", size: text.length, sha256: hex(Buffer.from(text)), eof: true });
+  const bytes = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
+  assert.equal((await file("put", { path: "all.bin", content: bytes.toString("base64"), encoding: "base64" })).sha256, hex(bytes));
+  assert.deepEqual(files.get("all.bin")!.data, bytes);
+  const got = await file("get", { path: "all.bin" });
+  assert.deepEqual([got.encoding, got.content, got.sha256], ["base64", bytes.toString("base64"), hex(bytes)], "not UTF-8, so base64");
+  assert.match(await call({ action: "run", name: "ops.file", inputs: { call: "get", req: { path: "scores.csv" } } }), /- SSH box get scores\.csv: 0 \(\d+ ms\)/);
+});
+
+test("a file bigger than a call goes in parts: put whole then appended, read back by offset to eof", async () => {
+  await register();
+  await ops();
+  const source = `async function main(input, kit) {
+    const box = { target: "box", path: "big.txt" };
+    await kit.ssh.put(Object.assign({ content: "a".repeat(1024 * 1024) }, box));
+    const end = await kit.ssh.put(Object.assign({ content: "b".repeat(512 * 1024), append: true }, box));
+    const one = await kit.ssh.get(box);
+    const two = await kit.ssh.get(Object.assign({ offset: one.content.length }, box));
+    return { size: end.size, one: [one.content.length, one.eof], two: [two.content.length, two.eof, two.content[0]] };
+  }`;
+  await call({ action: "save", service: "ops", function: { name: "big", description: "A big file.", source } });
+  assert.deepEqual(result(await call({ action: "run", name: "ops.big", inputs: {} })), { size: 1.5 * 1024 * 1024, one: [1024 * 1024, false], two: [512 * 1024, true, "b"] });
+});
+
+test("over 1 MB in one call, or a field of its own, is refused before anything is written", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  const source = "async function main(i, kit) { return kit.ssh.put({ target: 'box', path: 'huge.txt', content: 'x'.repeat(1024 * 1024 + 1) }); }";
+  await call({ action: "save", service: "ops", function: { name: "huge", description: "Too big.", source } });
+  assert.match(await call({ action: "run", name: "ops.huge", inputs: {} }), /kit\.ssh\.put writes at most 1 MB a call: send a bigger file in parts/);
+  assert.match(await call({ action: "run", name: "ops.file", inputs: { call: "put", req: { path: "x", content: "y", host: "elsewhere" } } }), /kit\.ssh\.put takes target, path, content, encoding, mode, append, not host/);
+  assert.match(await call({ action: "run", name: "ops.file", inputs: { call: "get", req: { path: "x", key: "k" } } }), /kit\.ssh\.get takes target, path, offset, bytes, encoding, not key/);
+  assert.deepEqual([...files.keys()], []);
+});
+
+test("a stopped run ends the transfer it's waiting on, and leaves no part file behind it in view", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  process.env.LIBRARY_WAIT_MS = "300";
+  const started = await call({ action: "run", name: "ops.file", inputs: { call: "put", req: { path: "stall.bin", content: "z" } } });
+  const id = started.match(/\((r-[\w-]+)\)/)![1];
+  await until(() => [...files.keys()].some((k) => k.startsWith("stall.bin.part-")));
+  seen.closed = 0;
+  assert.match(await call({ action: "run", run_id: id, stop: true }), /ops\.file.*stopped/);
+  await until(() => seen.closed === 1);
+  assert.ok(!files.has("stall.bin"), "nothing was moved into place");
 });
 
 test("the user deletes a target on the page, and with it its key", async () => {

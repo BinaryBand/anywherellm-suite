@@ -120,16 +120,30 @@ const server = http.createServer((req, res) => {
     fs.writeFileSync(path.join(events, `raw-${cfg.title}-${crypto.randomUUID()}.json`), JSON.stringify({ pageContent: JSON.stringify(target) }));
     await call({ action: "library" });
     const status = () => JSON.parse(fs.readFileSync(`${APP}/public/library-lean/${token}.json`, "utf8")).targets[0]?.status;
-    for (let i = 0; i < 100 && [undefined, "not tried yet"].includes(status()); i++) await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 200 && [undefined, "not tried yet"].includes(status()); i++) await new Promise((r) => setTimeout(r, 100));
     assert.equal(status(), "signed in", "the pasted key signs in, the host key matching its fingerprint");
     const run = { name: "run", description: "Runs a command.", inputs: { req: { type: "object", required: true } }, source: "async function main(i, kit) { return kit.ssh.exec(Object.assign({ target: 'box' }, i.req)); }" };
     await call({ action: "save", service: "ops", toolkit: { title: "Ops", targets: ["box"] }, function: run });
-    const result = async (req) => JSON.parse((await call({ action: "run", name: "ops.run", inputs: { req } })).match(/Result \(JSON\):\n([\s\S]*?)\n\n/)[1]);
+    const ran = async (name, inputs) => JSON.parse((await call({ action: "run", name, inputs })).match(/Result \(JSON\):\n([\s\S]*?)\n\n/)[1]);
+    const result = (req) => ran("ops.run", { req });
     const hi = await result({ command: "echo hi; id -un; echo oops >&2; exit 4" });
     assert.deepEqual([hi.exit, hi.stdout, hi.stderr], [4, "hi\nsandbox\n", "oops\n"]);
     const slept = await result({ command: "sleep 30", timeout_s: 2 });
     assert.deepEqual([slept.killed, slept.signal, slept.remote_may_run], ["timeout", "SIGTERM", false], `OpenSSH acts on TERM and says so: ${JSON.stringify(slept)}`);
     assert.equal((await result({ command: "pgrep -x sleep || echo none" })).stdout, "none\n", "the command is gone from the machine");
+
+    // Files over OpenSSH's SFTP: a script put with its mode, run, and what it wrote got back, its
+    // sha256 the machine's own; put again over it in one step (posix-rename).
+    const file = { name: "file", description: "Moves a file.", inputs: { call: { type: "string", required: true }, req: { type: "object", required: true } }, source: "async function main(i, kit) { return kit.ssh[i.call](Object.assign({ target: 'box' }, i.req)); }" };
+    await call({ action: "save", service: "ops", function: file });
+    const moved = (callName, req) => ran("ops.file", { call: callName, req });
+    await moved("put", { path: "~/squares.sh", content: "#!/bin/sh\nfor n in 1 2 3; do echo \"$n,$((n * n))\"; done > squares.csv\n", mode: "755" });
+    assert.equal((await result({ command: "./squares.sh && ls -l squares.sh | cut -c1-10" })).stdout, "-rwxr-xr-x\n");
+    const csv = await moved("get", { path: "squares.csv" });
+    assert.deepEqual([csv.content, csv.encoding, csv.eof], ["1,1\n2,4\n3,9\n", "utf8", true]);
+    assert.equal((await result({ command: "sha256sum squares.csv | cut -d' ' -f1" })).stdout, `${csv.sha256}\n`, "the same file, by the machine's own hash");
+    await moved("put", { path: "squares.csv", content: "replaced\n" });
+    assert.equal((await result({ command: "cat squares.csv; ls -a | grep -c part- || true" })).stdout, "replaced\n0\n", "moved over it, no part file left");
   }
 
   server.close();

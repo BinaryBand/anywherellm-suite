@@ -19,6 +19,7 @@ Then run it with run, name "github.list_issues", inputs { "repo": "owner/name" }
 What kit offers:
 - kit.http({ method, path, url, params, headers, body, auth }): one request; answers { status, ok, headers, body, cut }, body parsed when it's JSON. path is relative to the toolkit's first base address; url reaches another of its hosts. params go in the query; an object body goes as JSON (or as a form, with a Content-Type header saying so). auth names one of the toolkit's keys, or false for none; the first goes by default. You can't set Authorization or Cookie: the key is added for you, outside the function.
 - kit.ssh.exec({ target, command, stdin, timeout_s, max_bytes }): runs a command on one of the toolkit's targets, a machine the user registered (topic targets); answers { exit, signal, stdout, stderr, truncated, killed, remote_may_run, ms }.
+- kit.ssh.put({ target, path, content, encoding, mode, append }) and kit.ssh.get({ target, path, offset, bytes, encoding }): write and read a file on a target, at most 1 MB a call (topic targets).
 - kit.retry(request, { tries }): kit.http, tried again after a 429, a 5xx or a failed connection.
 - kit.run("service.function", input): runs another saved function and answers its result: a flow of functions, even across services.
 - kit.state.get() and kit.state.set(value): what the function keeps between runs (the last item it saw, say), at most 64 KB; kept only when the run ends well.
