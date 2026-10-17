@@ -23,6 +23,8 @@ const fingerprint = (pub: string) => `SHA256:${crypto.createHash("sha256").updat
 
 /** The stand-in's files, by path, as its SFTP keeps them. */
 const files = new Map<string, { data: Buffer; mode: number }>();
+/** Symbolic links among them: a path, and the file it leads to. */
+const links = new Map<string, string>();
 
 /** The SFTP requests a put and a get make, answered from `files`; a write to "stall.bin" is never
  *  answered. ssh2's server offers no posix-rename, so a put's move takes its fallback here. */
@@ -42,7 +44,7 @@ function serveFiles(sftp: ssh2.SFTPWrapper): void {
   });
   sftp.on("WRITE", (id, handle, offset, data) => {
     const h = of(handle)!;
-    if (h.path === "stall.bin") return; // never answered
+    if (h.path.startsWith("stall.bin")) return; // never answered
     const f = files.get(h.path)!;
     const at = h.append ? f.data.length : offset;
     const grown = Buffer.alloc(Math.max(f.data.length, at + data.length));
@@ -62,6 +64,10 @@ function serveFiles(sftp: ssh2.SFTPWrapper): void {
   const setMode = (path: string, mode: number | undefined) => mode !== undefined && files.has(path) && (files.get(path)!.mode = mode);
   sftp.on("SETSTAT", (id, path, a) => (setMode(path, a.mode), sftp.status(id, S.OK)));
   sftp.on("FSETSTAT", (id, handle, a) => (setMode(of(handle)!.path, a.mode), sftp.status(id, S.OK)));
+  sftp.on("REALPATH", (id, path) => {
+    const real = links.get(path) ?? path;
+    sftp.name(id, [{ filename: real, longname: real, attrs: {} as ssh2.Attributes }]);
+  });
   sftp.on("REMOVE", (id, path) => sftp.status(id, files.delete(path) ? S.OK : S.NO_SUCH_FILE));
   sftp.on("RENAME", (id, from, to) => {
     if (!files.has(from) || files.has(to)) return sftp.status(id, S.FAILURE);
@@ -156,6 +162,7 @@ test.beforeEach(() => {
   reset();
   Object.assign(seen, { auths: 0, open: 0, most: 0, refused: [], hung: 0, closed: 0 });
   files.clear();
+  links.clear();
   allowed = null;
   delete process.env.LIBRARY_WAIT_MS;
 });
@@ -322,6 +329,36 @@ test("a file bigger than a call goes in parts: put whole then appended, read bac
   assert.deepEqual(result(await call({ action: "run", name: "ops.big", inputs: {} })), { size: 1.5 * 1024 * 1024, one: [1024 * 1024, false], two: [512 * 1024, true, "b"] });
 });
 
+test("a file put over another keeps its mode unless one is given, and a symbolic link stays one", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  await file("put", { path: "run.sh", content: "#!/bin/sh\n", mode: "755" });
+  await file("put", { path: "run.sh", content: "#!/bin/sh\necho 2\n" });
+  assert.equal(files.get("run.sh")!.mode & 0o7777, 0o755, "kept");
+  await file("put", { path: "run.sh", content: "#!/bin/sh\necho 3\n", mode: "600" });
+  assert.equal(files.get("run.sh")!.mode & 0o7777, 0o600, "changed when given");
+  files.set("real.txt", { data: Buffer.from("old"), mode: 0o100640 });
+  links.set("link.txt", "real.txt");
+  await file("put", { path: "link.txt", content: "new" });
+  assert.deepEqual([...files.keys()].sort(), ["real.txt", "run.sh"], "no file took the link's place");
+  assert.equal(files.get("real.txt")!.data.toString(), "new");
+  assert.equal(files.get("real.txt")!.mode & 0o7777, 0o640);
+});
+
+test("a text file read in pages gives text in every page, each ending on a character", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  files.set("utf.txt", { data: Buffer.from("éééé"), mode: 0o100644 }); // 8 bytes
+  const first = await file("get", { path: "utf.txt", bytes: 3 });
+  assert.deepEqual([first.content, first.encoding, first.eof], ["é", "utf8", false], "cut before the half of a character");
+  const second = await file("get", { path: "utf.txt", offset: Buffer.byteLength(first.content), bytes: 3 });
+  assert.deepEqual([second.content, second.encoding], ["é", "utf8"]);
+  const rest = await file("get", { path: "utf.txt", offset: 4, bytes: 100 });
+  assert.deepEqual([rest.content, rest.eof], ["éé", true]);
+});
+
 test("over 1 MB in one call, or a field of its own, is refused before anything is written", async () => {
   await register();
   await ops();
@@ -346,6 +383,7 @@ test("a stopped run ends the transfer it's waiting on, and leaves no part file b
   assert.match(await call({ action: "run", run_id: id, stop: true }), /ops\.file.*stopped/);
   await until(() => seen.closed === 1);
   assert.ok(!files.has("stall.bin"), "nothing was moved into place");
+  await until(() => ![...files.keys()].some((k) => k.startsWith("stall.bin.part-")), 10_000); // removed over a connection of its own
 });
 
 test("the user deletes a target on the page, and with it its key", async () => {

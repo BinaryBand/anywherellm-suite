@@ -23,6 +23,8 @@ import { LibraryError } from "./errors";
 
 const LIMITS = {
   connectMs: 10 * 1000,
+  /** How long removing a cut-off upload's part file may take, sign-in included. */
+  cleanupMs: 5 * 1000,
   /** A command's time, in seconds as kit.ssh.exec's timeout_s: by default and at most. */
   execS: 30,
   execMaxS: 300,
@@ -42,7 +44,8 @@ const LIMITS = {
 const NAME = /^[a-z][a-z0-9-]{1,30}$/;
 const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 const LOGIN = /^[a-z_][a-z0-9_.-]{0,31}$/i;
-const FINGERPRINT = /SHA256:[A-Za-z0-9+/]{43}/;
+// Exactly 43 characters: a longer run is a mistyped fingerprint, not one with something after it.
+const FINGERPRINT = /SHA256:[A-Za-z0-9+/]{43}(?![A-Za-z0-9+/])/;
 
 /** A target as the agent and the page see it: never its key. */
 export interface Target {
@@ -160,13 +163,13 @@ export const remove = (label: string): Promise<boolean> =>
   });
 
 /** Signs in to a target once, without running anything, and keeps how it went for the page and the
- *  agent to see. */
+ *  agent to see. It counts as a use, with the rate and slots of one. */
 export async function check(label: string): Promise<void> {
-  const e = found(label);
-  if (!e) return;
+  if (!found(label)) return;
   let said = "signed in";
   try {
-    (await open(e, Date.now() + LIMITS.connectMs)).end();
+    const until = Date.now() + LIMITS.connectMs;
+    await withTarget(label, { deadline: until, job: false }, until, async () => {});
   } catch (err) {
     if (!(err instanceof NetError || err instanceof LibraryError)) throw err;
     said = err.message;
@@ -209,7 +212,8 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
       reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) couldn't be reached: ${err.message}`));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    client.once("ready", () => (signal?.removeEventListener("abort", onAbort), resolve(client)));
+    // After sign-in a dropped connection ends the command's channel; its error needs a listener, or it is uncaught.
+    client.once("ready", () => (signal?.removeEventListener("abort", onAbort), client.on("error", () => {}), resolve(client)));
     client.once("error", failed);
     client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => (seen = fingerprintOf(key)) === e.fingerprint });
   });
@@ -304,7 +308,7 @@ function withSftp<T>(label: string, use: Use, work: (sftp: SFTPWrapper) => Promi
   const until = Math.min(Date.now() + LIMITS.execS * 1000, use.deadline);
   return withTarget(label, use, until, (client) => {
     let end: (why: string) => void = () => {};
-    const ended = new Promise<never>((_, reject) => (end = (why) => (client.end(), reject(new LibraryError(`the transfer ended: ${why}`)))));
+    const ended = new Promise<never>((_, reject) => (end = (why) => (client.end(), reject(new Ended(`the transfer ended: ${why}`)))));
     const timer = setTimeout(() => end("its time ran out"), Math.max(0, until - Date.now()));
     const onAbort = () => end("the run stopped");
     use.signal?.addEventListener("abort", onAbort, { once: true });
@@ -313,6 +317,9 @@ function withSftp<T>(label: string, use: Use, work: (sftp: SFTPWrapper) => Promi
     return Promise.race([sftp.then(work), ended]).finally(() => (clearTimeout(timer), use.signal?.removeEventListener("abort", onAbort)));
   });
 }
+
+/** A transfer cut off by its time or a stop: its connection is gone with it. */
+class Ended extends LibraryError {}
 
 /** A failed move whose new content is still in its part file: that's kept, and said where. */
 class Kept extends LibraryError {}
@@ -346,30 +353,71 @@ export async function put(label: string, req: Record<string, unknown>, use: Use)
   const mode = req.mode === undefined || req.mode === null ? null : String(req.mode);
   if (mode !== null && !/^[0-7]{3,4}$/.test(mode)) throw new LibraryError('mode is octal, like "644" or "755"');
   const append = req.append === true;
-  return withSftp(label, use, async (sftp) => {
-    const to = append ? path : `${path}.part-${crypto.randomBytes(4).toString("hex")}`;
-    let size = bytes.length;
-    try {
-      const handle = await asked<Buffer>(`open ${to}`, (cb) => sftp.open(to, append ? "a" : "w", cb));
+  let part: string | null = null;
+  try {
+    return await withSftp(label, use, async (sftp) => {
+      // A whole file goes over what the path leads to (a symlink stays one), keeping its mode unless one is given.
+      const real = append ? path : await asked<string>(`resolve ${path}`, (cb) => sftp.realpath(path, cb)).catch(() => path);
+      const kept = append || mode !== null ? null : await asked<{ mode: number }>(`stat ${real}`, (cb) => sftp.stat(real, cb)).then((a) => a.mode & 0o7777, () => null);
+      const to = append ? path : (part = `${real}.part-${crypto.randomBytes(4).toString("hex")}`);
+      let size = bytes.length;
       try {
-        // ssh2 splits a write into requests as big as the server takes (254 KB for OpenSSH).
-        await asked(`write ${to}`, (cb) => sftp.write(handle, bytes, 0, bytes.length, 0, cb));
-        if (mode !== null) await asked(`set the mode of ${to}`, (cb) => sftp.fchmod(handle, mode, cb));
-        if (append) size = (await asked<{ size: number }>(`stat ${to}`, (cb) => sftp.fstat(handle, cb))).size;
-      } finally {
-        await asked(`close ${to}`, (cb) => sftp.close(handle, cb));
+        const handle = await asked<Buffer>(`open ${to}`, (cb) => sftp.open(to, append ? "a" : "w", cb));
+        try {
+          // ssh2 splits a write into requests as big as the server takes (254 KB for OpenSSH).
+          await asked(`write ${to}`, (cb) => sftp.write(handle, bytes, 0, bytes.length, 0, cb));
+          if (mode !== null || kept !== null) await asked(`set the mode of ${to}`, (cb) => sftp.fchmod(handle, mode ?? kept!, cb));
+          if (append) size = (await asked<{ size: number }>(`stat ${to}`, (cb) => sftp.fstat(handle, cb))).size;
+        } finally {
+          await asked(`close ${to}`, (cb) => sftp.close(handle, cb));
+        }
+        if (!append) await moveOver(sftp, to, real);
+      } catch (e) {
+        if (!append && !(e instanceof Kept)) await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
+        throw e;
       }
-      if (!append) await moveOver(sftp, to, path);
-    } catch (e) {
-      if (!append && !(e instanceof Kept)) await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
-      throw e;
+      return { path, size, sha256: sha256(bytes) };
+    });
+  } catch (e) {
+    // A transfer cut off has no connection left to remove its part file on: one is opened for that.
+    if (e instanceof Ended && part) await unlinkAfter(label, part);
+    throw e;
+  }
+}
+
+/** Removes `path` on the target `label` over a connection of its own, as well as that can be done
+ *  in a few seconds; nothing says if it couldn't. */
+async function unlinkAfter(label: string, path: string): Promise<void> {
+  const e = found(label);
+  if (!e) return;
+  try {
+    const client = await open(e, Date.now() + LIMITS.cleanupMs);
+    try {
+      const sftp = await asked<SFTPWrapper>("start SFTP", (cb) => client.sftp(cb));
+      await Promise.race([asked(`remove ${path}`, (cb) => sftp.unlink(path, cb)), new Promise((r) => setTimeout(r, LIMITS.cleanupMs))]);
+    } finally {
+      client.end();
     }
-    return { path, size, sha256: sha256(bytes) };
-  });
+  } catch {
+    // the part file stays; there is nothing more to try
+  }
+}
+
+/** How much of `page` ends on a UTF-8 character: all of it, unless it ends inside one (and cutting
+ *  that off leaves something). */
+function whole(page: Buffer): number {
+  for (let back = 1; back <= Math.min(3, page.length - 1); back++) {
+    const b = page[page.length - back];
+    if ((b & 0xc0) === 0x80) continue; // a continuation byte: look further back for its start
+    const need = b >= 0xf0 ? 4 : b >= 0xe0 ? 3 : b >= 0xc0 ? 2 : 1;
+    return need > back ? page.length - back : page.length;
+  }
+  return page.length;
 }
 
 /** Reads a page of `path` on the target `label`: up to `bytes` (LIMITS.fileBytes) from `offset`, as
- *  text when it's UTF-8 and base64 when it isn't (or when asked). `sha256` is of the page, so a
+ *  text when it's UTF-8 and base64 when it isn't (or when asked); a text page ends on a character, so
+ *  it may be a few bytes short of `bytes`. `sha256` is of the page, so a
  *  whole file read at once (offset 0, eof) gives the file's own. */
 export async function get(label: string, req: Record<string, unknown>, use: Use): Promise<{ content: string; encoding: "utf8" | "base64"; size: number; sha256: string; eof: boolean }> {
   const path = pathOf(req.path);
@@ -384,6 +432,9 @@ export async function get(label: string, req: Record<string, unknown>, use: Use)
       let page = Buffer.alloc(Math.max(0, Math.min(want, size - offset)));
       // ssh2 splits a read as it does a write; it answers how much it read in all.
       if (page.length) page = page.subarray(0, await asked<number>(`read ${path}`, (cb) => sftp.read(handle, page, 0, page.length, offset, cb)));
+      // A page that ends inside a character is cut before it, so every page of a text file is text:
+      // the next starts at offset plus the bytes of this one's content.
+      if (!base64 && offset + page.length < size) page = page.subarray(0, whole(page));
       const text = !base64 && isUtf8(page);
       return { content: page.toString(text ? "utf8" : "base64"), encoding: text ? "utf8" : "base64", size, sha256: sha256(page), eof: offset + page.length >= size };
     } finally {

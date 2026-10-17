@@ -28,6 +28,15 @@ test("the page shows a saved key by name only, never its value", async () => {
   assert.ok(!fs.readFileSync(path.join(publicDir, "library-lean", `${pageConfig().token}.html`), "utf8").includes(KEY));
 });
 
+test("a key and a target asked for under one label are both on the page, and one given doesn't meet the other", async () => {
+  await call({ action: "secret", site: "api.example.com", label: "pi" });
+  await call({ action: "secret", kind: "ssh", label: "pi" });
+  assert.deepEqual(pageState().needs.map((n: { kind: string }) => n.kind).sort(), ["key", "target"]);
+  post({ secret: pageConfig().secret, ev: "key-save", label: "pi", site: "api.example.com", sealed: seal(KEY) });
+  await call({ action: "library" });
+  assert.deepEqual(pageState().needs, [{ label: "pi", site: "", kind: "target" }], "only the key's need is met");
+});
+
 test("a key is asked for on the page, given there, and the agent is told", async () => {
   const asked = await call({ action: "secret", site: "api.example.com", label: "ex" });
   assert.match(asked, /^The user gives the key on the Library page: \/library-lean\/[\w-]+\.html\n/);

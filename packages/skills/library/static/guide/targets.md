@@ -13,8 +13,8 @@ Using it:
 - Scheduled jobs use a target only when the user ticked "May run unattended" for it.
 
 Files:
-- kit.ssh.put({ target, path, content, encoding, mode, append }) writes a file; it answers { path, size, sha256 }. content is text, or bytes as base64 with encoding "base64"; mode is octal ("755" for a script). It replaces the file whole (written beside it, then moved over it), or with append: true adds to its end.
-- kit.ssh.get({ target, path, offset, bytes, encoding }) reads one: { content, encoding, size, sha256, eof }. It's text when the file is UTF-8 and base64 when it isn't (or with encoding "base64"). sha256 is of what it read, so a whole file read at once gives the file's own, to compare with sha256sum on the machine.
+- kit.ssh.put({ target, path, content, encoding, mode, append }) writes a file; it answers { path, size, sha256 }. content is text, or bytes as base64 with encoding "base64"; mode is octal ("755" for a script); left out, a file that was there keeps its mode, and a new one gets the account's default. It replaces the file whole (written beside it, then moved over it; a symbolic link stays one, and the file it leads to is replaced), or with append: true adds to its end.
+- kit.ssh.get({ target, path, offset, bytes, encoding }) reads one: { content, encoding, size, sha256, eof }. It's text when the file is UTF-8 and base64 when it isn't (or with encoding "base64"); a page of text ends on a character, so it can be a few bytes shorter than bytes: the next page's offset is this one's offset plus the bytes of its content. sha256 is of what it read, so a whole file read at once gives the file's own, to compare with sha256sum on the machine.
 - A path is as the account sees it: "report.csv" or "~/report.csv" is in its home; "/tmp/job/out.txt" is where it says.
 - At most 1 MB a call. A bigger file goes in parts: put the first part, then the rest with append; read it back with offset and bytes until eof. Keep what the function returns small: parse or count the file in the function, don't return it whole.
 
