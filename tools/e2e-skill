@@ -53,7 +53,7 @@ e2e() {
   # shellcheck source=/dev/null # the skill's own, when it has one
   [ ! -f "$SKILL_DIR/tests/e2e/beside.sh" ] || . "$SKILL_DIR/tests/e2e/beside.sh"
   "$engine" exec -w /app/server -e HUB_ID="$HUB_ID" -e STORAGE_DIR="$INNER_STORAGE" -e INNER_PORT="$INNER_PORT" \
-    -e FENCE_ALLOW=127.0.0.1,localhost "${inside_env[@]}" "$name" node /e2e/inside.js
+    -e FENCE_ALLOW=127.0.0.1,localhost ${inside_env[@]+"${inside_env[@]}"} "$name" node /e2e/inside.js
   echo "tools/e2e-skill: $1 ok"
 }
 
