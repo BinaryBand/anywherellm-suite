@@ -1,4 +1,4 @@
-// Stands in for AnythingLLM's collector's Puppeteer in the tests (BROWSER_LEAN_PUPPETEER points
+// Stands in for the bundled puppeteer-core in the tests (BROWSER_LEAN_PUPPETEER points
 // here): pages are plain objects whose fields are plain JS objects, so the skill's own
 // handle.evaluate functions run on them, and a page's snapshot is answered as snapshot.ts would
 // read it. `world` is what the tests set up and look at.

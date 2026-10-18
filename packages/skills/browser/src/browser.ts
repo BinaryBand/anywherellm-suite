@@ -34,19 +34,27 @@ const ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no
 /** Chrome's own password saving, off in every profile the skill makes. */
 const PREFERENCES = { credentials_enable_service: false, profile: { password_manager_enabled: false } };
 
+/** The Chromes Puppeteer downloaded into its cache `root`, newest first, read by its own Cache (in
+ *  the bundle already, as puppeteer-core's); none when there's no cache to read. Sorted here: its
+ *  getVersionComparator takes only semver, and a Chrome's build is four numbers (119.0.6045.105). */
+function downloaded(root: string): string[] {
+  try {
+    const { Browser, Cache } = require("@puppeteer/browsers") as typeof import("@puppeteer/browsers");
+    const chromes = new Cache(root).getInstalledBrowsers().filter((installed) => installed.browser === Browser.CHROME);
+    return chromes.sort((a, b) => b.buildId.localeCompare(a.buildId, "en", { numeric: true })).map((installed) => installed.executablePath);
+  } catch {
+    return [];
+  }
+}
+
 /** The Chrome to launch: BROWSER_LEAN_CHROME, else the newest one Puppeteer downloaded (in
  *  PUPPETEER_CACHE_DIR or ~/.cache/puppeteer; AnythingLLM's image has one, for its collector), else
  *  a system Chrome or Chromium. */
 function chrome(): string {
   if (process.env.BROWSER_LEAN_CHROME) return process.env.BROWSER_LEAN_CHROME;
-  const cache = path.join(process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), ".cache", "puppeteer"), "chrome");
-  let downloaded: string[] = [];
-  try {
-    const builds = fs.readdirSync(cache).filter((name) => name.startsWith("linux-"));
-    downloaded = builds.sort((a, b) => b.localeCompare(a, "en", { numeric: true })).map((name) => path.join(cache, name, "chrome-linux64", "chrome"));
-  } catch {}
-  const found = [...downloaded, ...SYSTEM_CHROMES].find((file) => fs.existsSync(file));
-  if (!found) throw new BrowserError(`there's no Chrome to run (looked in ${cache} and at ${SYSTEM_CHROMES.join(", ")}); set BROWSER_LEAN_CHROME in AnythingLLM's environment to one`);
+  const root = process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), ".cache", "puppeteer");
+  const found = [...downloaded(root), ...SYSTEM_CHROMES].find((file) => fs.existsSync(file));
+  if (!found) throw new BrowserError(`there's no Chrome to run (looked in ${root} and at ${SYSTEM_CHROMES.join(", ")}); set BROWSER_LEAN_CHROME in AnythingLLM's environment to one`);
   return found;
 }
 

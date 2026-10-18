@@ -1,7 +1,6 @@
-// What the browser's tests share: AnythingLLM's storage, public folder and server modules standing
-// in, the collector's Puppeteer standing in (fixtures/puppeteer), the built handler.js called as
-// AnythingLLM's agent calls it, and what a tab's page posts, written as AnythingLLM's collector
-// writes it.
+// What the browser's tests share: AnythingLLM's storage and public folder standing in, a stand-in
+// for the bundled Puppeteer (fixtures/puppeteer), the built handler.js called as AnythingLLM's agent
+// calls it, and what a tab's page posts, written as AnythingLLM's collector writes it.
 
 import crypto from "node:crypto";
 import fs from "node:fs";

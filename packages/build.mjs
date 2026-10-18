@@ -54,7 +54,6 @@ const stubs = (patterns) => ({
   name: "stubs",
   setup(b) {
     const hit = new Set();
-    b.onStart(() => hit.clear());
     b.onResolve({ filter: /.*/ }, ({ path: p, resolveDir }) => {
       const full = p.startsWith(".") ? path.join(resolveDir, p).split(path.sep).join("/") : p;
       const found = patterns.find((re) => re.test(full));
@@ -106,8 +105,9 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
     logLevel: "warning",
     plugins,
   });
-  // `<define:NAME>` is a `define` value esbuild lists as an input, and `stub:` a stubbed module; neither is a file.
-  const stray = Object.keys(metafile.inputs).filter((file) => !file.startsWith("<define:") && !file.startsWith("stub:") && !allowed.some((prefix) => file.startsWith(prefix)));
+  // `<define:NAME>` is a `define` value esbuild lists as an input, and `namespace:path` a plugin's
+  // module (a stubbed one); neither is a file.
+  const stray = Object.keys(metafile.inputs).filter((file) => !/^(<define:|[\w-]+:)/.test(file) && !allowed.some((prefix) => file.startsWith(prefix)));
   if (stray.length) {
     fs.rmSync(clean, { recursive: true, force: true });
     throw new Error(`${label} bundles files outside ${allowed.join(", ")}: ${stray.join(", ")}`);
