@@ -99,7 +99,6 @@ var AppsLean = (() => {
     if (body.wait === false) return answer(200, { line, lines: cfg.log.filter((l) => l.n > (body.since || 0)) });
     if (gone) return new Promise(() => {}); // nothing more will come
     await pause();
-    if (!host.isConnected) tray(); // a page that drew itself again took the button out
     if (!/^https?:$/.test(location.protocol)) return answer(200, { line: body.since, lines: [] });
     try {
       const next = await (await native(stateUrl, { cache: "no-cache" })).json();
@@ -241,6 +240,9 @@ var AppsLean = (() => {
     }, { capture: true });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tray);
   else tray();
+  // A page that draws itself again can take the button out with what it replaces: it goes back at once.
+  if (typeof MutationObserver === "function")
+    new MutationObserver(() => host.isConnected || tray()).observe(document.documentElement, { childList: true, subtree: true });
 
   window.fetch = (url, opts) => {
     if (url === "lean:append") return append(JSON.parse(opts.body));
