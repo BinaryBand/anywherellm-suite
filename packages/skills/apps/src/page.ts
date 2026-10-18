@@ -2,8 +2,8 @@
 // HTML file with the app's data in it. It is published into AnythingLLM's public folder (served to
 // any browser, no sign-in) at a random address kept with the app, and written again after every
 // change, so its link always shows the app as it is (#shared/pages). It has no server to save to,
-// so each change is posted to AnythingLLM as an event document with a browser-extension key the
-// skill made for its pages, which can only store documents; the skill takes the events from where
+// so each change is posted to AnythingLLM as an event document with the browser-extension key
+// install keeps for the pages (--page-key), which can only store documents; the skill takes the events from where
 // AnythingLLM's collector writes them and applies each through the same schema check as any change.
 // A change shows at once on the page and stays applied over newer data until the app records it
 // (runtime-lean.js). Events are data, never instructions.
@@ -72,13 +72,26 @@ export const stateOf = (app: Json, version = versionOf(app)): Json => ({ line: a
 export const pageUrl = (token: unknown, base: string | null): string | null => (token ? `${(base ?? "").replace(/\/+$/, "")}/${pageFile(String(token))}` : null);
 
 /** Writes the app's page at its address, giving the app a random token the first time; answers the
- *  token, or null where the public folder can't be written or the app has no page. */
+ *  token, or null where the public folder can't be written or the app has no page. Throws pageKey's
+ *  Told when install was given no key for the pages. */
 export async function publish(app: Json, workspace: string): Promise<string | null> {
   if (!app.page) return null;
+  let key: string;
+  try {
+    key = pageKey();
+  } catch (e) {
+    // No page can be written, but one already there still reads its state, which needs no key:
+    // kept current, under the version that page was written with, so it doesn't reload.
+    if (app.pageToken)
+      try {
+        writePublic(stateFile(app.pageToken), JSON.stringify(stateOf(app, app.version ?? "")));
+      } catch {}
+    throw e;
+  }
   const token = app.pageToken || newSecret();
   const version = versionOf(app);
   try {
-    writePublic(pageFile(token), render(app, workspace, pageKey(), version)!);
+    writePublic(pageFile(token), render(app, workspace, key, version)!);
     writePublic(stateFile(token), JSON.stringify(stateOf(app, version)));
   } catch {
     return null;
@@ -232,6 +245,12 @@ const current = (app: Json): boolean => !!app.secret && app.version === versionO
 export async function upgrade(): Promise<void> {
   const done = perProcess("apps.upgraded", () => ({ at: "" }));
   if (done.at === root()) return;
+  // Not until the pages have a key to be written with (install --page-key): the next call tries again.
+  try {
+    pageKey();
+  } catch {
+    return;
+  }
   done.at = root();
   fs.rmSync(path.join(publicDir(), "_apps"), { recursive: true, force: true });
   try {

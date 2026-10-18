@@ -164,7 +164,8 @@ const ACTIONS = {
           : `from the ${base.template} template, which holds no components yet: put each one's markup at <!--slot--> and its script at <!--scripts-->.`;
     // The page goes up as the app is made, and is written again after every change, so its link can
     // go in the reply that makes the app; an agent left to call page for it may not.
-    const url = pageUrl(await publish(made, workspace), baseOf(self));
+    // With no key for the pages there's no page yet: page says why.
+    const url = pageUrl(await publish(made, workspace).catch((e) => (e instanceof Told ? null : Promise.reject(e))), baseOf(self));
     const defaults = filled.length ? [`Filled in what the data left out: ${filled.join(", ")}, with false, 0 or [].`] : [];
     return [
       `Made the app ${made.name}: ${made.title}, ${how} Fit it to what the user asked with edit (page.html, app.json) and do (the data)${url ? "." : ", then give them the page."}`,

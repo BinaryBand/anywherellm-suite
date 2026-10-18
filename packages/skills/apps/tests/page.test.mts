@@ -3,7 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import vm from "node:vm";
-import { definitionFor, publicDir, storage } from "./harness.mts";
+import { pageKeyFile } from "#shared/anythingllm";
+import { Told } from "#shared/errors";
+import { call, definitionFor, publicDir, storage } from "./harness.mts";
 import { pageUrl, publish, refresh, render, stateOf, unpublish } from "../src/page.ts";
 import { apply } from "../src/patch.ts";
 import * as parts from "../src/parts.ts";
@@ -59,6 +61,24 @@ test("where the public folder can't be written there is no address", async () =>
     assert.equal(store.read("home", "nowhere").pageToken, undefined);
   } finally {
     process.env.ANYTHINGLLM_PUBLIC_DIR = was;
+  }
+});
+
+test("with no key for the pages, page says how to set one, and a page already there still keeps up", async () => {
+  await store.create("home", "keyless", { ...definitionFor("list", { title: "Keyless" }), page: listPage() });
+  const token = (await publish(store.read("home", "keyless"), "home"))!;
+  const { version } = store.read("home", "keyless");
+  const keyFile = pageKeyFile(storage);
+  const key = fs.readFileSync(keyFile, "utf8");
+  fs.rmSync(keyFile);
+  try {
+    await store.change("home", "keyless", { patch: [{ op: "add", path: "/items/-", value: { text: "Tea", done: false } }] });
+    await assert.rejects(publish(store.read("home", "keyless"), "home"), (e: Error) => e instanceof Told && e.message.includes("install --page-key"));
+    const state = JSON.parse(fs.readFileSync(path.join(publicDir, "apps-lean", `${token}.json`), "utf8"));
+    assert.deepEqual([state.data.items.at(-1).text, state.version], ["Tea", version], "the change shows, and the page doesn't reload");
+    assert.match(await call("home", { action: "page", name: "keyless" }), /^Apps: the skills' pages have no key to post with/);
+  } finally {
+    fs.writeFileSync(keyFile, key);
   }
 });
 

@@ -51,7 +51,7 @@ var AppsLean = (() => {
 
   async function append(body) {
     const { r, id } = await upload({ kind: "change", ev: body.ev || "change", fields: body.fields, patch: body.patch });
-    if (r.status === 403) return answer(403, { error: "AnythingLLM refused this page's key; ask the agent for the page again." });
+    if (r.status === 403) return answer(403, { error: "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anythingllm-suite install --page-key with it." });
     if (!r.ok) return answer(r.status >= 500 ? 503 : r.status, { error: "AnythingLLM answered " + r.status + "." });
     pending.push({ id, patch: body.patch });
     keep();

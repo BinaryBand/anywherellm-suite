@@ -68,7 +68,7 @@
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
         body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: cfg.title, docSource: "library-lean page" } }),
       });
-      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused this page's key: ask the agent for the Library page again" : "AnythingLLM answered " + res.status), false;
+      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anythingllm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
       toast("Sent");
       setTimeout(load, 1500);
       return true;
