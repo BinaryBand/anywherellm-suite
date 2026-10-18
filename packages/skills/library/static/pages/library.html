@@ -83,6 +83,7 @@
   const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
   let pubKey = null;
   async function seal(text) {
+    if (!window.crypto || !crypto.subtle) throw new Error("Open this page over https to give a key or a client secret: over plain http, the browser can't seal it");
     const bytes = new TextEncoder().encode(text);
     pubKey ||= await crypto.subtle.importKey("spki", Uint8Array.from(atob(cfg.pub), (c) => c.charCodeAt(0)), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
     if (bytes.length <= 190) return b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, bytes));
@@ -105,7 +106,11 @@
     node.onsubmit = async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()]));
-      if (await onsubmit(v)) node.reset();
+      try {
+        if (await onsubmit(v)) node.reset();
+      } catch (err) {
+        toast(err.message);
+      }
     };
     return node;
   }
@@ -145,7 +150,7 @@
       "Save the client",
       async (v) => (v.id ? saveClient(signIn, v.id, v.secret) : (toast("Give the client ID"), false)),
     );
-    const file = el("input", { type: "file", accept: ".json,application/json", hidden: true, onchange: () => file.files[0] && loadClient(signIn, redirect, file.files[0]).finally(() => (file.value = "")) });
+    const file = el("input", { type: "file", accept: ".json,application/json", hidden: true, onchange: () => file.files[0] && loadClient(signIn, redirect, file.files[0]).catch((err) => toast(err.message)).finally(() => (file.value = "")) });
     node.append(file, el("button", { className: "act quiet", type: "button", textContent: "Load the client's JSON file", onclick: () => file.click() }));
     return node;
   };

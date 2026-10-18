@@ -57,6 +57,26 @@ test("a runaway loop is stopped at the deadline", async () => {
   assert.ok(Date.now() - started < 2000);
 });
 
+test("a function that computes too long without awaiting is stopped, before or after an await, so AnythingLLM isn't held up", async () => {
+  const kit: Kit = { tick: () => Promise.resolve(1) };
+  for (const source of ["async function main() { while (true) {} }", "async function main(i, kit) { await kit.tick(); while (true) {} }"]) {
+    const started = Date.now();
+    const outcome = await run({ source, input: null, kit, deadline: soon(30_000) });
+    assert.equal(!outcome.ok && outcome.error.name, "Busy", source);
+    assert.match(!outcome.ok ? outcome.error.message : "", /without awaiting/);
+    assert.ok(Date.now() - started < LIMITS.busyMs + 1500, "stopped at the limit, not the deadline");
+  }
+});
+
+test("work split by awaits may take longer than the limit in all", async () => {
+  const source = `async function main(i, kit) {
+    for (let n = 0; n < 3; n++) { const until = Date.now() + ${LIMITS.busyMs * 0.6}; while (Date.now() < until) {} await kit.tick(); }
+    return "done";
+  }`;
+  const outcome = await run({ source, input: null, kit: { tick: () => new Promise((r) => setTimeout(() => r(1), 5)) }, deadline: soon(30_000) });
+  assert.deepEqual(outcome, { ok: true, value: "done" });
+});
+
 test("a function waiting on the host is stopped at the deadline, and the host is told to stop too", async () => {
   let aborted = false;
   const stop = new AbortController();

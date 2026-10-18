@@ -139,7 +139,7 @@
       },
       "definition": {
         "type": "object",
-        "description": "secret, kind oauth: { site, authorize_url, token_url, scopes, params } from the provider's docs (guide topic secrets)."
+        "description": "secret, kind oauth: { site, authorize_url, token_url, scopes, params, and client_auth \"basic\" or pkce false when the docs say so } from the provider's docs (guide topic secrets)."
       }
     }
   }

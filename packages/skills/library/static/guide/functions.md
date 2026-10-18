@@ -27,6 +27,6 @@ What kit offers:
 
 - input is the JSON the run was given; return JSON. Keep the answer to what the user needs (at most 64 KB as JSON): pick fields, count instead of listing.
 - Throw an Error to fail; its message and line are shown.
-- A run stops after 10 minutes (in a scheduled job, before the job's time runs out), after 200 requests, and when it uses too much memory.
+- A run stops after 10 minutes (in a scheduled job, before the job's time runs out), after 200 requests, when it uses too much memory, and when it computes for 2 s without awaiting anything: work through a big answer a page at a time.
 - A run the chat waited 40 s for goes on in the background: run answers with its run_id. Carry on; its end is shown at the top of a later library or run answer. run with run_id shows it, and stop: true stops it.
 - Don't put a key, a token or a password in a function: kit adds them as it sends.

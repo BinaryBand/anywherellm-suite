@@ -8,7 +8,7 @@ API keys and tokens:
 
 OAuth sign-ins, for APIs with no key to paste (mail, calendars, office suites, big platforms):
 1. From the provider's docs, find its authorize address, its token address, and the narrowest scopes the task needs. If the docs say a refresh token needs extra parameters (often access_type "offline" and prompt "consent"), put them in params.
-2. Call secret with kind "oauth", label (like "google") and definition { site, authorize_url, token_url, scopes, params }. site is where the tokens are sent (like "googleapis.com"). The answer says what OAuth client the user makes at the provider, with the redirect address to register: pass that on.
+2. Call secret with kind "oauth", label (like "google") and definition { site, authorize_url, token_url, scopes, params }. site is where the tokens are sent (like "googleapis.com"). If the docs say the client authenticates at the token address with HTTP Basic, add client_auth "basic" (the default, "body", sends its secret in the form); if the provider doesn't support PKCE, add pkce false. The answer says what OAuth client the user makes at the provider, with the redirect address to register: pass that on.
 3. When the user has the client, call secret again with kind "oauth" and the label: once the user gave the client's ID and secret on the Library page (the answer in step 2 has its link), the answer is a sign-in link for the user to open. It's good for 10 minutes.
 4. When they say they've signed in, call library: the sign-in shows as signed in. Name it in the toolkit's secrets, { "label": "google", "as": "bearer" }; it's renewed by itself as it runs out.
 
