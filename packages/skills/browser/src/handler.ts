@@ -127,7 +127,7 @@ async function askOnPage(self: HandlerContext, at: Tab, need: Omit<Need, "until"
   asking.field = fieldAt(asked.snap, need.secretRef); // the stored request, from the read it was asked with
   if (asked.page) return asked.text;
   at.entry.needs.delete(at.key);
-  throw new BrowserError(`${told}, and this AnythingLLM can't show the tab's page, where the user would enter it (its public folder can't be written, or no page key can be made)`);
+  throw new BrowserError(`${told}, and this AnythingLLM can't show the tab's page, where the user would enter it (its public folder can't be written, or no page key is set: anythingllm-suite install --page-key)`);
 }
 
 /** Which code a page asks for when the agent said only "code": by where its text says it went. */

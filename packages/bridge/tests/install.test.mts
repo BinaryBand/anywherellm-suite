@@ -13,7 +13,7 @@ import { FakeAnythingLLM } from "./fakes/anythingllm.mts";
 import { tempDir } from "./fakes/tmp.mts";
 
 const DEFAULT = "/workspaces, GET /scheduled-jobs, GET /workspace/*/threads, POST /workspace/*/thread/new";
-const PAYLOAD: Payload = { control: "// control\n", skills: [{ name: "library", hubId: "library-lean", files: { "handler.js": "// library\n" } }] };
+const PAYLOAD: Payload = { control: "// control\n", skills: [{ name: "library", hubId: "library-lean", files: { "handler.js": "// library\n" }, pages: true }] };
 const tmp = tempDir("install");
 
 let fake: FakeAnythingLLM;
@@ -126,7 +126,7 @@ test("uninstall takes it all out and forgets the storage; the skill's data and B
 test("health checks what install put in, and the bridge only when there is one", async () => {
   assert.equal(await health(ctx), false);
   assert.match(printed.join("\n"), /FAIL AnythingLLM's storage: not set: run install/);
-  await install(ctx, opts());
+  await install(ctx, opts({ pageKey: "brx-good" }));
   printed.length = 0;
   assert.equal(await health(ctx), true, printed.join("\n"));
   assert.ok(!printed.some((l) => /bridge on :|BRIDGE_ALLOW/.test(l)), printed.join("\n"));
@@ -134,6 +134,43 @@ test("health checks what install put in, and the bridge only when there is one",
   printed.length = 0;
   assert.equal(await health(ctx), false);
   assert.match(printed.join("\n"), /FAIL the control server: not this version's/);
+});
+
+test("the pages' key is kept for its owner alone, until another is given; health asks AnythingLLM about it", async () => {
+  await assert.rejects(install(ctx, opts({ pageKey: "good" })), /--page-key is a browser-extension key \(brx-\.\.\.\)/);
+  await install(ctx, opts());
+  assert.match(printed.join("\n"), /- The skills' pages need a key to post with: make one in AnythingLLM's Settings > Browser Extension/);
+  printed.length = 0;
+  assert.equal(await health(ctx), false);
+  assert.match(printed.join("\n"), /FAIL the pages' key: none: make one/);
+
+  const file = path.join(storage, "anythingllm-suite", "page-key");
+  await install(ctx, opts({ pageKey: "brx-good" }));
+  assert.equal(fs.readFileSync(file, "utf8"), "brx-good\n");
+  if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600); // Windows has no modes
+  printed.length = 0;
+  await install(ctx, opts());
+  assert.equal(fs.readFileSync(file, "utf8"), "brx-good\n", "kept when install isn't given one");
+  assert.ok(!printed.some((l) => l.includes("need a key")), printed.join("\n"));
+
+  fake.extensionKeys.delete("brx-good"); // revoked in AnythingLLM's settings
+  printed.length = 0;
+  assert.equal(await health(ctx), false);
+  assert.match(printed.join("\n"), /FAIL the pages' key: AnythingLLM refuses it \(403\)/);
+
+  printed.length = 0;
+  uninstall(ctx);
+  assert.match(printed.join("\n"), /the pages' key goes with it: revoke it in AnythingLLM's Settings > Browser Extension/);
+  assert.ok(!fs.existsSync(file));
+});
+
+test("with no skill that has pages, no key is asked for or checked", async () => {
+  const quiet: Ctx = { ...ctx, payload: { ...PAYLOAD, skills: [{ ...PAYLOAD.skills[0], pages: false }] } };
+  await install(quiet, opts());
+  assert.ok(!printed.some((l) => l.includes("need a key")), printed.join("\n"));
+  printed.length = 0;
+  assert.equal(await health(quiet), true, printed.join("\n"));
+  assert.ok(!printed.some((l) => l.includes("the pages' key")), printed.join("\n"));
 });
 
 test("with the bridge, health fails when it isn't answering, and says which check", async () => {

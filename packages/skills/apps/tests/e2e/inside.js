@@ -49,7 +49,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.equal(page.status, 200, "AnythingLLM serves the page");
   assert.match(page.headers.get("content-type"), /^text\/html/);
   const cfg = JSON.parse((await page.text()).match(/<script id="apps-lean" type="application\/json">(.*?)<\/script>/)[1]);
-  assert.ok(cfg.key.startsWith("brx-"), "the pages' key is a browser-extension key AnythingLLM made");
+  assert.ok(cfg.key.startsWith("brx-"), "the pages' key is the browser-extension key install was given");
   assert.ok(cfg.secret && !("base" in cfg), "the page has its app's secret, and no address of AnythingLLM's");
   const state = async () => (await fetch(stateUrl, { cache: "no-store" })).json();
   assert.deepEqual(Object.keys(await state()).sort(), ["data", "line", "refused", "seen", "version"]);

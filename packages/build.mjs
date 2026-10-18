@@ -85,7 +85,8 @@ export function staticFiles(dir) {
 
 /**
  * Bundles `entry` into `outfile`; `allowed` are path prefixes relative to `cwd`, as esbuild's
- * metafile writes them. `clean` is what to remove if the bundle took in anything else.
+ * metafile writes them. `clean` is what to remove if the bundle took in anything else. Answers the
+ * files it took in, as the metafile names them.
  * @param {{ entry: string, outfile: string, target: string, allowed: string[], label: string,
  *   define?: Record<string, string>, loader?: Record<string, "text">, clean?: string, cwd?: string,
  *   plugins?: import("esbuild").Plugin[] }} options
@@ -111,15 +112,17 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
     fs.rmSync(clean, { recursive: true, force: true });
     throw new Error(`${label} bundles files outside ${allowed.join(", ")}: ${stray.join(", ")}`);
   }
+  return Object.keys(metafile.inputs);
 }
 
 /** What install puts into the storage (bridge/src/addons.mts's Payload): the control server and
  *  every skill, built first. */
 async function payload() {
   const control = fs.readFileSync(await buildControl(), "utf8");
-  const skills = (await buildSkills([])).map(({ name, hubId, out }) => ({
+  const skills = (await buildSkills([])).map(({ name, hubId, out, pages }) => ({
     name,
     hubId,
+    pages,
     files: Object.fromEntries(fs.readdirSync(out).map((file) => [file, fs.readFileSync(path.join(out, file), "utf8")])),
   }));
   return { control, skills };
@@ -151,7 +154,8 @@ async function buildControl() {
 /** The skills: the folders of packages/skills with a src/handler.ts. */
 const skillNames = () => fs.readdirSync(path.join(here, "skills")).filter((name) => fs.existsSync(path.join(here, "skills", name, "src", "handler.ts")));
 
-/** Builds the skills `names` (none: every one); each one's name, hubId and output folder.
+/** Builds the skills `names` (none: every one); each one's name, hubId, output folder, and whether
+ *  it has pages (bundles shared/pages, so they post with the pages' key).
  *  @param {string[]} names */
 async function buildSkills(names) {
   const built = [];
@@ -160,7 +164,7 @@ async function buildSkills(names) {
     const { hubId, entrypoint } = JSON.parse(fs.readFileSync(path.join(dir, "plugin.json"), "utf8"));
     const out = path.join(dir, "build", hubId);
     fs.rmSync(out, { recursive: true, force: true });
-    await bundle({
+    const inputs = await bundle({
       entry: path.join(dir, "src", "handler.ts"),
       outfile: path.join(out, entrypoint.file),
       target: "node18",
@@ -172,7 +176,7 @@ async function buildSkills(names) {
     });
     fs.copyFileSync(path.join(dir, "plugin.json"), path.join(out, "plugin.json"));
     console.log(`built ${name} -> ${path.relative(here, out)}`);
-    built.push({ name, hubId, out });
+    built.push({ name, hubId, out, pages: inputs.includes("shared/pages.mts") });
   }
   return built;
 }

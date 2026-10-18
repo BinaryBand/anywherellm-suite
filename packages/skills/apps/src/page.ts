@@ -22,9 +22,6 @@ import * as store from "./store.ts";
 /** The title every page's events are posted under. */
 export const TITLE = "apps-lean-event";
 
-/** The key every page posts with. */
-export const keyForPages = (): Promise<string> => pageKey(root());
-
 /** The app's newest changes as log lines, as App.log gives them, each with the line it made. A
  *  change's fields come first, so a page's own can't stand in for what the app recorded. */
 const logOf = (app: Json): Json[] => store.numbered(app).map((h) => ({ ...(h.fields || {}), n: h.n, t: h.t, by: h.by, ev: h.ev, patch: h.patch }));
@@ -78,12 +75,12 @@ export const pageUrl = (token: unknown, base: string | null): string | null => (
 
 /** Writes the app's page at its address, giving the app a random token the first time; answers the
  *  token, or null where the public folder can't be written or the app has no page. */
-export async function publish(app: Json, workspace: string, key: () => Promise<string> = keyForPages): Promise<string | null> {
+export async function publish(app: Json, workspace: string): Promise<string | null> {
   if (!app.page) return null;
   const token = app.pageToken || newSecret();
   const version = versionOf(app);
   try {
-    putPublic(pageFile(token), render(app, workspace, await key(), version)!);
+    putPublic(pageFile(token), render(app, workspace, pageKey(), version)!);
     putPublic(stateFile(token), JSON.stringify(stateOf(app, version)));
   } catch {
     return null;
@@ -93,10 +90,10 @@ export async function publish(app: Json, workspace: string, key: () => Promise<s
 }
 
 /** Writes the page again for an app that has one, after it changed; quiet when it can't. */
-export async function refresh(workspace: string, name: string, key: () => Promise<string> = keyForPages): Promise<void> {
+export async function refresh(workspace: string, name: string): Promise<void> {
   try {
     const app = store.read(workspace, name);
-    if (app.pageToken) await publish(app, workspace, key);
+    if (app.pageToken) await publish(app, workspace);
   } catch {}
 }
 
@@ -231,7 +228,7 @@ const current = (app: Json): boolean => !!app.secret && app.version === versionO
 /** Once per process: writes again every page an older skill or older parts wrote (a page of an
  *  app with no secret yet gets one first), and removes what earlier editions left in the public
  *  folder: the font, and the 0.19 branch's manager pages. */
-export async function upgrade(key: () => Promise<string> = keyForPages): Promise<void> {
+export async function upgrade(): Promise<void> {
   const done = perProcess("apps.upgraded", () => ({ at: "" }));
   if (done.at === root()) return;
   done.at = root();
@@ -244,7 +241,7 @@ export async function upgrade(key: () => Promise<string> = keyForPages): Promise
     for (const app of store.list(workspace)) {
       if (app.broken || !app.pageToken || current(app)) continue;
       try {
-        await publish(app.secret ? app : await store.withSecret(workspace, app.name), workspace, key);
+        await publish(app.secret ? app : await store.withSecret(workspace, app.name), workspace);
       } catch {}
     }
 }
@@ -259,7 +256,7 @@ const words = (r: Result): string =>
  *  workspace's next chat call. Only an event whose app was found and whose secret matched says its
  *  workspace (Result), so a link can't write into another workspace's news, or anywhere a made-up
  *  workspace would name. */
-async function drain(key: () => Promise<string>): Promise<void> {
+async function drain(): Promise<void> {
   // What became of each event checked against its app, but for one seen before or put back.
   const results = (await collect()).filter((r): r is Result & { workspace: string; app: string } => !!r.workspace && !r.duplicate && !r.again);
   const byWorkspace = new Map<string, string[]>();
@@ -273,17 +270,17 @@ async function drain(key: () => Promise<string>): Promise<void> {
     } catch {} // a workspace whose news can't be kept still has its changes applied
   // Applied or refused: a page learns its refused change was seen, and drops it.
   const touched = new Map(results.map((r) => [`${r.workspace}/${r.app}`, r]));
-  for (const r of touched.values()) await refresh(r.workspace, r.app, key);
+  for (const r of touched.values()) await refresh(r.workspace, r.app);
 }
 
 /** Takes what pages posted before a call reads any app, after whatever pass is already running. */
-export const caughtUp = (key: () => Promise<string> = keyForPages): Promise<void> => inTurn(TITLE, () => drain(key));
+export const caughtUp = (): Promise<void> => inTurn(TITLE, drain);
 
 /** Applies what pages post as it lands, for as long as AnythingLLM's process runs: not in a
  *  scheduled job's, which ends within minutes (the next chat call takes what it left). */
 export function keepWatching(): void {
   if (jobTimeLeft() !== null) return;
-  watch(TITLE, () => drain(keyForPages), () => Infinity);
+  watch(TITLE, drain, () => Infinity);
 }
 
 /** What pages did in `workspace` since its last chat call, in words for the agent, and forgotten

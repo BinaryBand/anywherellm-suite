@@ -2,10 +2,11 @@
 # tools/e2e: the suite against the real thing. Starts a throwaway AnythingLLM (the image in
 # contract/versions.env) on a free port with its storage bind-mounted from a temporary folder, as
 # AnythingLLM's Docker instructions do; runs the built `anythingllm-suite install --bridge` into that
-# storage, the bridge's `serve` on another free port, makes a developer key and a workspace, and runs
-# tools/e2e.test.mts. Everything lives in the temporary folder and a container of its own; both are
-# removed on the way out, pass or fail, and nothing running on this machine (an AnythingLLM on
-# :3001, a bridge on :8467, the user's settings or service manager) is touched.
+# storage (with a browser-extension key for the pages), the bridge's `serve` on another free port,
+# makes a developer key and a workspace, and runs tools/e2e.test.mts. Everything lives in the
+# temporary folder and a container of its own; both are removed on the way out, pass or fail, and
+# nothing running on this machine (an AnythingLLM on :3001, a bridge on :8467, the user's settings
+# or service manager) is touched.
 #
 # The storage must be writable from both sides: with podman the container's user is the host user
 # (keep-id); with docker the container makes it world-writable once AnythingLLM has made it.
@@ -32,9 +33,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# json <expression>: reads JSON on stdin as `j` and prints the expression.
-json() { node -e "let s = ''; process.stdin.on('data', (d) => (s += d)).on('end', () => { const j = JSON.parse(s); console.log($1); });"; }
-
 allm_port=$(free_port)
 bridge_port=$(free_port)
 password=$(head -c 12 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
@@ -54,11 +52,16 @@ echo "[e2e] AnythingLLM ($IMAGE) on :$allm_port, its storage in $storage"
 wait_until "AnythingLLM" curl -fs "$allm/api/ping"
 open_storage
 
+# A login, as AnythingLLM's pages make one, and the pages' key, as Settings > Browser Extension makes one.
+token=$(curl -fs -X POST "$allm/api/request-token" -H 'Content-Type: application/json' \
+  -d "{\"password\":\"$password\"}" | json 'j.token')
+page_key=$(curl -fs -X POST "$allm/api/browser-extension/api-keys/new" -H "Authorization: Bearer $token" | json 'j.apiKey')
+
 echo "[e2e] anythingllm-suite install --bridge, built from packages/"
 (cd "$ROOT/packages" && node build.mjs bridge >/dev/null)
 cli="$ROOT/packages/bridge/dist/anythingllm-suite.cjs"
 export BRIDGE_ENV_FILE="$work/bridge.env" BRIDGE_PORT="$bridge_port" ANYTHINGLLM_URL="$allm"
-node "$cli" install --storage "$storage" --roles chat,schedule --bridge --no-start >"$work/install.log"
+node "$cli" install --storage "$storage" --roles chat,schedule --page-key "$page_key" --bridge --no-start >"$work/install.log"
 
 echo "[e2e] the bridge on :$bridge_port"
 node "$cli" serve >"$work/bridge.log" 2>&1 &
@@ -66,8 +69,6 @@ bridge_pid=$!
 wait_until "the bridge" curl -fs "$bridge/health"
 
 # A developer key, as the settings page makes one, and a workspace for the tests to find.
-token=$(curl -fs -X POST "$allm/api/request-token" -H 'Content-Type: application/json' \
-  -d "{\"password\":\"$password\"}" | json 'j.token')
 key=$(curl -fs -X POST "$allm/api/system/generate-api-key" -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' -d '{"name":"e2e"}' | json 'j.apiKey.secret')
 workspace=$(curl -fs -X POST "$allm/api/v1/workspace/new" -H "Authorization: Bearer $key" \

@@ -9,6 +9,8 @@ import os from "node:os";
 import path from "node:path";
 import { after } from "node:test";
 import { fileURLToPath } from "node:url";
+import { pageKeyFile } from "#shared/anythingllm";
+import { writeAtomic } from "#shared/atomic";
 
 const require = createRequire(import.meta.url);
 export const testsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +24,7 @@ export const library = path.join(storage, "library-lean");
 process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 process.env.ANYTHINGLLM_SERVER_DIR = path.join(testsDir, "fixtures", "server");
+writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.FENCE_ALLOW = "127.0.0.1";
 process.env.SIG_KEY = "test-sig-key";
 process.env.SIG_SALT = "test-sig-salt";

@@ -9,6 +9,8 @@ import os from "node:os";
 import path from "node:path";
 import { after } from "node:test";
 import { fileURLToPath } from "node:url";
+import { pageKeyFile } from "#shared/anythingllm";
+import { writeAtomic } from "#shared/atomic";
 import { staticFiles } from "../../../build.mjs";
 
 const require = createRequire(import.meta.url);
@@ -23,7 +25,7 @@ export const root = path.join(storage, "apps-lean");
 export const eventsDir = path.join(storage, "documents", "custom-documents");
 process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
-process.env.ANYTHINGLLM_SERVER_DIR = path.join(testsDir, "fixtures", "server");
+writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 
 // The static/ folder as build.mjs inlines it, for the modules a test imports from src.
 (globalThis as unknown as { STATIC_FILES: Record<string, string> }).STATIC_FILES = staticFiles(path.join(skillDir, "static"));

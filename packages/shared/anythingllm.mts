@@ -2,6 +2,7 @@
 // requires by a path built at run time (so esbuild leaves them alone). AnythingLLM's server code is
 // not a public API: each skill types what it uses of it (its host.ts).
 
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 
@@ -38,6 +39,22 @@ export function serial<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
   const run = queue.tail.then(fn);
   queue.tail = run.catch(() => {});
   return run;
+}
+
+/** The suite's own folder in the storage: the control server, and the pages' key. */
+export const SUITE_DIR = "anythingllm-suite";
+
+/** The browser-extension key the skills' pages post with, which install keeps in the storage
+ *  (`install --page-key`): one the user made in AnythingLLM's Settings > Browser Extension. */
+export const pageKeyFile = (storage: string): string => path.join(storage, SUITE_DIR, "page-key");
+
+/** The pages' key, or "" when install was given none. */
+export function readPageKey(storage: string): string {
+  try {
+    return fs.readFileSync(pageKeyFile(storage), "utf8").trim();
+  } catch {
+    return "";
+  }
 }
 
 /** Where a skill's description (in its plugin.json, which AnythingLLM reads for each agent run)

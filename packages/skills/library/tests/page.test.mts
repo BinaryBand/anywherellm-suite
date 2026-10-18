@@ -15,7 +15,7 @@ test("library ends with the page's link: relative, or absolute with ANYTHINGLLM_
   const said = await call({ action: "library" }, { base: "https://llm.example.com/" });
   const { token, key, secret } = pageConfig();
   assert.ok(said.endsWith(`https://llm.example.com/library-lean/${token}.html`));
-  assert.match(key, /^brx-test-\d+$/, "the page posts with a browser-extension key the skill made");
+  assert.equal(key, "brx-test", "the page posts with the browser-extension key install keeps");
   assert.ok(secret.length >= 20);
 });
 

@@ -6,7 +6,7 @@
 import { Told } from "#shared/errors";
 import { card, headline } from "./card.ts";
 import type { HandlerContext } from "./host.ts";
-import { caughtUp, keepWatching, keyForPages, news, pageUrl, publish, refresh, unpublish, upgrade } from "./page.ts";
+import { caughtUp, keepWatching, news, pageUrl, publish, refresh, unpublish, upgrade } from "./page.ts";
 import type { Json } from "./patch.ts";
 import * as parts from "./parts.ts";
 import { withDefaults } from "./schema.ts";
@@ -312,20 +312,17 @@ async function run(self: HandlerContext, params: Args): Promise<string> {
   const act: Action = ACTIONS[action];
   const rule = RULES[action];
   const scope = scopeFor(self, action, params);
-  // One key for every page a call writes, asked for when the first needs it.
-  let asked: Promise<string> | undefined;
-  const key = () => (asked ??= keyForPages());
   // Pages' changes are applied as they land, by a watch that lasts as long as AnythingLLM's process;
   // a call takes what's waiting first, so it reads every app as its pages left it.
   keepWatching();
   if (!rule.quiet) {
     // What older pages posted, before upgrade gives their apps a secret those pages don't have.
-    await caughtUp(key);
+    await caughtUp();
     // A job's process ends within minutes and starts afresh each run: the chat's does this.
-    if (!scope.job) await upgrade(key);
+    if (!scope.job) await upgrade();
   }
   const reply = await act(scope, params, self);
-  if (rule.changes && params.name) await refresh(scope.workspace, params.name, key);
+  if (rule.changes && params.name) await refresh(scope.workspace, params.name);
   // What pages did is said once, in the workspace's next chat call; a scheduled job is told none.
   const lines = rule.quiet || scope.job ? [] : await news(scope.workspace);
   return lines.length ? [...lines, "", reply].join("\n") : reply;

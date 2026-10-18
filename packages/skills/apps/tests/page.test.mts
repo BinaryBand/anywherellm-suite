@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, test } from "node:test";
 import vm from "node:vm";
-import { definitionFor, publicDir, root, storage } from "./harness.mts";
-import { keyForPages, pageUrl, publish, refresh, render, stateOf, unpublish } from "../src/page.ts";
+import { definitionFor, publicDir, storage } from "./harness.mts";
+import { pageUrl, publish, refresh, render, stateOf, unpublish } from "../src/page.ts";
 import { apply } from "../src/patch.ts";
 import * as parts from "../src/parts.ts";
 import * as store from "../src/store.ts";
@@ -13,7 +13,6 @@ const listPage = () => parts.compose(parts.template("column"), "item-list");
 const groceries = (items: unknown[] = [{ text: "Eggs", done: true }, { text: "</script><b>", done: false }]) => ({
   name: "groceries", changed: "2026-10-13T12:00:00Z", line: 4, seen: ["a"], ...definitionFor("list", { title: "Groceries" }), page: listPage(), data: { items },
 });
-const key = async () => "brx-k";
 
 test("a page is rendered with this skill's stand-in for a server", () => {
   const html = render({ ...groceries(), secret: "s3cret" }, "home", "brx-test")!;
@@ -31,26 +30,19 @@ test("a page is rendered with this skill's stand-in for a server", () => {
   assert.equal(render({ ...groceries(), page: undefined }, "home", "k"), null, "an app with no page has none to render");
 });
 
-test("pages share one key, kept beside the apps for the owner alone", async () => {
-  const first = await keyForPages();
-  assert.match(first, /^brx-test-\d+$/);
-  assert.equal(await keyForPages(), first);
-  if (process.platform !== "win32") assert.equal(fs.statSync(path.join(root, ".page-key.json")).mode & 0o777, 0o600);
-});
-
 test("a page is published at one random address, rewritten and removed", async () => {
   await store.create("home", "shop", definitionFor("list", { title: "Shop" }));
   await store.writeFile("home", "shop", "page.html", listPage());
-  const token = await publish(store.read("home", "shop"), "home", key);
+  const token = await publish(store.read("home", "shop"), "home");
   assert.equal(token, store.read("home", "shop").pageToken);
   assert.equal(pageUrl(token, "https://owen.example:3001/"), `https://owen.example:3001/apps-lean/${token}.html`);
   assert.equal(pageUrl(token, null), `/apps-lean/${token}.html`, "relative without AnythingLLM's address");
   const file = path.join(publicDir, "apps-lean", `${token}.html`);
   assert.ok(!fs.existsSync(path.join(publicDir, "_apps")), "no font beside it: pages use the system's own");
   await store.change("home", "shop", { patch: [{ op: "add", path: "/items/-", value: { text: "Tea", done: false } }] });
-  await refresh("home", "shop", key);
+  await refresh("home", "shop");
   assert.match(fs.readFileSync(file, "utf8"), /"text":"Tea"/);
-  assert.equal(await publish(store.read("home", "shop"), "home", key), token, "the address stays");
+  assert.equal(await publish(store.read("home", "shop"), "home"), token, "the address stays");
   unpublish(store.read("home", "shop"));
   assert.ok(!fs.existsSync(file));
 });
@@ -63,7 +55,7 @@ test("where the public folder can't be written there is no address", async () =>
   process.env.ANYTHINGLLM_PUBLIC_DIR = path.join(blocker, "public");
   try {
     await store.create("home", "nowhere", { ...definitionFor("list", { title: "Nowhere" }), page: listPage() }, undefined);
-    assert.equal(await publish(store.read("home", "nowhere"), "home", key), null);
+    assert.equal(await publish(store.read("home", "nowhere"), "home"), null);
     assert.equal(store.read("home", "nowhere").pageToken, undefined);
   } finally {
     process.env.ANYTHINGLLM_PUBLIC_DIR = was;
@@ -169,7 +161,7 @@ test("a page whose parts changed reloads, unless the user is typing; a deleted a
 
 test("publishing writes the page's state beside it, and deleting leaves a note that it's gone", async () => {
   await store.create("home", "stated", { ...definitionFor("list", { title: "Stated" }), page: listPage() });
-  const token = (await publish(store.read("home", "stated"), "home", key))!;
+  const token = (await publish(store.read("home", "stated"), "home"))!;
   const state = JSON.parse(fs.readFileSync(path.join(publicDir, "apps-lean", `${token}.json`), "utf8"));
   assert.deepEqual(Object.keys(state).sort(), ["data", "line", "refused", "seen", "version"], "never the secret, the plan or the history");
   unpublish(store.read("home", "stated"));

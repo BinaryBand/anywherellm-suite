@@ -3,23 +3,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
+import { pageKeyFile } from "./anythingllm.mts";
+import { writeAtomic } from "./atomic.mts";
+import { Told } from "./errors.mts";
 import { embed, eventsDir, inTurn, pageKey, putBack, take, watch, writePublic, publicDir } from "./pages.mts";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pages-"));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 process.env.STORAGE_DIR = path.join(tmp, "storage");
 process.env.ANYTHINGLLM_PUBLIC_DIR = path.join(tmp, "public");
-process.env.ANYTHINGLLM_SERVER_DIR = path.join(tmp, "server");
-
-// AnythingLLM's browser-extension keys, standing in: the ones it made are valid until revoked.
-const made = new Set<string>();
-fs.mkdirSync(path.join(tmp, "server", "models"), { recursive: true });
-fs.writeFileSync(
-  path.join(tmp, "server", "models", "browserExtensionApiKey.js"),
-  `let n = 0; const made = globalThis.__made; module.exports = { BrowserExtensionApiKey: {
-    validate: async (k) => made.has(k), create: async () => { const key = "brx-" + ++n; made.add(key); return { apiKey: { key } }; } } };`,
-);
-(globalThis as { __made?: Set<string> }).__made = made;
 
 /** An event as AnythingLLM's collector writes what a page posted, `ms` ago. */
 function posted(title: string, event: unknown, ms = 0, name = `${Math.random().toString(36).slice(2)}`) {
@@ -114,16 +106,11 @@ test("embedded JSON can't end a script or start markup", () => {
   assert.deepEqual(JSON.parse(text), { x: "</script><script>alert(1)</script>&\u2028" });
 });
 
-test("the pages' key is kept, and made again once AnythingLLM no longer takes it", async () => {
-  const dir = path.join(tmp, "data");
-  const first = await pageKey(dir);
-  assert.equal(await pageKey(dir), first);
-  made.delete(first); // revoked in AnythingLLM's settings
-  assert.equal(await pageKey(dir), first, "taken as valid for a few minutes, without asking AnythingLLM");
-  delete (globalThis as unknown as Record<symbol, unknown>)[Symbol.for("anythingllm-suite.pages.key-checked")];
-  const second = await pageKey(dir);
-  assert.notEqual(second, first);
-  if (process.platform !== "win32") assert.equal((fs.statSync(path.join(dir, ".page-key.json")).mode & 0o777).toString(8), "600"); // Windows has no modes
+test("the pages' key is the one install keeps; with none, the refusal says how to set it", () => {
+  const file = pageKeyFile(process.env.STORAGE_DIR!);
+  assert.throws(() => pageKey(), (e: Error) => e instanceof Told && e.message.includes("install --page-key"));
+  writeAtomic(file, "brx-1\n");
+  assert.equal(pageKey(), "brx-1");
 });
 
 test("a public file is written where AnythingLLM serves it", () => {

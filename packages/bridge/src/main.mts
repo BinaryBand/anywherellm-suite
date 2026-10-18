@@ -23,6 +23,7 @@ const USAGE = `usage: anythingllm-suite <command>
 
   install [--storage DIR]        put the control server and the skills into AnythingLLM's storage
           [--runtime container|native] [--roles chat,schedule] [--skills all|none|NAME,...]
+          [--page-key brx-...]   the key the skills' pages post with (Settings > Browser Extension)
           [--bridge [--no-start] [--service systemd|launchd|windows|foreground|auto]]
                                  and set up the bridge for AnywhereLLM Lite
   uninstall [--storage DIR]      take them out again, and stop the bridge
@@ -53,6 +54,7 @@ const OPTIONS: Record<string, ParseArgsConfig["options"]> = {
     runtime: { type: "string" },
     roles: { type: "string" },
     skills: { type: "string" },
+    "page-key": { type: "string" },
     bridge: { type: "boolean" },
     "no-start": { type: "boolean" },
     service: { type: "string" },
@@ -85,6 +87,7 @@ async function main(argv: string[]): Promise<number | void> {
         runtime: text("runtime") as Runtime | undefined,
         roles: list(values.roles),
         skills: list(values.skills),
+        pageKey: text("page-key"),
         bridge: Boolean(values.bridge),
         start: !values["no-start"],
         service: text("service"),

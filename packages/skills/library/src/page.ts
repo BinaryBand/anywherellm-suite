@@ -93,7 +93,7 @@ const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.j
 export async function show(base: string | null): Promise<string> {
   const kept = read();
   const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
-  putPublic(`${p.token}.html`, await pageHtml(template("library"), store.libraryDir(), { token: p.token, secret: p.secret, title: TITLE }));
+  putPublic(`${p.token}.html`, await pageHtml(template("library"), { token: p.token, secret: p.secret, title: TITLE }));
   writeState(p, base);
   watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
   return `${base ?? ""}/${pub(`${p.token}.html`)}`;
@@ -109,7 +109,7 @@ export function refresh(base: string | null): void {
  *  `state`; removes those of sign-ins no longer waited for, and watches while one is. */
 export async function oauthPage(state: string): Promise<void> {
   putPublic(path.basename(OAUTH_PAGE), template("oauth"));
-  putPublic(`s-${state}.json`, JSON.stringify({ key: await pageKey(store.libraryDir()), title: TITLE }));
+  putPublic(`s-${state}.json`, JSON.stringify({ key: pageKey(), title: TITLE }));
   const keep = new Set(waiting().map((s) => `s-${s}.json`));
   for (const old of listPublic(pub("")).filter((f) => f.startsWith("s-") && !keep.has(f))) removePublic(pub(old));
   await change((p) => void (p.watchUntil = Math.max(p.watchUntil, Date.now() + PENDING_MS + 60 * 1000)));

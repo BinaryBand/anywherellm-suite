@@ -2,7 +2,7 @@
 # tools/e2e-skill [skill ...]: a skill's own check inside a real AnythingLLM. For each skill (no
 # argument: every skill with a tests/e2e/inside.js) it starts a throwaway AnythingLLM (the image in
 # contract/versions.env) on fresh storage, installs the built skill with `anythingllm-suite install
-# --skills`, and runs the skill's tests/e2e/inside.js in the container. The container and the
+# --skills` (and a browser-extension key it made, --page-key), and runs the skill's tests/e2e/inside.js in the container. The container and the
 # temporary folder are removed afterwards, pass or fail; nothing running on this machine is touched.
 #
 # Fresh storage matters: a folder left from an earlier run has tabs whose pages are gone. (Not
@@ -42,7 +42,9 @@ e2e() {
   wait_until "AnythingLLM" up
   open_storage
 
-  BRIDGE_ENV_FILE="$work/bridge.env" node "$cli" install --storage "$work/storage" --skills "$1"
+  # The pages' key, as Settings > Browser Extension makes one (this AnythingLLM has no password).
+  page_key=$(curl -fs -X POST "http://127.0.0.1:$port/api/browser-extension/api-keys/new" | json 'j.apiKey')
+  BRIDGE_ENV_FILE="$work/bridge.env" node "$cli" install --storage "$work/storage" --skills "$1" --page-key "$page_key"
   "$engine" exec -w /app/server -e HUB_ID="$HUB_ID" -e STORAGE_DIR="$INNER_STORAGE" -e INNER_PORT="$INNER_PORT" \
     -e FENCE_ALLOW=127.0.0.1,localhost "$name" node /e2e/inside.js
   echo "tools/e2e-skill: $1 ok"

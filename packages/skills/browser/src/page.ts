@@ -22,7 +22,7 @@ import { isUnsent, submitted, typeIn } from "./act";
 import * as logins from "./logins";
 import * as passkey from "./passkey";
 import { type Snap, asksPassword, fieldOf, isPasswordLine, lineOf, readPage } from "./snapshot";
-import { type Entry, NEED_MS, type Need, OFFER_MS, type Tab, VIEWPORT, clip, holder, live, note, say, skillDir, state, statics, workspaceDir } from "./state";
+import { type Entry, NEED_MS, type Need, OFFER_MS, type Tab, VIEWPORT, clip, holder, live, note, say, state, statics, workspaceDir } from "./state";
 import * as takeover from "./takeover";
 
 const TITLE = "browser-lean-event";
@@ -110,7 +110,7 @@ function tabState(at: Tab, title: string, url: string, snap: Snap) {
 
 /** Takes the tab's picture (and with `card`, the card's crop) and writes its state, from the page as
  *  just read, and its page (with the card, or when it has none); answers the page's token, or null
- *  where AnythingLLM's public folder can't be written (AnythingLLM Desktop) or no page key can be made. */
+ *  where AnythingLLM's public folder can't be written (AnythingLLM Desktop) or no page key is set. */
 async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<string | null> {
   await takeover.keepOffer(at, asksPassword(snap)); // before the state shows the logins
   const names = namesOf(at.workspace, at.key)!;
@@ -123,7 +123,7 @@ async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<stri
       await at.page.screenshot({ path: `${shot}-card.jpg`, type: "jpeg", quality: QUALITY, clip: { x: 0, y: 0, width, height: Math.min(height, Math.round(width * 1.2)), scale: 0.5 } });
     }
     writePublic(pub(names.token, ".json"), JSON.stringify(tabState(at, title, at.page.url(), snap)));
-    if (card || !fs.existsSync(`${shot}.html`)) writePublic(pub(names.token, ".html"), await pageHtml(statics().get("pages/tab.html")!.text, skillDir(), { token: names.token, secret: names.secret, title: TITLE, workspace: at.workspace, tab: at.key }));
+    if (card || !fs.existsSync(`${shot}.html`)) writePublic(pub(names.token, ".html"), await pageHtml(statics().get("pages/tab.html")!.text, { token: names.token, secret: names.secret, title: TITLE, workspace: at.workspace, tab: at.key }));
   } catch {
     return null;
   }

@@ -1,9 +1,10 @@
 // Putting the suite on this machine.
 //
 // install     the control server and the skills into an AnythingLLM's storage folder, where
-//             AnythingLLM runs them itself (addons.mts); with --bridge also the bridge AnywhereLLM
-//             Lite calls: pointed at the storage (its password), BRIDGE_ALLOW set to the clients'
-//             when none is, and started under the user's service manager (service/)
+//             AnythingLLM runs them itself (addons.mts), and the key their pages post with when
+//             given one (--page-key); with --bridge also the bridge AnywhereLLM Lite calls: pointed
+//             at the storage (its password), BRIDGE_ALLOW set to the clients' when none is, and
+//             started under the user's service manager (service/)
 // uninstall   all of that taken out again, and the bridge stopped
 // health      every check; false when one fails
 //
@@ -14,12 +15,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { readPageKey } from "#shared/anythingllm";
 import { invalid } from "#shared/errors";
 import { readEnv, saveEnv } from "#shared/envfile";
 import { desktopStorage, expandHome, samePath, type Place } from "#shared/paths";
 import { DEFAULT_ROLES, ROLES } from "#shared/roles";
 import { request, Upstream } from "#shared/upstream";
-import { checks, chosen, current, entry, INNER_STORAGE, NAME, put, take, type Check, type Payload, type Runtime } from "./addons.mts";
+import { checks, chosen, current, entry, INNER_STORAGE, NAME, needsPageKey, put, putPageKey, take, type Check, type Payload, type Runtime } from "./addons.mts";
 import { choose, foreground, managerOf, parseKind, run, type Host, type Manager, type Run } from "./service/index.mts";
 import { fileFor, loadSettings, shown, type Settings } from "./settings.mts";
 
@@ -48,6 +50,8 @@ export interface Options {
   roles?: string[];
   /** Skill names, "all" or "none"; all when not given. */
   skills?: string[];
+  /** The browser-extension key the skills' pages post with, made in AnythingLLM's Settings > Browser Extension. */
+  pageKey?: string;
   bridge: boolean;
   start: boolean;
   /** BRIDGE_SERVICE to save: a manager's name, or "auto" to choose by the OS. */
@@ -90,6 +94,7 @@ export async function install(ctx: Ctx, opts: Options): Promise<void> {
   if (opts.runtime && !RUNTIMES.includes(opts.runtime)) throw invalid(`--runtime is container or native, not ${opts.runtime}`);
   const unknown = (opts.roles ?? []).filter((r) => !ROLES.includes(r));
   if (unknown.length || opts.roles?.length === 0) throw invalid(`--roles is one or more of ${ROLES.join(", ")}${unknown.length ? `, not ${unknown.join(", ")}` : ""}`);
+  if (opts.pageKey !== undefined && !/^brx-\S+$/.test(opts.pageKey)) throw invalid(`--page-key is a browser-extension key (brx-...), as AnythingLLM's Settings > Browser Extension makes one`);
   const skills = chosen(ctx.payload, opts.skills);
   const service = opts.service === undefined ? undefined : parseKind(opts.service);
   const storage = storageFor(ctx, opts.storage);
@@ -98,6 +103,7 @@ export async function install(ctx: Ctx, opts: Options): Promise<void> {
   const roles = opts.roles ?? was?.roles ?? DEFAULT_ROLES;
   ctx.print(`AnythingLLM's storage: ${storage} (${runtime === "container" ? `a container's, seen there as ${INNER_STORAGE}` : "AnythingLLM runs on this machine"})`);
   for (const line of put(storage, ctx.payload, entry(runtime, storage, roles, ctx.node), skills)) ctx.print(line);
+  if (opts.pageKey) ctx.print(putPageKey(storage, opts.pageKey));
 
   const file = fileFor(ctx);
   const changes: Record<string, string | null> = { ANYTHINGLLM_STORAGE: storage };
@@ -109,7 +115,7 @@ export async function install(ctx: Ctx, opts: Options): Promise<void> {
   saveEnv(file, changes);
   const settings = loadSettings(ctx);
   if (opts.bridge && opts.start) await start(ctx, settings, file);
-  leftForYou(ctx, settings, file, runtime, opts.bridge);
+  leftForYou(ctx, settings, file, runtime, opts.bridge, needsPageKey(storage, ctx.payload) && !readPageKey(storage));
 }
 
 async function start(ctx: Ctx, settings: Settings, file: string): Promise<void> {
@@ -131,9 +137,10 @@ const definedIn = (ctx: Ctx, settings: Settings): Manager | null => {
 };
 
 /** What install could not do for the owner. */
-function leftForYou(ctx: Ctx, settings: Settings, file: string, runtime: Runtime, bridge: boolean): void {
+function leftForYou(ctx: Ctx, settings: Settings, file: string, runtime: Runtime, bridge: boolean, askKey: boolean): void {
   ctx.print("\nLeft for you:");
   ctx.print(`- In AnythingLLM, Settings > Agent Skills: refresh the MCP servers (or restart AnythingLLM) so it starts \`${NAME}\`, and switch on the skills you want.`);
+  if (askKey) ctx.print(`- The skills' pages need a key to post with: make one in AnythingLLM's Settings > Browser Extension, then run install again with --page-key <key>.`);
   if (runtime === "native") ctx.print(`- The entry starts the server with ${ctx.node}; run install again if that Node moves.`);
   if (!bridge) return;
   if (!settings.envFile || !fs.existsSync(settings.envFile)) {
@@ -159,9 +166,14 @@ export function uninstall(ctx: Ctx, opts: { storage?: string } = {}): void {
 /** Every health check; false when one failed. */
 export async function health(ctx: Ctx): Promise<boolean> {
   const settings = loadSettings(ctx);
-  const found: Check[] = settings.storage ? [["AnythingLLM's storage", fs.existsSync(settings.storage), settings.storage], ...checks(settings.storage, ctx.payload)] : [["AnythingLLM's storage", false, "not set: run install"]];
+  const { storage } = settings;
+  const found: Check[] = storage ? [["AnythingLLM's storage", fs.existsSync(storage), storage], ...checks(storage, ctx.payload)] : [["AnythingLLM's storage", false, "not set: run install"]];
   const manager = definedIn(ctx, settings);
-  if (manager || readEnv(fileFor(ctx)).BRIDGE_ALLOW !== undefined) found.push(...(await bridgeChecks(settings, manager)));
+  const [key, bridge] = await Promise.all([
+    storage && needsPageKey(storage, ctx.payload) ? pageKeyCheck(storage, settings.anythingllmUrl) : null,
+    manager || readEnv(fileFor(ctx)).BRIDGE_ALLOW !== undefined ? bridgeChecks(settings, manager) : [],
+  ]);
+  found.push(...(key ? [key] : []), ...bridge);
   for (const [what, ok, detail] of found) ctx.print(`${ok ? "ok  " : "FAIL"} ${what}${detail ? `: ${detail}` : ""}`);
   return found.every(([, ok]) => ok);
 }
@@ -184,6 +196,19 @@ async function bridgeChecks(settings: Settings, manager: Manager | null): Promis
   const allowed = shown(settings).BRIDGE_ALLOW;
   found.push(["BRIDGE_ALLOW", Boolean(allowed), allowed || "empty: the bridge passes nothing"], route);
   return found;
+}
+
+/** Whether install kept a key for the pages, and AnythingLLM takes it (the browser extension's own check). */
+async function pageKeyCheck(storage: string, anythingllmUrl: string): Promise<Check> {
+  const name = "the pages' key";
+  const key = readPageKey(storage);
+  if (!key) return [name, false, "none: make one in AnythingLLM's Settings > Browser Extension, then run install --page-key <key>"];
+  try {
+    const { status } = await request(`${anythingllmUrl}/api/browser-extension/check`, { token: key, timeout: 5_000 });
+    return [name, status === 200, status === 200 ? "" : `AnythingLLM refuses it (${status}): make a new one and run install --page-key again`];
+  } catch (e) {
+    return [name, false, `not checked: ${(e as Error).message} (${anythingllmUrl}; set ANYTHINGLLM_URL)`];
+  }
 }
 
 async function loginCheck(settings: Settings): Promise<Check> {

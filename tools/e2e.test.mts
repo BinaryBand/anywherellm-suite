@@ -153,5 +153,6 @@ test("health passes for what install set up", run, () => {
   const done = spawnSync(process.execPath, [env("E2E_CLI"), "health"], { encoding: "utf8" });
   assert.equal(done.status, 0, done.stdout + done.stderr);
   assert.match(done.stdout, /ok +the control entry/);
+  assert.match(done.stdout, /ok +the pages' key/);
   assert.match(done.stdout, /ok +bridge on :/);
 });

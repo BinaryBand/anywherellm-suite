@@ -1,6 +1,6 @@
 // Run inside a stock AnythingLLM container whose server is running (podman exec; see the skill's
-// notes): the Library page as AnythingLLM really serves it and really takes what it posts. The skill
-// makes its page key through AnythingLLM's own model; the page and its state are fetched from the
+// notes): the Library page as AnythingLLM really serves it and really takes what it posts. The
+// pages' key is the one install was given (--page-key); the page and its state are fetched from the
 // server; a key is given through the real browser-extension upload (the collector writes the event)
 // and lands in the vault; then an OAuth sign-in against a stand-in provider, its client given on the
 // page and its code posted the way
@@ -55,7 +55,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const pagePath = asked.match(/(\/library-lean\/[\w-]+\.html)/)[1];
   const html = await (await fetch(SERVER + pagePath)).text();
   const cfg = JSON.parse(html.match(/const cfg = (\{.*?\});/)[1]);
-  assert.match(cfg.key, /^brx-/, "a browser-extension key AnythingLLM made");
+  assert.match(cfg.key, /^brx-/, "the browser-extension key install was given");
   const state = await (await fetch(SERVER + pagePath.replace(/\.html$/, ".json"))).json();
   assert.deepEqual(state.needs, [{ label: "ex", site: "api.example.com", kind: "key" }], "the server serves the page's state");
 

@@ -1,8 +1,9 @@
 // A skill's own web pages, which AnythingLLM serves itself: the files go into its public folder
 // (served to any browser without a sign-in), and a page has no server of its own to answer to.
 // It posts each thing the user does as a raw-text document titled after the skill through
-// AnythingLLM's browser-extension upload, with a browser-extension key the skill made for its pages
-// (it can store documents, never read chats or documents). AnythingLLM's collector writes each one
+// AnythingLLM's browser-extension upload, with the browser-extension key install keeps for the pages
+// (`install --page-key`, one the user made in Settings > Browser Extension; it can store documents,
+// never read chats or documents). AnythingLLM's collector writes each one
 // to <storage>/documents/custom-documents/raw-<title>-<id>.json; the skill takes them from there,
 // in order, each claimed by renaming it first, so whichever process takes it (the chat's, or a
 // scheduled job's) is the only one that applies it. Ported from the lean browser skill's key.js, page.js and
@@ -11,7 +12,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { perProcess, serverDir, serverRequire, storageDir } from "./anythingllm.mts";
+import { pageKeyFile, perProcess, readPageKey, serverDir, storageDir } from "./anythingllm.mts";
+import { Told } from "./errors.mts";
 import { writeAtomic } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
 
@@ -21,8 +23,6 @@ const PARTIAL_MS = 5000;
 const POLL_MS = 30 * 1000;
 /** A folder changed this recently may change again without its mtime moving (coarse clocks). */
 const RECENT_MS = 2000;
-/** How long the pages' key is taken as still valid before AnythingLLM is asked again. */
-const KEY_CHECKED_MS = 5 * 60 * 1000;
 
 /** AnythingLLM's public folder, served at its root: ANYTHINGLLM_PUBLIC_DIR, else <server>/public. */
 export const publicDir = (): string => process.env.ANYTHINGLLM_PUBLIC_DIR || path.join(serverDir(), "public");
@@ -52,36 +52,16 @@ export const newSecret = (bytes = 18): string => crypto.randomBytes(bytes).toStr
 export const sameSecret = (given: unknown, secret: string): boolean => typeof given === "string" && given.length === secret.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret));
 
 /** A page's HTML: `template` with its settings in place of its /*CONFIG*\/null: `cfg`, and what it
- *  posts with (the pages' key, kept in `dataDir`) and seals with (the vault's public key). */
-export async function pageHtml(template: string, dataDir: string, cfg: Record<string, unknown>): Promise<string> {
-  const [key, pub] = await Promise.all([pageKey(dataDir), publicKey()]);
-  return template.replace("/*CONFIG*/null", embed({ ...cfg, key, pub }));
+ *  posts with (the pages' key) and seals with (the vault's public key). */
+export async function pageHtml(template: string, cfg: Record<string, unknown>): Promise<string> {
+  return template.replace("/*CONFIG*/null", embed({ ...cfg, key: pageKey(), pub: await publicKey() }));
 }
 
-interface Keys {
-  validate(key: string): Promise<unknown>;
-  create(userId: number | null): Promise<{ apiKey: { key: string } | null; error?: string | null }>;
-}
-
-/** The key a skill's pages post with, kept in `dataDir`: the saved one while AnythingLLM still
- *  accepts it (asked at most every KEY_CHECKED_MS), else a new one. */
-export async function pageKey(dataDir: string): Promise<string> {
-  const file = path.join(dataDir, ".page-key.json");
-  const checked = perProcess("pages.key-checked", () => new Map<string, { key: string; at: number }>());
-  const kept = checked.get(file);
-  if (kept && Date.now() - kept.at < KEY_CHECKED_MS) return kept.key;
-  const keys = serverRequire<{ BrowserExtensionApiKey: Keys }>("models/browserExtensionApiKey").BrowserExtensionApiKey;
-  let key: string | undefined;
-  try {
-    key = JSON.parse(fs.readFileSync(file, "utf8")).key;
-  } catch {}
-  if (!key || !(await keys.validate(key))) {
-    const { apiKey, error } = await keys.create(null);
-    if (!apiKey) throw new Error(`couldn't make a key for the pages: ${error}`);
-    key = apiKey.key;
-    writeAtomic(file, JSON.stringify({ key }) + "\n", 0o600);
-  }
-  checked.set(file, { key, at: Date.now() });
+/** The key the skills' pages post with, which install keeps in the storage; a refusal that says how
+ *  to set it when there's none. */
+export function pageKey(): string {
+  const key = readPageKey(storageDir());
+  if (!key) throw new Told(`the skills' pages have no key to post with (${pageKeyFile(storageDir())}): make one in AnythingLLM's Settings > Browser Extension, then run \`anythingllm-suite install --page-key <key>\``);
   return key;
 }
 

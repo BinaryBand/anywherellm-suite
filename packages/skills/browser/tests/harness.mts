@@ -10,6 +10,8 @@ import os from "node:os";
 import path from "node:path";
 import { after } from "node:test";
 import { fileURLToPath } from "node:url";
+import { pageKeyFile } from "#shared/anythingllm";
+import { writeAtomic } from "#shared/atomic";
 
 const require = createRequire(import.meta.url);
 export const testsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -21,7 +23,7 @@ export const storage = path.join(tmp, "storage");
 export const publicDir = path.join(tmp, "public");
 process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
-process.env.ANYTHINGLLM_SERVER_DIR = path.join(testsDir, "fixtures", "server");
+writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.BROWSER_LEAN_PUPPETEER = path.join(testsDir, "fixtures", "puppeteer", "index.js");
 process.env.BROWSER_LEAN_CHROME = process.execPath; // a file that is there: the stand-in runs no Chrome
 process.env.SIG_KEY = "test-sig-key";

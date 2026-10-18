@@ -34,6 +34,9 @@ need_engine() {
 # podman the container's user is the host user).
 open_storage() { [ -n "$podman" ] || "$engine" exec -u root "$name" chmod -R a+rwX "$INNER_STORAGE" 2>/dev/null || true; }
 
+# json <expression>: reads JSON on stdin as `j` and prints the expression.
+json() { node -e "let s = ''; process.stdin.on('data', (d) => (s += d)).on('end', () => { const j = JSON.parse(s); console.log($1); });"; }
+
 # free_port: a port nothing listens on now.
 free_port() { node -e 'const s = require("net").createServer().listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close(); });'; }
 

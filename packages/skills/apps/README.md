@@ -20,7 +20,7 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 | What | Where |
 | --- | --- |
 | Each app: app.json's keys, page.html, data, its newest 20 changes and 10 earlier files, its page's token and secret | `apps-lean/<workspace>/<name>.json` in AnythingLLM's storage, changed under its lock |
-| The key every page posts with (a browser-extension key: it can store documents, never read them) | `apps-lean/.page-key.json` |
+| The key every page posts with (a browser-extension key: it can store documents, never read them) | `anythingllm-suite/page-key`, which install keeps (`--page-key`) |
 | Each app's page, at a random address | `public/apps-lean/<token>.html` beside AnythingLLM's server (`ANYTHINGLLM_PUBLIC_DIR` to move it) |
 | What a page posts, until the skill applies it | `documents/custom-documents/raw-apps-lean-event-*.json`, as AnythingLLM's collector writes it |
 | What pages did since a workspace's last chat call (20 lines) | `apps-lean/<workspace>/.news.json` |
@@ -42,7 +42,7 @@ A page posts each change with its app's secret, and the skill applies it to that
 
 ## What it needs of AnythingLLM
 
-The storage folder; the public folder, which AnythingLLM serves without a sign-in; `models/browserExtensionApiKey` to make the pages' key, and the browser-extension upload its pages post to (`#shared/pages`); the invocation's workspace and thread; and `requestToolApproval` for `delete`. Each is listed in `docs/.scratch/TODO.md`.
+The storage folder; the public folder, which AnythingLLM serves without a sign-in; the browser-extension upload its pages post to, with the key install keeps (`#shared/pages`); the invocation's workspace and thread; and `requestToolApproval` for `delete`. Each is listed in `docs/.scratch/TODO.md`.
 
 ## Check
 

@@ -3,6 +3,8 @@
 //   anythingllm-suite/control.cjs             the control MCP server (packages/control)
 //   plugins/anythingllm_mcp_servers.json      an entry `control` that starts it with `node`
 //   plugins/agent-skills/<hubId>/             each skill (packages/skills)
+//   anythingllm-suite/page-key                the browser-extension key the skills' pages post
+//                                             with, when install is given one (--page-key)
 //
 // The entry runs the container's own node on the path the container sees (/app/server/storage), or
 // for AnythingLLM Desktop (and one run from source) the node that ran install, on the host's path.
@@ -13,8 +15,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { SAVED_NOW } from "#shared/anythingllm";
-import { sameText } from "#shared/atomic";
+import { pageKeyFile, SAVED_NOW, SUITE_DIR } from "#shared/anythingllm";
+import { sameText, writeAtomicIfChanged } from "#shared/atomic";
 import { invalid } from "#shared/errors";
 import { DEFAULT_ROLES, ROLES_ENV } from "#shared/roles";
 
@@ -30,12 +32,14 @@ export interface Skill {
   hubId: string;
   /** File name -> text. */
   files: Record<string, string>;
+  /** Whether it has pages, which post with the pages' key (build.mjs: it bundles shared/pages). */
+  pages?: boolean;
 }
 
 export type Runtime = "container" | "native";
 
 export const NAME = "control";
-const DIR = "anythingllm-suite";
+const DIR = SUITE_DIR;
 const CONTROL = "control.cjs";
 /** Where the container sees its storage (contract/versions.env INNER_STORAGE). */
 export const INNER_STORAGE = "/app/server/storage";
@@ -192,6 +196,7 @@ function leftovers(storage: string, skill: Skill): string[] {
 /** Takes out what `put` put in (the skills it knows of); what it did. A skill's data stays. */
 export function take(storage: string, payload: Payload): string[] {
   const done = [setEntry(storage, null)];
+  if (fs.existsSync(pageKeyFile(storage))) done.push("the pages' key goes with it: revoke it in AnythingLLM's Settings > Browser Extension");
   for (const folder of [path.dirname(controlFile(storage)), ...payload.skills.map((s) => skillDir(storage, s))]) {
     if (!fs.existsSync(folder)) continue;
     writable(folder, () => fs.rmSync(folder, { recursive: true }));
@@ -199,6 +204,15 @@ export function take(storage: string, payload: Payload): string[] {
   }
   return done;
 }
+
+/** Keeps the pages' key in the storage, readable by its owner alone; what it did. */
+export function putPageKey(storage: string, key: string): string {
+  const file = pageKeyFile(storage);
+  return writable(file, () => writeAtomicIfChanged(file, `${key}\n`, 0o600)) ? `kept the pages' key: ${file}` : `unchanged: the pages' key in ${file}`;
+}
+
+/** Whether a skill with pages is in the storage, so the pages' key is needed. */
+export const needsPageKey = (storage: string, payload: Payload): boolean => payload.skills.some((s) => s.pages && fs.existsSync(skillDir(storage, s)));
 
 /** Whether what `put` puts there is there and current. */
 export function checks(storage: string, payload: Payload): Check[] {

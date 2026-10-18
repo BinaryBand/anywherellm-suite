@@ -83,7 +83,7 @@ test("a sign-in: its definition, the client, the link, the code back through oau
   assert.equal(q.code_challenge_method, "S256");
   assert.ok(fs.existsSync(path.join(publicDir, "library-lean", "oauth.html")), "the page the provider sends the user back to");
   const sFile = path.join(publicDir, "library-lean", `s-${q.state}.json`);
-  assert.match(JSON.parse(fs.readFileSync(sFile, "utf8")).key, /^brx-test-\d+$/, "what oauth.html posts with, for this sign-in only");
+  assert.equal(JSON.parse(fs.readFileSync(sFile, "utf8")).key, "brx-test", "what oauth.html posts with");
 
   post({ ev: "oauth-code", state: q.state, code: "good-code" }); // as oauth.html posts it: no page secret
   await call({ action: "library" }); // a call from a chat applies what the page posted
