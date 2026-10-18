@@ -11,7 +11,7 @@ The lean browser (`anythingllm-lean/skills/browser`, 4,800 lines of JavaScript) 
 
 ## Decisions
 
-- **Puppeteer is required at run time, from AnythingLLM's collector** (`/app/collector/node_modules/puppeteer`, or `BROWSER_LEAN_PUPPETEER`), by a path built then, so esbuild bundles none of it and the skill vendors nothing.
+- **Puppeteer is bundled, Chrome is found** *(changed 2026-10-18; it was the collector's, required from `/app/collector/node_modules/puppeteer`)*: see the repo notes of that day. `BROWSER_LEAN_PUPPETEER` still names a stand-in, which the tests use.
 - **Only the password or the code is hidden** from what the agent reads, not the username: a username hidden everywhere also hid it inside other words. The lean browser hid both.
 - **A login the user asks to save is saved at the tab's next read where the page no longer asks for a password** (and is still on its site), not when the address changes: a sign-in form that posts back to its own address left nothing saved (found by the e2e, against a real Chrome), and a check right after submitting missed a login the agent submits later.
 - **The page's state lists every saved login** (site and username), as the library's page lists every key by name: the vault is the instance's, not a workspace's.
@@ -29,7 +29,7 @@ The lean browser (`anythingllm-lean/skills/browser`, 4,800 lines of JavaScript) 
 
 ## Check
 
-`tests/handler.test.mts` and `tests/page.test.mts` run against the built bundle with a stand-in Puppeteer (`tests/fixtures/puppeteer`). `tests/e2e/inside.js` runs in the 1.16 image with the collector's real Chrome, against a site it serves:
+`tests/handler.test.mts` and `tests/page.test.mts` run against the built bundle with a stand-in Puppeteer (`tests/fixtures/puppeteer`). `tests/e2e/inside.js` runs in the 1.16 image with its real Chrome, against a site it serves:
 
 ```sh
 make e2e-skill SKILL=browser

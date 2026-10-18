@@ -16,6 +16,7 @@
     "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
     "@types/node": "^18.19.130",
     "esbuild": "^0.28.2",
+    "puppeteer-core": "24.43.1",
     "quickjs-emscripten-core": "0.32.0",
     "typescript": "^7.0.2"
   },

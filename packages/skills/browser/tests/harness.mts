@@ -23,6 +23,7 @@ process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 process.env.ANYTHINGLLM_SERVER_DIR = path.join(testsDir, "fixtures", "server");
 process.env.BROWSER_LEAN_PUPPETEER = path.join(testsDir, "fixtures", "puppeteer", "index.js");
+process.env.BROWSER_LEAN_CHROME = process.execPath; // a file that is there: the stand-in runs no Chrome
 process.env.SIG_KEY = "test-sig-key";
 process.env.SIG_SALT = "test-sig-salt";
 

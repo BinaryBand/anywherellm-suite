@@ -1,6 +1,5 @@
-// What AnythingLLM and its collector's Puppeteer supply to the skill, as far as the skill uses them.
-// Neither is a public API the skill depends on at build time (Puppeteer is required at run time
-// from the collector, so nothing of it is bundled), so these are the skill's own description.
+// What AnythingLLM and Puppeteer supply to the skill, as far as the skill uses them: the skill's own
+// description, which the bundled puppeteer-core and the tests' stand-in for it both meet.
 
 /** `this` in the handler, as AnythingLLM's agent sets it up. */
 export interface HandlerContext {

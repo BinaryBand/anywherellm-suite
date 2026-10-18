@@ -14,10 +14,10 @@
 //           folder AnythingLLM unpacks, for Node 18. esbuild folds src/ and shared/ (helpers both
 //           parts use) into the one handler.js, which then requires only Node's own modules (and
 //           AnythingLLM's, by a path built at run time). Allowed: the skill's src/ and shared/,
-//           and the packages VENDORED names for it. A skill's static/ folder (guides, pages,
-//           snippets: what is tuned rather than coded) is inlined as text, as STATIC_FILES
-//           ({ "guide/index.md": "...", ... }), so the skill still ships two files, which the
-//           Hub's upload and install's text payload both need.
+//           and the packages VENDORED names for it, less the modules STUBBED names. A skill's
+//           static/ folder (guides, pages, snippets: what is tuned rather than coded) is inlined
+//           as text, as STATIC_FILES ({ "guide/index.md": "...", ... }), so the skill still ships
+//           two files, which the Hub's upload and install's text payload both need.
 //
 // usage: node build.mjs [bridge | control | skills [skill ...]]   (no argument: every part)
 import { build } from "esbuild";
@@ -33,7 +33,42 @@ const here = path.dirname(self);
  *  @type {Record<string, string[]>} */
 const VENDORED = {
   library: ["node_modules/quickjs-emscripten-core/", "node_modules/@jitl/quickjs-ffi-types/", "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/"],
+  browser: ["node_modules/puppeteer-core/", "node_modules/@puppeteer/browsers/", "node_modules/ws/", "node_modules/debug/", "node_modules/ms/", "node_modules/semver/"],
 };
+
+/** Modules a vendored package requires but the skill never runs, bundled as an empty module, by the
+ *  skill's folder name; each pattern matches the path as required, a relative one made absolute.
+ *  browser: Puppeteer's browser downloads (its installer and CLI, and proxy-agent for its fetches)
+ *  and WebDriver BiDi (chromium-bidi), since the skill launches a Chrome it found and speaks CDP.
+ *  They were three quarters of the bundle.
+ *  @type {Record<string, RegExp[]>} */
+const STUBBED = {
+  browser: [/^proxy-agent$/, /^chromium-bidi\//, /\/@puppeteer\/browsers\/lib\/cjs\/(CLI|install)\.js$/],
+};
+
+/** An esbuild plugin that bundles each module `patterns` match as an empty one, and fails the build
+ *  when a pattern matched nothing: the package moved the module, and the bundle grew without it.
+ *  @param {RegExp[]} patterns
+ *  @returns {import("esbuild").Plugin} */
+const stubs = (patterns) => ({
+  name: "stubs",
+  setup(b) {
+    const hit = new Set();
+    b.onStart(() => hit.clear());
+    b.onResolve({ filter: /.*/ }, ({ path: p, resolveDir }) => {
+      const full = p.startsWith(".") ? path.join(resolveDir, p).split(path.sep).join("/") : p;
+      const found = patterns.find((re) => re.test(full));
+      if (!found) return undefined;
+      hit.add(found);
+      return { path: p, namespace: "stub" };
+    });
+    b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: "module.exports = {};", loader: "js" }));
+    b.onEnd((result) => {
+      const unused = patterns.filter((re) => !hit.has(re));
+      if (unused.length && !result.errors.length) return { errors: [{ text: `STUBBED patterns matched nothing: ${unused.join(", ")}` }] };
+    });
+  },
+});
 
 /** The text of every file under `dir`, by its path there with forward slashes; {} with no `dir`.
  *  @param {string} dir
@@ -52,9 +87,10 @@ export function staticFiles(dir) {
  * Bundles `entry` into `outfile`; `allowed` are path prefixes relative to `cwd`, as esbuild's
  * metafile writes them. `clean` is what to remove if the bundle took in anything else.
  * @param {{ entry: string, outfile: string, target: string, allowed: string[], label: string,
- *   define?: Record<string, string>, loader?: Record<string, "text">, clean?: string, cwd?: string }} options
+ *   define?: Record<string, string>, loader?: Record<string, "text">, clean?: string, cwd?: string,
+ *   plugins?: import("esbuild").Plugin[] }} options
  */
-export async function bundle({ entry, outfile, target, define, loader, allowed, label, clean = outfile, cwd = here }) {
+export async function bundle({ entry, outfile, target, define, loader, allowed, label, clean = outfile, cwd = here, plugins }) {
   const { metafile } = await build({
     absWorkingDir: cwd,
     entryPoints: [entry],
@@ -67,9 +103,10 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
     loader,
     metafile: true,
     logLevel: "warning",
+    plugins,
   });
-  // `<define:NAME>` is a `define` value esbuild lists as an input; it is no file.
-  const stray = Object.keys(metafile.inputs).filter((file) => !file.startsWith("<define:") && !allowed.some((prefix) => file.startsWith(prefix)));
+  // `<define:NAME>` is a `define` value esbuild lists as an input, and `stub:` a stubbed module; neither is a file.
+  const stray = Object.keys(metafile.inputs).filter((file) => !file.startsWith("<define:") && !file.startsWith("stub:") && !allowed.some((prefix) => file.startsWith(prefix)));
   if (stray.length) {
     fs.rmSync(clean, { recursive: true, force: true });
     throw new Error(`${label} bundles files outside ${allowed.join(", ")}: ${stray.join(", ")}`);
@@ -131,6 +168,7 @@ async function buildSkills(names) {
       allowed: [`skills/${name}/src/`, "shared/", ...(VENDORED[name] || [])],
       label: name,
       clean: out,
+      plugins: STUBBED[name] ? [stubs(STUBBED[name])] : undefined,
     });
     fs.copyFileSync(path.join(dir, "plugin.json"), path.join(out, "plugin.json"));
     console.log(`built ${name} -> ${path.relative(here, out)}`);

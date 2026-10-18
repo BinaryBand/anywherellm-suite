@@ -1,6 +1,6 @@
 // Run inside a stock AnythingLLM container (by hand: see docs/notes/skills/browser): loads the skill
 // through AnythingLLM's own loader (ImportedPlugin), sets it up on a stand-in agent as AnythingLLM's
-// agent would, and drives the real Chrome of the collector's Puppeteer against a site this script
+// agent would, and drives the image's real Chrome, through the bundled Puppeteer, against a site this script
 // serves on 127.0.0.1 and localhost (FENCE_ALLOW lets them through): open and read a page, act on it, sign in with
 // the password given on the tab's page (sealed with the vault's key, posted as AnythingLLM's
 // collector writes it), take the tab over and sign in by tapping and typing, make a passkey while

@@ -1,5 +1,5 @@
-// Chrome, run by this skill inside AnythingLLM's own process: the Puppeteer and the Chrome that
-// AnythingLLM's collector ships with, required at run time, so the skill brings none of its own.
+// Chrome, run by this skill inside AnythingLLM's own process, through the Puppeteer bundled with
+// the skill (puppeteer-core, which downloads nothing) and a Chrome found on the machine (chrome()).
 // Each workspace gets a browser of its own, with a profile in a temporary folder that goes when it
 // closes; its cookies are sealed beside the vault (sessions.ts), saved SAVE_MS after a step and as
 // it closes, so its sign-ins last. Each chat thread gets a tab. A browser closes after IDLE_MS
@@ -12,6 +12,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { perProcess } from "#shared/anythingllm";
 import { FENCED, makeFence } from "#shared/fence";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
@@ -21,7 +22,8 @@ import * as passkey from "./passkey";
 import * as sessions from "./sessions";
 import { type Entry, type Tab, VIEWPORT, firstLine, note, state, threadKey, workspaceDir } from "./state";
 
-const PUPPETEER = "/app/collector/node_modules/puppeteer";
+/** Where a system Chrome or Chromium is looked for, after the ones Puppeteer downloaded (Linux only, so far). */
+const SYSTEM_CHROMES = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];
 const IDLE_MS = 20 * 60 * 1000;
 /** How long after a step its browser's cookies are saved. */
 const SAVE_MS = 10 * 1000;
@@ -32,18 +34,29 @@ const ARGS = ["--no-sandbox", "--disable-dev-shm-usage", "--no-first-run", "--no
 /** Chrome's own password saving, off in every profile the skill makes. */
 const PREFERENCES = { credentials_enable_service: false, profile: { password_manager_enabled: false } };
 
-/** AnythingLLM's collector's Puppeteer (BROWSER_LEAN_PUPPETEER, else where its image has it),
- *  required by a path built at run time, so esbuild leaves it alone. */
+/** The Chrome to launch: BROWSER_LEAN_CHROME, else the newest one Puppeteer downloaded (in
+ *  PUPPETEER_CACHE_DIR or ~/.cache/puppeteer; AnythingLLM's image has one, for its collector), else
+ *  a system Chrome or Chromium. */
+function chrome(): string {
+  if (process.env.BROWSER_LEAN_CHROME) return process.env.BROWSER_LEAN_CHROME;
+  const cache = path.join(process.env.PUPPETEER_CACHE_DIR || path.join(os.homedir(), ".cache", "puppeteer"), "chrome");
+  let downloaded: string[] = [];
+  try {
+    const builds = fs.readdirSync(cache).filter((name) => name.startsWith("linux-"));
+    downloaded = builds.sort((a, b) => b.localeCompare(a, "en", { numeric: true })).map((name) => path.join(cache, name, "chrome-linux64", "chrome"));
+  } catch {}
+  const found = [...downloaded, ...SYSTEM_CHROMES].find((file) => fs.existsSync(file));
+  if (!found) throw new BrowserError(`there's no Chrome to run (looked in ${cache} and at ${SYSTEM_CHROMES.join(", ")}); set BROWSER_LEAN_CHROME in AnythingLLM's environment to one`);
+  return found;
+}
+
+/** The bundled Puppeteer, or the stand-in BROWSER_LEAN_PUPPETEER names (the tests'). Required when
+ *  first launched, so a load of the skill that opens no browser doesn't load it, and once per
+ *  process, not once per load of the skill. */
 function puppeteer(): Puppeteer {
-  const tried = [process.env.BROWSER_LEAN_PUPPETEER, PUPPETEER].filter((p): p is string => !!p);
-  for (const where of tried) {
-    try {
-      return createRequire(path.join(process.cwd(), "index.js"))(where) as Puppeteer;
-    } catch {
-      // the next place
-    }
-  }
-  throw new BrowserError(`this AnythingLLM has no Puppeteer the browser can use (looked in ${tried.join(", ")}); set BROWSER_LEAN_PUPPETEER in AnythingLLM's environment to one`);
+  const standIn = process.env.BROWSER_LEAN_PUPPETEER;
+  if (standIn) return createRequire(path.join(process.cwd(), "index.js"))(standIn);
+  return perProcess("browser-lean.puppeteer-core.24.43.1", () => require("puppeteer-core"));
 }
 
 /** A profile for one run of Chrome, in a temporary folder, with Chrome's own password saving off. */
@@ -113,7 +126,7 @@ async function launch(workspace: string): Promise<Browser> {
   const gone = () => fs.rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }, () => {});
   let browser: Browser;
   try {
-    browser = await puppeteer().launch({ headless: "new", userDataDir: profile, args: ARGS, defaultViewport: VIEWPORT, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
+    browser = await puppeteer().launch({ executablePath: chrome(), headless: true, userDataDir: profile, args: ARGS, defaultViewport: VIEWPORT, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
   } catch (e) {
     gone();
     throw e;

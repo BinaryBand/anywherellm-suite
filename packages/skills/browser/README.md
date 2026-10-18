@@ -1,6 +1,6 @@
 # browser-lean
 
-Tasks on the web, as one AnythingLLM agent skill: research (search the web, look at a page) and a real Chrome with a tab per chat, which the agent opens, reads as text with a ref on each element, and acts on by those refs. It's AnythingLLM's own: the Chrome and the Puppeteer its collector ships with, run inside AnythingLLM's process, so nothing is installed beside it. A task worth running again, and any API with a key, are the library skill's; the browser is for what only a person's clicks can do.
+Tasks on the web, as one AnythingLLM agent skill: research (search the web, look at a page) and a real Chrome with a tab per chat, which the agent opens, reads as text with a ref on each element, and acts on by those refs. It runs inside AnythingLLM's process, with the Puppeteer bundled in the skill and the Chrome AnythingLLM's image ships, so nothing is installed beside it. A task worth running again, and any API with a key, are the library skill's; the browser is for what only a person's clicks can do.
 
 | Action | Does |
 | --- | --- |
@@ -28,7 +28,7 @@ Each answer about the tab ends with its card, a picture of the tab that opens it
 
 ## Using it
 
-`anythingllm-suite install` puts it in, over the lean `browser-lean` (its old files go; its logins, passkeys and keys are imported into the shared vault on the first call). Switch on Browser under Agent Skills, and set its ANYTHINGLLM_URL to the address you open AnythingLLM at, so the card opens anywhere. It needs AnythingLLM's Docker image (Chrome comes with its collector); elsewhere, set `BROWSER_LEAN_PUPPETEER` to a Puppeteer.
+`anythingllm-suite install` puts it in, over the lean `browser-lean` (its old files go; its logins, passkeys and keys are imported into the shared vault on the first call). Switch on Browser under Agent Skills, and set its ANYTHINGLLM_URL to the address you open AnythingLLM at, so the card opens anywhere. It needs a Chrome: the newest one Puppeteer downloaded (`PUPPETEER_CACHE_DIR`, else `~/.cache/puppeteer`, where AnythingLLM's Docker image keeps its collector's), else a system Chrome or Chromium in `/usr/bin`; set `BROWSER_LEAN_CHROME` in AnythingLLM's environment to choose one.
 
 On the tab's page the user can also take the tab over: tap, swipe to scroll, type into a field with their own keyboard (a password sealed on their device), go back or reload, then hand it back. The agent reads but doesn't act meanwhile, and a hold with no step for 10 minutes lapses. After the user signs in that way, the page offers to save the login.
 
