@@ -67,7 +67,7 @@ export function read(workspace: string, name: unknown): Json {
  *  for a change that may write page.html, `fn` is tried first on the app as it is, outside the lock,
  *  so the page it writes is checked (the slow part) before the lock is taken, and found checked
  *  under it; `fn` must change nothing but what it answers. */
-export async function update(workspace: string, name: unknown, fn: (app: Json) => Json | Promise<Json>, pageFirst = false): Promise<Json> {
+async function update(workspace: string, name: unknown, fn: (app: Json) => Json | Promise<Json>, pageFirst = false): Promise<Json> {
   if (pageFirst)
     try {
       await fn(read(workspace, name));
@@ -81,7 +81,7 @@ export async function update(workspace: string, name: unknown, fn: (app: Json) =
 }
 
 /** update for `fn` that answers the next app with more besides: the saved app and that more. */
-async function updateWith<R extends object>(workspace: string, name: unknown, fn: (app: Json) => Promise<{ next: Json } & R>, pageFirst = false): Promise<{ app: Json } & R> {
+export async function updateWith<R extends object>(workspace: string, name: unknown, fn: (app: Json) => Promise<{ next: Json } & R>, pageFirst = false): Promise<{ app: Json } & R> {
   let more!: R;
   const app = await update(workspace, name, async (app) => {
     const { next, ...rest } = await fn(app);
@@ -275,7 +275,7 @@ function refusedWith(app: Json, ids: (string | undefined)[], why: string): Json 
 export function changesOn(first: Json, changes: Change[], most = Infinity): { next: Json; answers: Answer[] } {
   let app = first;
   const answers = changes.slice(0, most).map((opts): Answer => {
-      try {
+    try {
       const next = applyChange(app, opts);
       if (next === app) return { duplicate: true };
       app = next;
@@ -292,17 +292,6 @@ export function changesOn(first: Json, changes: Change[], most = Infinity): { ne
     answers.push(...over.map(() => ({ error })));
   }
   return { next: app, answers };
-}
-
-/** changesOn for one app, read once and saved once. Throws when the app can't be read or saved. */
-export async function changeMany(workspace: string, name: unknown, changes: Change[], most = Infinity): Promise<Answer[]> {
-  let answers: Answer[] = [];
-  await update(workspace, name, (app) => {
-    let next;
-    ({ next, answers } = changesOn(app, changes, most));
-    return next;
-  });
-  return answers;
 }
 
 /** `app` with its newest data change taken back, checked: the data as it was may no longer fit the
@@ -483,8 +472,9 @@ export const dismissAsk = (workspace: string, name: unknown, id: unknown): Promi
   return update(workspace, name, (app) => cleared(app, id));
 };
 
-/** The app with a secret for its page's events, made now for an app from before apps had one. */
-export const withSecret = (workspace: string, name: unknown): Promise<Json> => update(workspace, name, (app) => (app.secret ? app : { ...app, secret: newSecret() }));
+/** `app` with a secret for its page's events, made now for an app from before apps had one. */
+export const secretOn = (app: Json): Json => (app.secret ? app : { ...app, secret: newSecret() });
+export const withSecret = (workspace: string, name: unknown): Promise<Json> => update(workspace, name, secretOn);
 
 /** The workspaces that have apps. */
 export function workspaces(): string[] {

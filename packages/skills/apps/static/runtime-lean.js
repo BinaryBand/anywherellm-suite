@@ -165,14 +165,18 @@ var AppsLean = (() => {
     r.append(h1);
     return r;
   }
-  function tray() {
-    const open = picking || picks.length;
+  function place() {
     // Shut, the button is beside the heading (else in the top right corner, scrolling away with the
     // page); open, the tray is on the body, out of the page's layout. Put back if the page took it out.
-    if (!document.body) return;
+    const open = picking || picks.length;
     if (!open && !(row && row.isConnected)) row = heading();
     const into = open || !row ? document.body : row;
     if (host.parentNode !== into) into.append(host);
+  }
+  function tray() {
+    if (!document.body) return;
+    place();
+    const open = picking || picks.length;
     ui.innerHTML = `<style>
       :host{all:initial;display:block}
       .b{position:absolute;right:14px;top:14px;z-index:2147483646;min-height:44px;padding:0 16px;border-radius:14px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:var(--ink,#222);font:600 15px system-ui,sans-serif}
@@ -240,9 +244,10 @@ var AppsLean = (() => {
     }, { capture: true });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tray);
   else tray();
-  // A page that draws itself again can take the button out with what it replaces: it goes back at once.
+  // A page that draws itself again can take the button out with what it replaces: it goes back at
+  // once, as it was (its shadow root goes with it).
   if (typeof MutationObserver === "function")
-    new MutationObserver(() => host.isConnected || tray()).observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver(() => host.isConnected || !document.body || place()).observe(document.documentElement, { childList: true, subtree: true });
 
   window.fetch = (url, opts) => {
     if (url === "lean:append") return append(JSON.parse(opts.body));

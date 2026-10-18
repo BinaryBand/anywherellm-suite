@@ -105,20 +105,19 @@ test("an app keeps its last ten versions, and a revert its data no longer fits i
   assert.equal(store.read("home", "many-pages").versions.at(-1).file, "app.json", "kept for a revert once the data fits");
 });
 
-test("changeMany makes the changes one after another, as change does, and saves once", async () => {
+test("changesOn makes the changes one after another, as change does", async () => {
   const make = (name: string) => store.create("home", name, { ...definitionFor("list", { title: name }), data: { items: [] } }, undefined);
   await make("many-a");
   await make("many-b");
   const add = (text: string, id?: string) => ({ ev: "add", id, by: "page", patch: [{ op: "add", path: "/items/-", value: { text, done: false } }] });
   const bad = { patch: [{ op: "add", path: "/items/-", value: { text: "" } }] };
   const list = [add("Eggs", "x1"), bad, add("Jam", "x2"), add("Eggs", "x1")];
-  const answers = await store.changeMany("home", "many-a", list);
+  const { next: a, answers } = store.changesOn(store.read("home", "many-a"), list);
   assert.deepEqual(answers.map((a) => (a.error ? "error" : a.duplicate ? "duplicate" : "made")), ["made", "error", "made", "duplicate"]);
   for (const opts of [list[0], list[2]]) await store.change("home", "many-b", opts);
-  const [a, b] = ["many-a", "many-b"].map((name) => store.read("home", name));
+  const b = store.read("home", "many-b");
   for (const key of ["data", "line", "seen"]) assert.deepEqual(a[key], b[key], key);
   assert.deepEqual(a.history.map((h: any) => h.patch), b.history.map((h: any) => h.patch));
-  await assert.rejects(store.changeMany("home", "no-such-app", [add("x")]), /no app named no-such-app/);
 });
 
 test("two changes to one app at once both land: each waits for the other's lock", async () => {

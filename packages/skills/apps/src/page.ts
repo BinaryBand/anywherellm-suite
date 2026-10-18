@@ -12,7 +12,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { jobTimeLeft, perProcess } from "#shared/anythingllm";
-import { readJson, updateJson, writeAtomic } from "#shared/atomic";
+import { readJson, updateJson } from "#shared/atomic";
 import { embed, inTurn, newSecret, pageKey, publicDir, putBack, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import { HUB_ID, root } from "./dirs.ts";
 import type { Json } from "./patch.ts";
@@ -78,9 +78,7 @@ export async function publish(app: Json, workspace: string): Promise<string | nu
   const token = app.pageToken || newSecret();
   const version = versionOf(app);
   try {
-    // The page holds the app's line and data, so it's new after any change: written without reading
-    // back the one there (about 75 KB) to compare.
-    writeAtomic(path.join(publicDir(), pageFile(token)), render(app, workspace, pageKey(), version)!, 0o644);
+    writePublic(pageFile(token), render(app, workspace, pageKey(), version)!);
     writePublic(stateFile(token), JSON.stringify(stateOf(app, version)));
   } catch {
     return null;
@@ -160,7 +158,7 @@ interface Row {
 
 /** Applies every waiting event, oldest first, and answers what happened to each. An event is
  *  applied only to the app whose secret it carries, so one page's link changes no other app; an app
- *  from before apps had a secret takes its page's changes until it has one. A change is a patch on
+ *  from before apps had a secret takes its page's events until it has one. A change is a patch on
  *  the data; an ask (kind "ask") is what the user picked and said with Comment. The events for one
  *  app are applied together, so the app is read and written once however many the page sent. */
 export async function collect(): Promise<Result[]> {
@@ -182,42 +180,43 @@ export async function collect(): Promise<Result[]> {
   }
   for (const waiting of byApp.values()) {
     const { workspace, app } = waiting[0];
-    const mine = (row: Row, more: Partial<Result> & { ok: boolean }) => void (row.answer = { ...row.said, workspace, app, ...more });
+    const said = (row: Row, more: Partial<Result> & { ok: boolean }): Result => ({ ...row.said, workspace, app, ...more });
     const failure = (row: Row, error: unknown): Result => ({ ...row.said, ok: false, why: firstLine(error), again: again(row.event, error) });
-    const foreign = new Set<Row>();
-    let checked = false;
+    // What became of each event, once its app was read under the lock: its secret checked there.
+    let answers: Map<Row, Result> | undefined;
     try {
       // Read once and saved once: its asks, then its changes, from those that carry its secret.
-      await store.update(workspace, app, (found) => {
-        checked = true;
+      await store.updateWith(workspace, app, async (found) => {
+        answers = new Map();
+        const ours = waiting.filter((row) => !found.secret || sameSecret(row.event.secret, found.secret));
+        for (const row of waiting) if (!ours.includes(row)) answers.set(row, { ...row.said, ok: false, why: "it didn't come from this app's page" });
         let next = found;
-        const changes: Row[] = [];
-        for (const row of waiting)
-          if (found.secret && !sameSecret(row.event.secret, found.secret)) {
-            foreign.add(row);
-            row.answer = { ...row.said, ok: false, why: "it didn't come from this app's page" };
-          } else if (row.change) changes.push(row);
-          else
-            try {
-              const added = store.askOn(next, row.ask!);
-              if (added) next = added.next;
-              mine(row, added ? { ok: true, ask: added.id, fields: { text: `${added.kept} picked` } } : { ok: false, duplicate: true });
-            } catch (error) {
-              mine(row, failure(row, error));
-            }
-        if (!changes.length) return next;
-        const { next: changed, answers } = store.changesOn(next, changes.map((row) => row.change!), MOST_AT_ONCE);
+        for (const row of ours.filter((r) => r.ask))
+          try {
+            const added = store.askOn(next, row.ask!);
+            if (added) next = added.next;
+            answers.set(row, said(row, added ? { ok: true, ask: added.id, fields: { text: `${added.kept} picked` } } : { ok: false, duplicate: true }));
+          } catch (error) {
+            answers.set(row, said(row, { ok: false, why: firstLine(error) }));
+          }
+        const changes = ours.filter((r) => r.change);
+        if (!changes.length) return { next };
+        const made = store.changesOn(next, changes.map((row) => row.change!), MOST_AT_ONCE);
         // A change refused on its own was recorded as seen: final, whatever refused it.
         changes.forEach((row, i) => {
-          const { error, duplicate } = answers[i];
-          mine(row, error ? { ok: false, why: firstLine(error) } : { ok: !duplicate, duplicate: !!duplicate });
+          const { error, duplicate } = made.answers[i];
+          answers!.set(row, said(row, error ? { ok: false, why: firstLine(error) } : { ok: !duplicate, duplicate: !!duplicate }));
         });
-        return found.secret ? changed : { ...changed, secret: newSecret() };
+        return { next: store.secretOn(made.next) };
       });
+      for (const [row, answer] of answers!) row.answer = answer;
     } catch (error) {
       // Not read, or not saved. Its workspace and app are said only once its secret was checked:
       // before, the event's own say of them was believed for nothing.
-      for (const row of waiting) if (!foreign.has(row)) row.answer = checked ? { ...failure(row, error), workspace, app } : failure(row, error);
+      for (const row of waiting) {
+        const kept = answers?.get(row);
+        row.answer = !answers ? failure(row, error) : kept && !kept.workspace ? kept : said(row, failure(row, error));
+      }
     }
   }
   return rows.map((row) => row.answer!);
