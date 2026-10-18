@@ -58,7 +58,7 @@ export interface Run {
 }
 
 /** The compiled QuickJS module, made once per process. */
-const quickjs = (): Promise<QuickJSWASMModule> => perProcess("library-lean.quickjs.0.32.0", () => newQuickJSWASMModuleFromVariant(variant));
+const quickjs = (): Promise<QuickJSWASMModule> => perProcess(`library-lean.quickjs.${VENDORED_VERSIONS["quickjs-emscripten-core"]}`, () => newQuickJSWASMModuleFromVariant(variant));
 
 /** The line in the function's own source that an error's stack names, if any. */
 function lineOf(stack: unknown): number | undefined {

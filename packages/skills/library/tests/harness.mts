@@ -11,6 +11,7 @@ import { after, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
+import { vendoredVersions } from "../../../build.mjs";
 
 const require = createRequire(import.meta.url);
 export const testsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -28,6 +29,9 @@ writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install 
 process.env.FENCE_ALLOW = "127.0.0.1";
 process.env.SIG_KEY = "test-sig-key";
 process.env.SIG_SALT = "test-sig-salt";
+
+// The vendored packages' versions as build.mjs inlines them, for the modules a test imports from src.
+(globalThis as unknown as { VENDORED_VERSIONS: Record<string, string> }).VENDORED_VERSIONS = vendoredVersions("library");
 
 const bundle = path.join(skillDir, "build", "library-lean", "handler.js");
 const handler = (): ((this: unknown, args: Record<string, unknown>) => Promise<string>) => {
