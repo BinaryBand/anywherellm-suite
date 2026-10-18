@@ -14,7 +14,8 @@ import { call, cardsShown, pageConfig, pageState, post, publicDir, reset, seal, 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
 // token.
-const provider = { challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false };
+const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false });
+const provider = fresh();
 const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
@@ -51,7 +52,7 @@ const LLM = "https://llm.example.com";
 
 test.beforeEach(() => {
   reset();
-  Object.assign(provider, { challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set(), basic: false });
+  Object.assign(provider, fresh());
 });
 
 /** Defines the sign-in "demo" (as `def`), gives its client on the page, and answers the sign-in link;

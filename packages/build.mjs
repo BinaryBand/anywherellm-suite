@@ -18,8 +18,8 @@
 //           static/ folder (guides, pages, snippets: what is tuned rather than coded) is inlined
 //           as text, as STATIC_FILES ({ "guide/index.md": "...", ... }), so the skill still ships
 //           two files, which the Hub's upload and install's text payload both need. The VENDORED
-//           packages' versions are inlined as VENDORED_VERSIONS ({ "puppeteer-core": "24.43.1" }),
-//           for the per-process keys that keep a reloaded skill off an older copy.
+//           packages' versions are inlined as VENDORED_VERSIONS ("puppeteer-core@24.43.1 ws@8.22.0
+//           ..."), for the per-process keys that keep a reloaded skill off an older copy.
 //
 // usage: node build.mjs [bridge | control | skills [skill ...]]   (no argument: every part)
 import { build } from "esbuild";
@@ -71,16 +71,11 @@ const stubs = (patterns) => ({
   },
 });
 
-/** The versions of the packages `prefixes` name (as VENDORED does), by package name, from their
- *  package.json.
- *  @param {string[]} prefixes
- *  @returns {Record<string, string>} */
-const versionsOf = (prefixes) =>
-  Object.fromEntries(prefixes.map((prefix) => [prefix.slice("node_modules/".length, -1), JSON.parse(fs.readFileSync(path.join(here, prefix, "package.json"), "utf8")).version]));
-
-/** VENDORED_VERSIONS as the skill `name` (its folder) is built with.
+/** VENDORED_VERSIONS as the skill `name` (its folder) is built with: each package VENDORED names
+ *  for it, as name@version from its package.json; "" with none.
  *  @param {string} name */
-export const vendoredVersions = (name) => versionsOf(VENDORED[name] || []);
+export const vendoredVersions = (name) =>
+  (VENDORED[name] || []).map((prefix) => `${prefix.slice("node_modules/".length, -1)}@${JSON.parse(fs.readFileSync(path.join(here, prefix, "package.json"), "utf8")).version}`).join(" ");
 
 /** The text of every file under `dir`, by its path there with forward slashes; {} with no `dir`.
  *  @param {string} dir

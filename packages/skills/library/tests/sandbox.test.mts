@@ -2,11 +2,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Told } from "#shared/errors";
-import { vendoredVersions } from "../../../build.mjs";
 import { LIMITS, check, run, type Kit } from "../src/sandbox.ts";
-
-// The vendored packages' versions as build.mjs inlines them, for the modules a test imports from src.
-(globalThis as unknown as { VENDORED_VERSIONS: Record<string, string> }).VENDORED_VERSIONS = vendoredVersions("library");
+import "./harness.mts"; // VENDORED_VERSIONS, as the build inlines it
 
 const soon = (ms = 2000) => Date.now() + ms;
 const later = <T,>(value: T, ms = 10) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));

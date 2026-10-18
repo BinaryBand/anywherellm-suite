@@ -64,7 +64,7 @@ function chrome(): string {
 function puppeteer(): Puppeteer {
   const standIn = process.env.BROWSER_LEAN_PUPPETEER;
   if (standIn) return createRequire(path.join(process.cwd(), "index.js"))(standIn);
-  return perProcess(`browser-lean.puppeteer-core.${VENDORED_VERSIONS["puppeteer-core"]}`, () => require("puppeteer-core"));
+  return perProcess(`browser-lean.puppeteer ${VENDORED_VERSIONS}`, () => require("puppeteer-core"));
 }
 
 /** A profile for one run of Chrome, in a temporary folder, with Chrome's own password saving off. */

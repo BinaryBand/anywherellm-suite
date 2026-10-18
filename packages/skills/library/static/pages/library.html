@@ -83,7 +83,7 @@
   const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
   let pubKey = null;
   async function seal(text) {
-    if (!window.crypto || !crypto.subtle) throw new Error("Open this page over https to give a key or a client secret: over plain http, the browser can't seal it");
+    if (!crypto.subtle) throw new Error("Open this page over https to give a key or a client secret: over plain http, the browser can't seal it");
     const bytes = new TextEncoder().encode(text);
     pubKey ||= await crypto.subtle.importKey("spki", Uint8Array.from(atob(cfg.pub), (c) => c.charCodeAt(0)), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
     if (bytes.length <= 190) return b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, bytes));

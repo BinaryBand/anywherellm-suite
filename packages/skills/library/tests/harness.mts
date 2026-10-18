@@ -31,7 +31,7 @@ process.env.SIG_KEY = "test-sig-key";
 process.env.SIG_SALT = "test-sig-salt";
 
 // The vendored packages' versions as build.mjs inlines them, for the modules a test imports from src.
-(globalThis as unknown as { VENDORED_VERSIONS: Record<string, string> }).VENDORED_VERSIONS = vendoredVersions("library");
+(globalThis as unknown as { VENDORED_VERSIONS: string }).VENDORED_VERSIONS = vendoredVersions("library");
 
 const bundle = path.join(skillDir, "build", "library-lean", "handler.js");
 const handler = (): ((this: unknown, args: Record<string, unknown>) => Promise<string>) => {
