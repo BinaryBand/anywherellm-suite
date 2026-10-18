@@ -1,6 +1,6 @@
 # Notes on packages/skills/library
 
-Why `library-lean` runs the functions the agent writes in QuickJS, and what was measured. From the session of 2026-10-15.
+Why `library-lean` runs the functions the agent writes in QuickJS, and what was measured. From the session of 2026-10-15. A design, not built yet, for host extensions in `kit` and for using a secret without seeing it: [extensions-and-secrets.md](extensions-and-secrets.md).
 
 ## What it is for
 
