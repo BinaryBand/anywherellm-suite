@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import { call as called, library, reset, skillDir, storage, until } from "./harness.mts";
+import { call as called, library, reset, skillDir, storage } from "./harness.mts";
 
 process.env.LIBRARY_WAIT_MS = "300";
 
@@ -22,6 +22,11 @@ const inputs = { n: { type: "number" }, ms: { type: "number" }, fail: { type: "b
 const idOf = (text: string) => text.match(/\((r-[\w-]+)\)/)![1];
 const runsDir = () => path.join(library, "runs");
 const recordOf = (id: string) => JSON.parse(fs.readFileSync(path.join(runsDir(), fs.readdirSync(runsDir()).find((f) => f.startsWith(id))!), "utf8"));
+
+async function until(ok: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !ok(); i++) await sleep(20);
+  assert.ok(ok(), "waited too long");
+}
 
 test.beforeEach(async () => {
   reset();

@@ -2,7 +2,6 @@
 // in, the built handler.js called as AnythingLLM's agent calls it, and what the Library page posts,
 // written as AnythingLLM's collector writes it.
 
-import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -86,21 +85,8 @@ export function pageConfig(): { token: string; secret: string; key: string; pub:
 /** What the page shows, as it reads it. */
 export const pageState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "library-lean", `${pageConfig().token}.json`), "utf8"));
 
-/** `text` sealed as the page seals it, with the vault's public key: RSA-OAEP up to 190 bytes, and
- *  above that with a new AES-GCM key, itself sealed with RSA ("h1.<sealed key>.<iv>.<sealed>"). */
+/** `text` sealed as the page seals it, with the vault's public key. */
 export function seal(text: string): string {
   const key = crypto.createPublicKey({ key: Buffer.from(pageConfig().pub, "base64"), format: "der", type: "spki" });
-  const rsa = (bytes: Buffer) => crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, bytes).toString("base64");
-  if (Buffer.byteLength(text) <= 190) return rsa(Buffer.from(text));
-  const aes = crypto.randomBytes(32);
-  const iv = crypto.randomBytes(12);
-  const gcm = crypto.createCipheriv("aes-256-gcm", aes, iv);
-  const sealed = Buffer.concat([gcm.update(text), gcm.final(), gcm.getAuthTag()]);
-  return ["h1", rsa(aes), iv.toString("base64"), sealed.toString("base64")].join(".");
-}
-
-/** Waits until `ok()` is true, for at most `ms`; fails the test when it never is. */
-export async function until(ok: () => boolean, ms = 5000): Promise<void> {
-  for (const end = Date.now() + ms; !ok() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
-  assert.ok(ok(), "waited too long");
+  return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
 }

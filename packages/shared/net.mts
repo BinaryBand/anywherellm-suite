@@ -7,13 +7,12 @@
 // than its own site). Connections are kept a few seconds for the next request to the same host (a
 // function paging through an API), each opened through the fenced lookup. Ported from the lean
 // browser skill's net.js; the kept connections and `signal` are new: a run that runs out of time
-// stops the request it's waiting on. `connect` opens a fenced TCP connection the same way, for a
-// protocol other than HTTP (the library's SSH).
+// stops the request it's waiting on.
 
 import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
-import net, { type LookupFunction } from "node:net";
+import type { LookupFunction } from "node:net";
 import zlib from "node:zlib";
 import { FENCED, NetError, addressesRefused, allowedHosts, bareHost, hostRefused, httpUrl } from "./fence.mts";
 
@@ -89,27 +88,12 @@ function agentsFor(allowed: Set<string>): Agents {
   return agents;
 }
 
-/** Why `host` isn't reached from `where` before anything is sent: refused by name or address, or
- *  the run already stopped; null when only its lookup can say. */
-function refusedBefore(where: string, host: string, allowed: Set<string>, signal?: AbortSignal): NetError | null {
-  const why = hostRefused(host, allowed);
-  if (why && why !== "lookup") return new NetError(`${where} isn't reached: ${why}. ${FENCED}`);
-  return signal?.aborted ? new NetError(`${where} wasn't asked: the run stopped`) : null;
-}
-
-/** A connection's error as the caller is told it: the fence's refusal is final, anything else (a
- *  timeout, a stop, a server gone) is a server that didn't answer. */
-const failed = (where: string, e: NodeJS.ErrnoException): NetError => (e.code === "EFENCED" ? new NetError(`${where} isn't reached: ${e.message}. ${FENCED}`) : new Unreachable(`${where} didn't answer: ${e.message}`));
-
-/** The errors a timer and a stop end a connection with. */
-const timedOut = (ms: number) => Object.assign(new Error(`no answer in ${Math.round(ms / 1000)} s`), { code: "ETIMEDOUT" });
-const stopped = () => Object.assign(new Error("the run stopped"), { code: "EABORTED" });
-
 /** One request and its answer, with no redirect followed. */
 function once({ method, url, headers, body, timeout, maxBytes, allowed, resolve, signal }: Once): Promise<Answer> {
   const parsed = httpUrl(url);
-  const refused = refusedBefore(parsed.origin, bareHost(parsed), allowed, signal);
-  if (refused) throw refused;
+  const why = hostRefused(bareHost(parsed), allowed);
+  if (why && why !== "lookup") throw new NetError(`${parsed.origin} isn't reached: ${why}. ${FENCED}`);
+  if (signal?.aborted) throw new NetError(`${parsed.origin} wasn't asked: the run stopped`);
   const https_ = parsed.protocol === "https:";
   // A stand-in lookup (the tests') gets connections of its own; the real one, the kept ones.
   const agent = resolve ? { agent: false as const, lookup: fencedLookup(allowed, resolve) } : { agent: agentsFor(allowed)[https_ ? "https" : "http"] };
@@ -147,10 +131,13 @@ function once({ method, url, headers, body, timeout, maxBytes, allowed, resolve,
       stream.on("end", () => done(false));
       stream.on("error", (e: Error) => finish(reject, new Unreachable(`${parsed.origin}'s answer couldn't be read: ${e.message}`)));
     });
-    const timer = setTimeout(() => req.destroy(timedOut(timeout)), timeout);
-    const onAbort = () => req.destroy(stopped());
+    const timer = setTimeout(() => req.destroy(Object.assign(new Error(`no answer in ${Math.round(timeout / 1000)} s`), { code: "ETIMEDOUT" })), timeout);
+    const onAbort = () => req.destroy(Object.assign(new Error("the run stopped"), { code: "EABORTED" }));
     signal?.addEventListener("abort", onAbort, { once: true });
-    req.on("error", (e: NodeJS.ErrnoException) => finish(reject, failed(parsed.origin, e)));
+    req.on("error", (e: NodeJS.ErrnoException) => {
+      if (e.code === "EFENCED") return finish(reject, new NetError(`${parsed.origin} isn't reached: ${e.message}. ${FENCED}`));
+      return finish(reject, new Unreachable(`${parsed.origin} didn't answer: ${e.message}`));
+    });
     req.end(body);
   });
 }
@@ -167,42 +154,6 @@ export interface Send {
   signal?: AbortSignal;
   /** The headers to send to a redirect's address, or null not to follow it. */
   next?: (url: string) => Headers | null;
-}
-
-export interface Connect {
-  host: string;
-  port: number;
-  /** The hosts let through although they aren't public (FENCE_ALLOW's by default). */
-  allow?: string[];
-  timeout?: number;
-  resolve?: Resolve;
-  signal?: AbortSignal;
-}
-
-/** A TCP connection to `host`:`port` for a protocol of its own (the library's SSH), through the
- *  fence as a request is: the name looked up once, every address it gives checked, the connection
- *  made to a checked one. */
-export function connect({ host, port, allow = allowedHosts(), timeout = TIMEOUT_MS, resolve, signal }: Connect): Promise<net.Socket> {
-  const allowed = new Set(allow);
-  const where = `${host}:${port}`;
-  const refused = refusedBefore(where, host, allowed, signal);
-  if (refused) return Promise.reject(refused);
-  return new Promise((resolveSocket, reject) => {
-    const sock = net.connect({ host, port, lookup: fencedLookup(allowed, resolve) });
-    const done = (e?: NodeJS.ErrnoException) => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-      sock.off("error", done);
-      if (!e) return resolveSocket(sock);
-      sock.destroy();
-      reject(failed(where, e));
-    };
-    const timer = setTimeout(() => done(timedOut(timeout)), timeout);
-    const onAbort = () => done(stopped());
-    signal?.addEventListener("abort", onAbort, { once: true });
-    sock.once("connect", () => done());
-    sock.once("error", done);
-  });
 }
 
 /** Sends a request; answers its status, headers and at most `maxBytes` of its body (cut when there

@@ -7,7 +7,7 @@
 // (as a bearer token, by HTTP Basic, in a header or in the query), and at most PER_MINUTE times a
 // minute from one process (a scheduled job's child process counts its own).
 
-import { used } from "#shared/anythingllm";
+import { perProcess } from "#shared/anythingllm";
 import { NOT_SET } from "#shared/answer";
 import { allowedHosts, bareHost, onSite, secureFor, siteOf } from "#shared/fence";
 import type { Headers } from "#shared/net";
@@ -167,7 +167,11 @@ export async function credentialed(label: string, as: string, url: string, heade
   if (!secret) throw new LibraryError(`no key named "${label}" is saved: ask the user for it with secret`);
   const target = new URL(url);
   if (!mayGo(secret.site, target)) throw new LibraryError(`the key "${label}" is for ${secret.site} over https, and goes nowhere else: not to ${target.origin}`);
-  if (!used("library-lean.key-calls", secret.id, PER_MINUTE)) throw new LibraryError(`the key "${label}" was used ${PER_MINUTE} times in the last minute: wait a minute, and make fewer requests`);
+  const now = Date.now();
+  const recent = perProcess("library-lean.key-calls", () => new Map<string, number[]>());
+  const times = (recent.get(secret.id) || []).filter((t) => now - t < 60 * 1000);
+  if (times.length >= PER_MINUTE) throw new LibraryError(`the key "${label}" was used ${PER_MINUTE} times in the last minute: wait a minute, and make fewer requests`);
+  recent.set(secret.id, [...times, now]);
   const value = isSignIn(secret) ? await accessToken(secret) : String(secret.value);
   const sent = { ...headers };
   const [kind, ...rest] = as.split(":");

@@ -15,7 +15,6 @@ import { checkUrl, onSite } from "#shared/fence";
 import { LibraryError } from "./errors";
 import { check } from "./policy";
 import { send } from "./request";
-import * as targets from "./targets";
 import { run as runScript, type Kit, type Outcome } from "./sandbox";
 import * as store from "./store";
 import type { Fn, RunRecord, Toolkit } from "./store";
@@ -157,7 +156,6 @@ const logged = (v: unknown) => (typeof v === "string" ? v : (JSON.stringify(v) ?
 function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: { read: boolean; value: unknown; changed: boolean }, signal: AbortSignal): Kit {
   return {
     http: (req) => http(kit, f, (req ?? {}) as Request, budget, signal),
-    ssh: Object.fromEntries((Object.keys(SSH) as SshCall[]).map((call) => [call, (req: unknown) => ssh(call, kit, f, (req ?? {}) as Record<string, unknown>, budget, signal)])),
     log: (...args) => {
       if (budget.logs.length < LIMITS.logs) budget.logs.push(mask(args.map(logged).join(" "), budget.secrets).slice(0, LIMITS.logChars));
     },
@@ -199,44 +197,9 @@ interface Request {
   auth?: string | false;
 }
 
-/** What each kit.ssh call takes, and the field the run's record and the policy see it by. A
- *  target's host, port, login, key and fingerprint aren't among them: they're the user's, saved on
- *  the Library page, and a function names the target alone. */
-const SSH = {
-  exec: { fields: ["target", "command", "stdin", "timeout_s", "max_bytes"], by: "command", mark: "$" },
-  put: { fields: ["target", "path", "content", "encoding", "mode", "append"], by: "path", mark: "put" },
-  get: { fields: ["target", "path", "offset", "bytes", "encoding"], by: "path", mark: "get" },
-} as const;
-type SshCall = keyof typeof SSH;
-
-/** One command a function runs, or one file it moves: on one of its toolkit's targets, by name. */
-async function ssh(call: SshCall, kit: Toolkit, f: Fn, req: Record<string, unknown>, budget: Budget, signal: AbortSignal) {
-  const { fields, by, mark } = SSH[call];
-  const other = Object.keys(req).filter((k) => !(fields as readonly string[]).includes(k));
-  if (other.length) throw new LibraryError(`kit.ssh.${call} takes ${fields.join(", ")}, not ${other.join(", ")}: a target's host, port, login, key and fingerprint are the user's, saved on the Library page`);
-  if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests and commands`);
-  const name = String(req.target ?? "").trim().toLowerCase();
-  if (!kit.targets.includes(name)) throw new LibraryError(`"${name}" isn't one of the ${kit.service} toolkit's targets (${kit.targets.join(", ") || "none"}): name it in the toolkit's targets`);
-  const detail = String(req[by] ?? "");
-  const fn = `${kit.service}.${f.name}`;
-  check({ op: "ssh", fn, target: name, action: call, detail });
-  const made = { method: "SSH", host: name, path: ` ${mark} ${detail.split("\n")[0].slice(0, 80)}`, ms: 0 };
-  const use = { deadline: budget.deadline, job: budget.start.trigger === "job", signal };
-  const t0 = Date.now();
-  try {
-    const out = await targets[call](name, req, use);
-    budget.made.push({ ...made, status: "exit" in out ? (out.exit ?? -1) : 0, ms: Date.now() - t0 });
-    return out;
-  } catch (e) {
-    budget.made.push({ ...made, error: (e as Error).message.slice(0, 200), ms: Date.now() - t0 });
-    throw e;
-  }
-}
-
 /** One request a function sends: to its toolkit's hosts only, with its toolkit's key. */
 async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: AbortSignal) {
   if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests`);
-  if (!req.url && !kit.base_urls.length) throw new LibraryError(`the ${kit.service} toolkit has no base_urls: give a request its url`);
   const target = new URL(req.url ? checkUrl(req.url) : `${kit.base_urls[0]}/${String(req.path ?? "").replace(/^\//, "")}`);
   const hosts = store.hostsOf(kit);
   if (!hosts.some((h) => onSite(target.hostname, h))) throw new LibraryError(`${target.hostname} isn't one of the ${kit.service} toolkit's hosts (${hosts.join(", ")}): add it to the toolkit's hosts if its API sends there`);

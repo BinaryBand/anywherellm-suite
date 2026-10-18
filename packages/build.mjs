@@ -29,28 +29,10 @@ const self = fileURLToPath(import.meta.url);
 const here = path.dirname(self);
 
 /** The packages a skill may bundle besides its own code, by the skill's folder name. Each is a
- *  decision (docs/notes/README.md): library bundles QuickJS, the engine its functions run in, and
- *  ssh2, the client kit.ssh runs commands with, with ssh2's own dependencies.
+ *  decision (docs/notes/README.md): library bundles QuickJS, the engine its functions run in.
  *  @type {Record<string, string[]>} */
 const VENDORED = {
-  library: [
-    "node_modules/quickjs-emscripten-core/",
-    "node_modules/@jitl/quickjs-ffi-types/",
-    "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/",
-    "node_modules/ssh2/",
-    "node_modules/asn1/",
-    "node_modules/safer-buffer/",
-    "node_modules/bcrypt-pbkdf/",
-    "node_modules/tweetnacl/",
-  ],
-};
-
-/** What a skill's bundle leaves out although a vendored package asks for it, by the skill's folder
- *  name: ssh2's optional native parts, which it requires inside a try and does without (it uses
- *  node:crypto then), so the skill stays text and runs on any OS and CPU.
- *  @type {Record<string, string[]>} */
-const LEFT_OUT = {
-  library: ["cpu-features", "*.node"],
+  library: ["node_modules/quickjs-emscripten-core/", "node_modules/@jitl/quickjs-ffi-types/", "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/"],
 };
 
 /** The text of every file under `dir`, by its path there with forward slashes; {} with no `dir`.
@@ -70,9 +52,9 @@ export function staticFiles(dir) {
  * Bundles `entry` into `outfile`; `allowed` are path prefixes relative to `cwd`, as esbuild's
  * metafile writes them. `clean` is what to remove if the bundle took in anything else.
  * @param {{ entry: string, outfile: string, target: string, allowed: string[], label: string,
- *   define?: Record<string, string>, loader?: Record<string, "text">, external?: string[], clean?: string, cwd?: string }} options
+ *   define?: Record<string, string>, loader?: Record<string, "text">, clean?: string, cwd?: string }} options
  */
-export async function bundle({ entry, outfile, target, define, loader, allowed, label, external, clean = outfile, cwd = here }) {
+export async function bundle({ entry, outfile, target, define, loader, allowed, label, clean = outfile, cwd = here }) {
   const { metafile } = await build({
     absWorkingDir: cwd,
     entryPoints: [entry],
@@ -83,7 +65,6 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
     format: "cjs",
     define,
     loader,
-    external,
     metafile: true,
     logLevel: "warning",
   });
@@ -148,7 +129,6 @@ async function buildSkills(names) {
       target: "node18",
       define: { STATIC_FILES: JSON.stringify(staticFiles(path.join(dir, "static"))) },
       allowed: [`skills/${name}/src/`, "shared/", ...(VENDORED[name] || [])],
-      external: LEFT_OUT[name],
       label: name,
       clean: out,
     });

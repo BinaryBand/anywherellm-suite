@@ -191,7 +191,7 @@ const read = (name: string): string => fs.readFileSync(path.join(skillDir, "stat
 test("guide with no topic gives the overview; with a topic, that topic", async () => {
   assert.equal(await call({ action: "guide" }), read("guide/index.md").trim());
   assert.equal(await call({ action: "guide", topic: "Functions" }), read("guide/functions.md").trim());
-  assert.match(await call({ action: "guide", topic: "nothing" }), /^Library: there's no topic "nothing"; the topics are: functions, research, schedules, secrets, snippets, targets, toolkits\.$/);
+  assert.match(await call({ action: "guide", topic: "nothing" }), /^Library: there's no topic "nothing"; the topics are: functions, research, schedules, secrets, snippets, toolkits\.$/);
   assert.equal(await call({}), read("guide/index.md").trim(), "guide is the default");
 });
 

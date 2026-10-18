@@ -2,11 +2,8 @@
 # tools/e2e-skill [skill ...]: a skill's own check inside a real AnythingLLM. For each skill (no
 # argument: every skill with a tests/e2e/inside.js) it starts a throwaway AnythingLLM (the image in
 # contract/versions.env) on fresh storage, installs the built skill with `anythingllm-suite install
-# --skills`, and runs the skill's tests/e2e/inside.js in the container. A skill whose check needs
-# something beside AnythingLLM (library's: an SSH server) starts it in tests/e2e/beside.sh, sourced
-# here: it names its container in `beside` and what inside.js reads in `inside_env`. The containers
-# and the temporary folder are removed afterwards, pass or fail; nothing running on this machine is
-# touched.
+# --skills`, and runs the skill's tests/e2e/inside.js in the container. The container and the
+# temporary folder are removed afterwards, pass or fail; nothing running on this machine is touched.
 #
 # Fresh storage matters: a folder left from an earlier run has tabs whose pages are gone. (Not
 # tools/e2e, which drives the control server and the bridge.) Needs podman or docker and Node 22.18
@@ -29,13 +26,9 @@ e2e() {
   name="allm-e2e-skill-$1-$$"
   work=$(mktemp -d)
   port=$(free_port)
-  beside=""
-  inside_env=()
   trap 'status=$?
     [ "$status" -eq 0 ] || { echo "--- the container log" >&2; "$engine" logs --tail 20 "$name" >&2 2>&1 || true; }
     open_storage
-    [ "$status" -eq 0 ] || [ -z "$beside" ] || { echo "--- beside" >&2; "$engine" logs --tail 15 "$beside" >&2 2>&1 || true; }
-    [ -z "$beside" ] || "$engine" stop -t 1 "$beside" >/dev/null 2>&1 || true
     "$engine" stop -t 1 "$name" >/dev/null 2>&1 || true
     rm -rf "$work"
     exit "$status"' EXIT
@@ -50,10 +43,8 @@ e2e() {
   open_storage
 
   BRIDGE_ENV_FILE="$work/bridge.env" node "$cli" install --storage "$work/storage" --skills "$1"
-  # shellcheck source=/dev/null # the skill's own, when it has one
-  [ ! -f "$SKILL_DIR/tests/e2e/beside.sh" ] || . "$SKILL_DIR/tests/e2e/beside.sh"
   "$engine" exec -w /app/server -e HUB_ID="$HUB_ID" -e STORAGE_DIR="$INNER_STORAGE" -e INNER_PORT="$INNER_PORT" \
-    -e FENCE_ALLOW=127.0.0.1,localhost ${inside_env[@]+"${inside_env[@]}"} "$name" node /e2e/inside.js
+    -e FENCE_ALLOW=127.0.0.1,localhost "$name" node /e2e/inside.js
   echo "tools/e2e-skill: $1 ok"
 }
 

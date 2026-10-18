@@ -151,5 +151,5 @@ test("a definition is checked, and a sign-in that isn't there is said so", async
   assert.match(await call({ action: "secret", kind: "oauth", label: "nope" }), /there's no sign-in "nope": give its definition/);
   assert.match(await call({ action: "secret", kind: "oauth", label: "x", definition: { ...definition, params: { client_id: "sneaky" } } }), /params can't set client_id/);
   assert.match(await call({ action: "secret", kind: "oauth", label: "x", definition: { ...definition, token_url: "ftp://x.example/token" } }), /token_url is an https address/);
-  assert.match(await call({ action: "secret", kind: "magic", label: "x" }), /kind is "key" \(an API key or token\), "oauth" \(a sign-in\) or "ssh"/);
+  assert.match(await call({ action: "secret", kind: "magic", label: "x" }), /kind is "key" \(an API key or token\) or "oauth"/);
 });

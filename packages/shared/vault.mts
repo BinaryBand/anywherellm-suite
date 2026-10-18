@@ -1,5 +1,5 @@
 // The secrets the skills use and the model never reads, for the whole AnythingLLM instance: the
-// browser's passwords and passkeys, the library's API keys, OAuth sign-ins and SSH targets. Each is an entry
+// browser's passwords and passkeys, the library's API keys and OAuth sign-ins. Each is an entry
 // { id, kind, site, user, ... } whose other fields are its kind's own; the skills give them meaning,
 // this file only keeps them. They're kept in one file, <storage>/vault-lean/vault.json, encrypted
 // with AES-256-GCM under the key in VAULT_KEY_FILE, a file outside the storage (32 random bytes in
