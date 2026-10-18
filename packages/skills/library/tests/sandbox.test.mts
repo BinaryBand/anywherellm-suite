@@ -126,7 +126,16 @@ test("a run stopped from outside says it was stopped", async () => {
 test("a function that uses too much memory is stopped", async () => {
   const outcome = await run({ source: "async function main() { const a = []; while (true) a.push('x'.repeat(1e5)); }", input: null, kit: {}, deadline: soon(3000) });
   assert.equal(outcome.ok, false);
-  assert.match(!outcome.ok ? `${outcome.error.name} ${outcome.error.message}` : "", /out of memory|Timeout/);
+  // QuickJS's collector slows as the heap fills, so the busy cap (or the deadline) may come first.
+  assert.match(!outcome.ok ? `${outcome.error.name} ${outcome.error.message}` : "", /out of memory|Timeout|Busy/);
+});
+
+test("a kit answer the function has no memory left for ends the run, not AnythingLLM's thread", async () => {
+  const big = { items: Array.from({ length: 200_000 }, (_, i) => ({ i, s: "y".repeat(50) })) };
+  const source = "async function main(i, kit) { const keep = []; for (;;) keep.push(await kit.get()); }";
+  const outcome = await run({ source, input: null, kit: { get: async () => big }, deadline: soon(20_000) });
+  assert.equal(!outcome.ok && outcome.error.name, "KitError");
+  assert.match(!outcome.ok ? outcome.error.message : "", /couldn't be taken in: out of memory/);
 });
 
 test("a function reaches nothing of the host: no process, require, fetch or files", async () => {

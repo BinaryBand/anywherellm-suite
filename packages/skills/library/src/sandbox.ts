@@ -124,6 +124,8 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
   const pending = new Set<QuickJSDeferredPromise>();
   let finished = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  /** Ends the run with `error`, whatever its script is waiting on (set as the run starts waiting). */
+  let end: (error: Failure) => void = () => {};
 
   try {
     /** A JSON value made the script's own, through its JSON.parse: plain data, no host objects. */
@@ -171,10 +173,18 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
     function settle(deferred: QuickJSDeferredPromise, make: () => QuickJSHandle, how: "resolve" | "reject") {
       if (finished) return; // the run's outcome is decided: its script runs no further
       busyUntil = Date.now() + LIMITS.busyMs;
+      let handle: QuickJSHandle | undefined;
+      try {
+        handle = make();
+        deferred[how](handle);
+      } catch (e) {
+        // The answer couldn't be made the script's (its memory ran out, say): the run ends here, as
+        // a throw from this turn would reach AnythingLLM's own thread. The deferred goes with the rest.
+        return end(cause ?? { name: "KitError", message: `a kit call's answer couldn't be taken in: ${(e as Error).message}` });
+      } finally {
+        handle?.dispose();
+      }
       pending.delete(deferred);
-      const handle = make();
-      deferred[how](handle);
-      handle.dispose();
       deferred.dispose();
       pump();
     }
@@ -212,7 +222,8 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
         return answered(value);
       }),
       new Promise<Outcome>((resolve) => {
-        const ended = () => ((finished = true), resolve({ ok: false, error: timedOut() }));
+        end = (error) => ((finished = true), resolve({ ok: false, error }));
+        const ended = () => end(timedOut());
         timer = setTimeout(ended, Math.max(0, deadline - Date.now()));
         stop.signal.addEventListener("abort", ended, { once: true });
       }),
