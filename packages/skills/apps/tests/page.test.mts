@@ -214,6 +214,7 @@ test("the page patches with one engine, and it agrees with the skill's patch.ts"
     [{ op: "move", from: "/items/0", path: "/items/1" }],
     [{ op: "copy", from: "/items/0", path: "/items/-" }],
     [{ op: "test", path: "/items/0/text", value: "Eggs" }, { op: "replace", path: "/items/0/done", value: true }],
+    [{ op: "test", path: "/items/0", value: { done: false, text: "Eggs" } }],
     [{ op: "replace", path: "/meta/a~1b", value: 5 }, { op: "replace", path: "/meta/m~0n", value: 6 }],
     [{ op: "add", path: "/meta/tags/1", value: "x" }],
     [{ op: "replace", path: "", value: { items: [] } }],
@@ -225,6 +226,8 @@ test("the page patches with one engine, and it agrees with the skill's patch.ts"
     [{ op: "replace", path: "/nope", value: 1 }],
     [{ op: "move", from: "/items", path: "/items/0/inside" }],
     [{ op: "frobnicate", path: "/items" }],
+    [{ op: "add", path: "/items/-" }],
+    [{ op: "replace", path: "/items/0/done" }],
   ];
   for (const patch of cases) {
     const here = (() => {

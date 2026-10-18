@@ -56,7 +56,15 @@ const App = (() => {
   const onstatus = [];
 
   const clone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
-  const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // As JSON values: an object's keys in any order
+  function equal(a, b) {
+    if (a === b) return true;
+    if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
+    if (Array.isArray(a) !== Array.isArray(b)) return false;
+    if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => equal(x, b[i]));
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && equal(a[k], b[k]));
+  }
   const sleep = (ms) => new Promise((go) => setTimeout(go, ms));
 
   // --- JSON Patch, as the host applies it (src/patch.ts); "" is the data as a whole ---
@@ -111,6 +119,7 @@ const App = (() => {
     const doc = { root: clone(data) };
     for (const step of ops) {
       const { op, path } = step;
+      if ((op === "add" || op === "replace") && !("value" in step)) throw new Error(`${op} needs a value`);
       if (op === "add") add(doc, path, clone(step.value));
       else if (op === "remove") remove(doc, path);
       else if (op === "replace") {
