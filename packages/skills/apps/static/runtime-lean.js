@@ -155,7 +155,7 @@ var AppsLean = (() => {
     const open = picking || picks.length;
     ui.innerHTML = `<style>
       :host{all:initial}
-      .b{position:fixed;right:14px;bottom:14px;z-index:2147483646;min-height:44px;padding:0 16px;border-radius:14px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:var(--ink,#222);font:600 15px system-ui,sans-serif}
+      .b{position:absolute;right:14px;top:14px;z-index:2147483646;min-height:44px;padding:0 16px;border-radius:14px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:var(--ink,#222);font:600 15px system-ui,sans-serif}
       .t{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:70vh;overflow:auto;padding:14px 16px 18px;border-radius:18px 18px 0 0;background:var(--panel,#fff);color:var(--ink,#222);box-shadow:0 -8px 28px rgba(0,0,0,.18);font:15px/1.45 system-ui,sans-serif;display:flex;flex-direction:column;gap:10px}
       .r{display:flex;gap:8px;justify-content:space-between;align-items:center}
       button{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:inherit;font:inherit;font-weight:600}
@@ -204,7 +204,15 @@ var AppsLean = (() => {
       else if (picks.length < PICKS) (outline(e.target, true), picks.push({ el: e.target, where: locate(e.target), text: "" }));
       tray();
     }, { capture: true });
-  const mountTray = () => { if (!host.isConnected && document.body) { document.body.append(host); tray(); } };
+  // The button sits in the page's top right corner and scrolls away with it; the first heading keeps clear of it.
+  const mountTray = () => {
+    if (host.isConnected || !document.body) return;
+    const clear = document.createElement("style");
+    clear.textContent = "h1:first-of-type{padding-right:140px;box-sizing:border-box}";
+    if (document.head) document.head.append(clear);
+    document.body.append(host);
+    tray();
+  };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountTray);
   else mountTray();
 
