@@ -67,7 +67,7 @@ export function read(workspace: string, name: unknown): Json {
  *  for a change that may write page.html, `fn` is tried first on the app as it is, outside the lock,
  *  so the page it writes is checked (the slow part) before the lock is taken, and found checked
  *  under it; `fn` must change nothing but what it answers. */
-async function update(workspace: string, name: unknown, fn: (app: Json) => Json | Promise<Json>, pageFirst = false): Promise<Json> {
+export async function update(workspace: string, name: unknown, fn: (app: Json) => Json | Promise<Json>, pageFirst = false): Promise<Json> {
   if (pageFirst)
     try {
       await fn(read(workspace, name));
@@ -269,31 +269,38 @@ function refusedWith(app: Json, ids: (string | undefined)[], why: string): Json 
   return { ...app, seen: [...(app.seen || []), ...fresh].slice(-SEEN), refused: [...(app.refused || []), ...fresh.map((id) => ({ id, why }))].slice(-REFUSED) };
 }
 
-/** Several changes to one app, in order, read once and saved once: one answer for each (the
- *  others still apply when one doesn't). Those past the first `most` are refused untried, so a flood
- *  can't push the app's changes out of its history. Throws when the app can't be read or saved. */
+/** `app` with several changes applied, in order, unsaved: one answer for each (the others still
+ *  apply when one doesn't). Those past the first `most` are refused untried, so a flood can't push the
+ *  app's changes out of its history. */
+export function changesOn(first: Json, changes: Change[], most = Infinity): { next: Json; answers: Answer[] } {
+  let app = first;
+  const answers = changes.slice(0, most).map((opts): Answer => {
+      try {
+      const next = applyChange(app, opts);
+      if (next === app) return { duplicate: true };
+      app = next;
+      return {};
+    } catch (error) {
+      app = refusedWith(app, [opts.id], (error as Error).message.split("\n")[0]);
+      return { error: error as Error };
+    }
+  });
+  const over = changes.slice(most);
+  if (over.length) {
+    const error = new AppError(`more than ${most} changes at once`);
+    app = refusedWith(app, over.map((c) => c.id), error.message);
+    answers.push(...over.map(() => ({ error })));
+  }
+  return { next: app, answers };
+}
+
+/** changesOn for one app, read once and saved once. Throws when the app can't be read or saved. */
 export async function changeMany(workspace: string, name: unknown, changes: Change[], most = Infinity): Promise<Answer[]> {
   let answers: Answer[] = [];
-  await update(workspace, name, (first) => {
-    let app = first;
-    answers = changes.slice(0, most).map((opts): Answer => {
-      try {
-        const next = applyChange(app, opts);
-        if (next === app) return { duplicate: true };
-        app = next;
-        return {};
-      } catch (error) {
-        app = refusedWith(app, [opts.id], (error as Error).message.split("\n")[0]);
-        return { error: error as Error };
-      }
-    });
-    const over = changes.slice(most);
-    if (over.length) {
-      const error = new AppError(`more than ${most} changes at once`);
-      app = refusedWith(app, over.map((c) => c.id), error.message);
-      answers.push(...over.map(() => ({ error })));
-    }
-    return app;
+  await update(workspace, name, (app) => {
+    let next;
+    ({ next, answers } = changesOn(app, changes, most));
+    return next;
   });
   return answers;
 }
@@ -441,11 +448,19 @@ const ASKS_WAITING = 10;
 export const PICKS = 5;
 export const ASK_TEXT = 500;
 
-/** An ask from the app's page: what the user picked on it ("Comment") and what they say about
- *  them, in one text (an older page sent a text per pick, still kept), kept apart from the data and
- *  its history until the agent clears it. Refused when it's malformed, or when ASKS_WAITING already
- *  wait. */
-export async function addAsk(workspace: string, name: unknown, ask: { event?: string; text?: unknown; picks: Json }): Promise<{ id: string; kept: number } | null> {
+/** An ask from a page, as it sent it: its own id (`event`), what the user said and what they picked. */
+export interface Ask {
+  event?: string;
+  text?: unknown;
+  picks: Json;
+}
+
+/** `app` with an ask from its page kept, unsaved, and the id it's kept under: what the user picked
+ *  on it ("Comment") and what they say about them, in one text (an older page sent a text per pick,
+ *  still kept), kept apart from the data and its history until the agent clears it. Null for an ask
+ *  seen before: a page may send one twice, and it's kept once, as a change is. Refused when it's
+ *  malformed, or when ASKS_WAITING already wait. */
+export function askOn(app: Json, ask: Ask): { next: Json; id: string; kept: number } | null {
   const picks = Array.isArray(ask.picks) ? ask.picks.slice(0, PICKS) : [];
   const clip = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : undefined);
   const text = clip(ask.text, ASK_TEXT);
@@ -453,17 +468,12 @@ export async function addAsk(workspace: string, name: unknown, ask: { event?: st
     .map((p: Json) => ({ id: clip(p?.id, 80), ref: clip(p?.ref, 80), part: clip(p?.part, 80), at: clip(p?.at, 200), figure: clip(p?.figure, 40), tag: clip(p?.tag, 20), cls: clip(p?.cls, 60), shown: clip(p?.shown, 80), text: clip(p?.text, ASK_TEXT) }));
   const kept = text ? clean : clean.filter((p: Json) => p.text);
   if (!kept.length) throw new AppError("an ask says what the user wants of something picked on the page");
-  let duplicate = false;
-  const app = await update(workspace, name, (app) => {
-    // A page may send an ask twice: it's kept once, as a change is.
-    if ((duplicate = isSeen(app, ask.event))) return app;
-    const asks: Json[] = app.asks || [];
-    if (asks.length >= ASKS_WAITING) throw new AppError(`${ASKS_WAITING} asks are waiting already: the chat has to catch up first`);
-    const seq = (app.askSeq || 0) + 1;
-    const next = { ...app, askSeq: seq, asks: [...asks, { id: `a${seq}`, t: now(), ...(text ? { text } : {}), picks: kept }] };
-    return ask.event ? seenWith(next, ask.event) : next;
-  });
-  return duplicate ? null : { id: app.asks.at(-1).id, kept: kept.length };
+  if (isSeen(app, ask.event)) return null;
+  const asks: Json[] = app.asks || [];
+  if (asks.length >= ASKS_WAITING) throw new AppError(`${ASKS_WAITING} asks are waiting already: the chat has to catch up first`);
+  const seq = (app.askSeq || 0) + 1;
+  const next = { ...app, askSeq: seq, asks: [...asks, { id: `a${seq}`, t: now(), ...(text ? { text } : {}), picks: kept }] };
+  return { next: ask.event ? seenWith(next, ask.event) : next, id: `a${seq}`, kept: kept.length };
 }
 
 /** The app with the ask `id` cleared and nothing else changed: a question answered in the chat, or a
