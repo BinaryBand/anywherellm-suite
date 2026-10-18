@@ -79,8 +79,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const saved = JSON.parse(fs.readFileSync(path.join(STORAGE_DIR, HUB_ID, "home", "groceries.json"), "utf8"));
   assert.equal(saved.history.filter((h) => h.by === "page").length, 1, "the tap sent twice applies once");
 
-  // Change this, in a real Chrome (the collector's): a tap while picking picks, never presses; the
-  // picks go to the app as an ask, apart from its data.
+  // Comment, in a real Chrome (the collector's): a tap while picking picks, never presses; the picks
+  // and the one text about them go to the app as an ask, apart from its data.
   const habits = await call("home", { action: "create", name: "reading", title: "Reading", starter: "tracker" });
   const readingUrl = habits.match(linkTo("Reading"))[1];
   const puppeteer = require("/app/collector/node_modules/puppeteer");
@@ -90,17 +90,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await tab.goto(readingUrl, { waitUntil: "load" });
     const inTray = (sel) =>
       tab.evaluate((s) => {
-        const el = [...document.querySelectorAll("body > div")].find((d) => d.shadowRoot)?.shadowRoot.querySelector(s);
+        const el = [...document.querySelectorAll("div")].find((d) => d.shadowRoot)?.shadowRoot.querySelector(s);
         return el ? (el.click(), "ok") : "missing";
       }, sel);
-    assert.notEqual(await inTray('[data-a="start"]'), "missing", "the page has Change this");
+    assert.notEqual(await inTray('[data-a="start"]'), "missing", "the page has Comment");
     const count = await tab.evaluate(() => App.data.count);
     await tab.click('[data-ref="more"]');
     await sleep(300);
     assert.equal(await tab.evaluate(() => App.data.count), count, "the tap picked the button and didn't press it");
     await inTray('[data-a="describe"]');
     await tab.evaluate(() => {
-      const t = [...document.querySelectorAll("body > div")].find((d) => d.shadowRoot).shadowRoot.querySelector("textarea");
+      const t = [...document.querySelectorAll("div")].find((d) => d.shadowRoot).shadowRoot.querySelector("textarea");
       t.value = "Make the plus bigger";
       t.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     });
@@ -108,7 +108,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const askUntil = Date.now() + 40_000;
     const asks = () => JSON.parse(fs.readFileSync(path.join(STORAGE_DIR, HUB_ID, "home", "reading.json"), "utf8")).asks || [];
     while (Date.now() < askUntil && !asks().length) await sleep(200);
-    assert.deepEqual(asks().map((a) => a.picks.map((p) => [p.part, p.ref, p.text])), [[["counter", "more", "Make the plus bigger"]]]);
+    assert.deepEqual(asks().map((a) => [a.text, a.picks.map((p) => [p.part, p.ref])]), [["Make the plus bigger", [["counter", "more"]]]]);
     await tab.click('[data-ref="more"]');
     await sleep(300);
     assert.equal(await tab.evaluate(() => App.data.count), count + 1, "once sent, taps press again");
@@ -122,7 +122,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let news = "";
   while (Date.now() < landed && !news.includes("on reading")) news = await call("home", { action: "list" });
   assert.match(news, /Changes made on app pages since the last call[^\n]*\n- [^\n]* on reading/, news);
-  assert.match(await call("home", { action: "read", name: "reading" }), /1\. counter more button[^\n]*"Make the plus bigger"; find "<button type=\\"button\\" class=\\"primary\\" data-ref=\\"more\\"/);
+  assert.match(await call("home", { action: "read", name: "reading" }), /"Make the plus bigger"\n  1\. counter more button[^\n]*; find "<button type=\\"button\\" class=\\"primary\\" data-ref=\\"more\\"/);
 
   // The page check, in its worker on this Node.
   const refused = await call("home", { action: "edit", name: "groceries", file: "page.html", find: "<!--scripts-->", text: "<script>App.onchange(draw);</script>\n<!--scripts-->" });

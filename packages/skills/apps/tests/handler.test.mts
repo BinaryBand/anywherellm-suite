@@ -260,7 +260,7 @@ test("a card's title links to the app's page: under AnythingLLM's address when i
 });
 
 test("the old names show, write, revert and open are gone, and the actions are listed", async () => {
-  for (const action of ["show", "write", "revert", "open"]) assert.match(await call("home", { action, name: "groceries" }), /^Apps: action is one of list, create, do, read, page, undo, edit, delete, guide$/, action);
+  for (const action of ["show", "write", "revert", "open"]) assert.match(await call("home", { action, name: "groceries" }), /^Apps: action is one of list, create, do, read, page, undo, edit, delete, dismiss, guide$/, action);
 });
 
 test("every page a call touches is written, and they share one key for pages", async () => {

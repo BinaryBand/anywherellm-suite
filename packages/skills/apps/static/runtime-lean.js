@@ -128,12 +128,13 @@ var AppsLean = (() => {
     }
   }
 
-  // --- Change this: the user picks up to 5 things on the page and says what should change; it goes
-  // to the chat as an ask, which the agent acts on only when the user asks it to there. While
+  // --- Comment: the user picks up to 5 things on the page and says one thing about them, a question
+  // or a change; it goes to the chat as an ask, which the agent acts on only when the user asks it to
+  // there. While
   // picking, taps pick instead of pressing: these listeners, on the window and added before any
   // part's, see each tap first and keep it from the page; scrolling still works.
   const PICKS = cfg.picks || 5, WORDS = cfg.words || 500;
-  let picking = false, picks = [];
+  let picking = false, picks = [], text = "", inSlot = null;
   const host = document.createElement("div");
   const ui = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
   const ours = (e) => (e.composedPath ? e.composedPath().includes(host) : host.contains(e.target));
@@ -154,31 +155,34 @@ var AppsLean = (() => {
   function tray() {
     const open = picking || picks.length;
     ui.innerHTML = `<style>
-      :host{all:initial}
+      :host{all:initial;display:block}
       .b{position:absolute;right:14px;top:14px;z-index:2147483646;min-height:44px;padding:0 16px;border-radius:14px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:var(--ink,#222);font:600 15px system-ui,sans-serif}
+      .b.in{position:static}
+      .c{padding:6px 12px;border-radius:99px;background:var(--accentbg,#eef);font-size:14px;font-weight:600}
       .t{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:70vh;overflow:auto;padding:14px 16px 18px;border-radius:18px 18px 0 0;background:var(--panel,#fff);color:var(--ink,#222);box-shadow:0 -8px 28px rgba(0,0,0,.18);font:15px/1.45 system-ui,sans-serif;display:flex;flex-direction:column;gap:10px}
       .r{display:flex;gap:8px;justify-content:space-between;align-items:center}
       button{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:inherit;font:inherit;font-weight:600}
       .p{background:var(--accent,#6a5cff);color:var(--on-accent,#fff);border:0}
       textarea{width:100%;box-sizing:border-box;min-height:64px;padding:10px;border-radius:12px;border:1px solid var(--line,#ccc);font:inherit;color:inherit;background:var(--bg,#fff)}
       small{color:var(--muted,#666)}
-    </style>` + (!open ? `<button class="b" data-a="start" type="button">Change this</button>` : picking
-      ? `<div class="t" role="dialog" aria-label="Pick what should change"><div class="r"><b>Tap what should change</b><small>${picks.length} of ${PICKS}</small></div><div class="r"><button data-a="cancel" type="button">Cancel</button><button class="p" data-a="describe" type="button"${picks.length ? "" : " disabled"}>Describe ${picks.length || ""}</button></div></div>`
-      : `<div class="t" role="dialog" aria-label="Describe your changes"><b>${picks.length} to change</b>${picks.map((p, i) => `<label><small>${i + 1}. ${esc(p.where.part || p.where.ref || p.where.tag)}${p.where.shown ? ": " + esc(p.where.shown) : ""}</small><textarea data-i="${i}" maxlength="${WORDS}" placeholder="What should change?">${esc(p.text || "")}</textarea></label>`).join("")}<small>Nothing changes until you ask in the chat.</small><div class="r"><button data-a="back" type="button">Back</button><button class="p" data-a="send" type="button">Send to the chat</button></div></div>`);
+    </style>` + (!open ? `<button class="b${inSlot ? " in" : ""}" data-a="start" type="button">Comment</button>` : picking
+      ? `<div class="t" role="dialog" aria-label="Pick what to comment on"><div class="r"><b>Tap what you want to comment on</b><small>${picks.length} of ${PICKS}</small></div><div class="r"><button data-a="cancel" type="button">Cancel</button><button class="p" data-a="describe" type="button"${picks.length ? "" : " disabled"}>${picks.length ? "Comment on " + picks.length + (picks.length === 1 ? " pick" : " picks") : "Pick something first"}</button></div></div>`
+      : `<div class="t" role="dialog" aria-label="Write your comment"><b>${picks.length} picked</b><div class="r" style="flex-wrap:wrap;justify-content:flex-start">${picks.map((p, i) => `<span class="c">${i + 1}. ${esc(p.where.part || p.where.ref || p.where.tag)}${p.where.shown ? ": " + esc(p.where.shown) : ""}</span>`).join("")}</div><label><small>What do you want to say about these?</small><textarea data-text maxlength="${WORDS}" placeholder="A question or a change">${esc(text)}</textarea></label><small>Nothing changes until you ask in the chat.</small><div class="r"><button data-a="back" type="button">Back</button><button class="p" data-a="send" type="button">Send to the chat</button></div></div>`);
   }
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   function end() {
     for (const p of picks) outline(p.el, false);
     picks = [];
+    text = "";
     picking = false;
     tray();
   }
   async function send() {
-    const picked = picks.map((p) => ({ ...p.where, text: String(p.text || "").slice(0, WORDS) })).filter((p) => p.text.trim());
-    if (!picked.length) return;
-    const { r } = await upload({ kind: "ask", ev: "ask", picks: picked }).catch(() => ({ r: null }));
+    const said = text.trim().slice(0, WORDS);
+    if (!said || !picks.length) return;
+    const { r } = await upload({ kind: "ask", ev: "ask", text: said, picks: picks.map((p) => p.where) }).catch(() => ({ r: null }));
     end();
-    bar(r && r.ok ? "Sent to the chat. Ask the agent there to make the change." : "Couldn't send it: try again in a moment.");
+    bar(r && r.ok ? "Sent to the chat. Ask the agent there to answer, or to make the change." : "Couldn't send it: try again in a moment.");
   }
   // What each of the tray's buttons does to picking: on, off, or send.
   const ACTS = { start: true, back: true, describe: false, cancel: null, send: "send" };
@@ -191,7 +195,7 @@ var AppsLean = (() => {
     picking = act;
     tray();
   });
-  ui.addEventListener("input", (e) => { const i = e.target.getAttribute && e.target.getAttribute("data-i"); if (i !== null && picks[i]) picks[i].text = e.target.value; });
+  ui.addEventListener("input", (e) => { if (e.target.hasAttribute && e.target.hasAttribute("data-text")) text = e.target.value; });
   for (const type of ["click", "pointerdown", "mousedown", "mouseup", "pointerup", "submit", "input", "change", "keydown", "touchend"])
     window.addEventListener(type, (e) => {
       if (!picking || ours(e)) return;
@@ -204,13 +208,19 @@ var AppsLean = (() => {
       else if (picks.length < PICKS) (outline(e.target, true), picks.push({ el: e.target, where: locate(e.target), text: "" }));
       tray();
     }, { capture: true });
-  // The button sits in the page's top right corner and scrolls away with it; the first heading keeps clear of it.
+  // The button goes beside the page's first heading, as one row with it; a page with no heading gets
+  // it in the top right corner, scrolling away with the page.
   const mountTray = () => {
     if (host.isConnected || !document.body) return;
-    const clear = document.createElement("style");
-    clear.textContent = "h1:first-of-type{padding-right:140px;box-sizing:border-box}";
-    if (document.head) document.head.append(clear);
-    document.body.append(host);
+    const h1 = document.querySelector && document.querySelector("h1");
+    if (h1 && h1.parentNode) {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:12px";
+      h1.parentNode.insertBefore(row, h1);
+      h1.style.cssText += ";flex:1;min-width:0";
+      row.append(h1, host);
+      inSlot = row;
+    } else document.body.append(host);
     tray();
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountTray);

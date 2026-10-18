@@ -157,14 +157,14 @@ interface Row {
   event: Json;
   change?: store.Change;
   /** An ask: what was picked, and its own id as its page sent it, so one sent twice is kept once. */
-  ask?: { event?: string; picks: Json[] };
+  ask?: { event?: string; text?: unknown; picks: Json[] };
   answer?: Result;
 }
 
 /** Applies every waiting event, oldest first, and answers what happened to each. An event is
  *  applied only to the app whose secret it carries, so one page's link changes no other app; an app
  *  from before apps had a secret takes its page's events until it has one. A change is a patch on
- *  the data; an ask (kind "ask") is what the user picked with Change this. The changes for one app
+ *  the data; an ask (kind "ask") is what the user picked and said with Comment. The changes for one app
  *  are applied together, so the app is read and written once however many the page sent. */
 export async function collect(): Promise<Result[]> {
   const rows: Row[] = [];
@@ -177,7 +177,7 @@ export async function collect(): Promise<Result[]> {
     const said = { kind, ev: String(e.ev || kind), fields } as const;
     const id = typeof e.id === "string" ? e.id : undefined;
     const row: Row = { workspace: e.workspace, app: e.app, said, event: e };
-    if (kind === "ask") row.ask = { event: id, picks: e.picks };
+    if (kind === "ask") row.ask = { event: id, text: e.text, picks: e.picks };
     else row.change = { patch: e.patch, ev: said.ev, fields, by: "page", id };
     const key = `${e.workspace}/${e.app}`;
     (byApp.get(key) ?? byApp.set(key, []).get(key)!).push(row);
