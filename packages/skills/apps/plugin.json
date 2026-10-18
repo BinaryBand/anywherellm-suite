@@ -4,7 +4,7 @@
   "name": "Apps",
   "schema": "skill-1.0.0",
   "version": "0.20.0",
-  "description": "Use for anything the user wants to keep, track, tick off, time or review across chats, and for an explainer or walkthrough to page through: small apps in this workspace, each with its own page. Start with list: it names the apps and how to make a new one. read gives an app's data and newest changes. A data change is a do: a JSON patch with ev; test a list item before patching it by place. edit changes app.json or page.html. undo takes back the newest change. Follow app.json's rules; the user's words beat the design rules. page gives an app's page: the card's title is the link. Put any Card in your reply exactly as given.",
+  "description": "Makes and keeps small apps in this workspace, each with its own page that works on the user's phone and keeps its data: lists, grids, boards, trackers, logs, timers, calculators, flashcards, explainers. Whatever the user would tap, fill in or come back to (\"a \u2026 timer\", \"a \u2026 log\", \"a grid for \u2026\", \"let me \u2026\", \"track \u2026\", \"remember my choice\") is an app: make it here with create, and keep their entries in it. Start with list: it names the apps and how to make a new one. read gives an app's data and newest changes. A data change is a do: a JSON patch with ev; test a list item before patching it by place. edit changes app.json or page.html. undo takes back the newest change. Follow app.json's rules; the user's words beat the design rules. page gives an app's page: the card's title is the link. Put any Card in your reply exactly as given.",
   "author": "anythingllm-suite",
   "license": "UNLICENSED",
   "imported": true,
