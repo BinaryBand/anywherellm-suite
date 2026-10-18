@@ -63,7 +63,7 @@ export function read(workspace: string, name: unknown): Json {
 }
 
 /** Reads the app, changes it with `fn` and saves what `fn` answers, all under the app's lock; an
- *  answer that is the app itself, or one marked a duplicate, is saved for none. With `pageFirst`,
+ *  answer that is the app itself is saved for none. With `pageFirst`,
  *  for a change that may write page.html, `fn` is tried first on the app as it is, outside the lock,
  *  so the page it writes is checked (the slow part) before the lock is taken, and found checked
  *  under it; `fn` must change nothing but what it answers. */
@@ -75,7 +75,7 @@ async function update(workspace: string, name: unknown, fn: (app: Json) => Json 
   return withLock(workspace, name, async () => {
     const app = read(workspace, name);
     const next = await fn(app);
-    if (next !== app && !next.duplicate) save(workspace, next);
+    if (next !== app) save(workspace, next);
     return next;
   });
 }
@@ -206,7 +206,7 @@ export async function create(workspace: string, name: unknown, definition: Json,
   };
   if (typeof definition.page === "string") await problemsOfPage(definition.page); // before the lock
   // A name that can't be one has no lock to take: its problem is said with the others.
-  return nameProblem(name) ? Promise.resolve().then(make) : withLock(workspace, name, make);
+  return nameProblem(name) ? make() : withLock(workspace, name, make);
 }
 
 /** One change to an app's data, as an action or a page sends it. */
@@ -225,9 +225,9 @@ export interface Change {
 
 /** `app` with `patch` applied to its data and checked against its schema, unsaved. `by` names who
  *  changed it (the agent unless said); a change with an `id` already seen is skipped, and the app
- *  comes back as it was with `duplicate` set. */
+ *  itself comes back. */
 function applyChange(app: Json, { patch, ev, fields, thread, by, id }: Change): Json {
-  if (isSeen(app, id)) return { ...app, duplicate: true };
+  if (isSeen(app, id)) return app;
   let data;
   try {
     data = apply(app.data, patch);
@@ -251,7 +251,7 @@ export async function change(workspace: string, name: unknown, opts: Change): Pr
   return update(workspace, name, (app) => {
     if (opts.jobsOnly && app.jobs !== true) throw new AppError(`${name} doesn't take changes from scheduled jobs: the user lets it from a chat, where its app.json gets "jobs": true`);
     const next = applyChange(app, opts);
-    return next.duplicate ? next : cleared(next, opts.ask);
+    return next === app ? app : cleared(next, opts.ask);
   });
 }
 
@@ -279,7 +279,7 @@ export async function changeMany(workspace: string, name: unknown, changes: Chan
     answers = changes.slice(0, most).map((opts): Answer => {
       try {
         const next = applyChange(app, opts);
-        if (next.duplicate) return { duplicate: true };
+        if (next === app) return { duplicate: true };
         app = next;
         return {};
       } catch (error) {
@@ -437,7 +437,7 @@ export const mark = (workspace: string, name: unknown, fields: Json): Promise<Js
 
 /** How many asks from an app's page wait for the chat, how many picks one holds, and how long its
  *  words may be. */
-export const ASKS_WAITING = 10;
+const ASKS_WAITING = 10;
 export const PICKS = 5;
 export const ASK_TEXT = 500;
 
@@ -453,16 +453,17 @@ export async function addAsk(workspace: string, name: unknown, ask: { event?: st
     .map((p: Json) => ({ id: clip(p?.id, 80), ref: clip(p?.ref, 80), part: clip(p?.part, 80), at: clip(p?.at, 200), figure: clip(p?.figure, 40), tag: clip(p?.tag, 20), cls: clip(p?.cls, 60), shown: clip(p?.shown, 80), text: clip(p?.text, ASK_TEXT) }));
   const kept = text ? clean : clean.filter((p: Json) => p.text);
   if (!kept.length) throw new AppError("an ask says what the user wants of something picked on the page");
+  let duplicate = false;
   const app = await update(workspace, name, (app) => {
     // A page may send an ask twice: it's kept once, as a change is.
-    if (isSeen(app, ask.event)) return { ...app, duplicate: true };
+    if ((duplicate = isSeen(app, ask.event))) return app;
     const asks: Json[] = app.asks || [];
     if (asks.length >= ASKS_WAITING) throw new AppError(`${ASKS_WAITING} asks are waiting already: the chat has to catch up first`);
     const seq = (app.askSeq || 0) + 1;
     const next = { ...app, askSeq: seq, asks: [...asks, { id: `a${seq}`, t: now(), ...(text ? { text } : {}), picks: kept }] };
     return ask.event ? seenWith(next, ask.event) : next;
   });
-  return app.duplicate ? null : { id: app.asks.at(-1).id, kept: kept.length };
+  return duplicate ? null : { id: app.asks.at(-1).id, kept: kept.length };
 }
 
 /** The app with the ask `id` cleared and nothing else changed: a question answered in the chat, or a

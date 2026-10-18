@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { call, post } from "./harness.mts";
+import { call, from } from "./harness.mts";
 import { whereIs } from "../src/handler.ts";
 import * as store from "../src/store.ts";
 
-const ask = (app: string, picks: unknown[], workspace = "home", id = `ask-${Math.random()}`) => post({ workspace, app, secret: store.read(workspace, app).secret, id, kind: "ask", ev: "ask", picks });
+const ask = (app: string, picks: unknown[], workspace = "home", id = `ask-${Math.random()}`) => from(workspace, app, { id, kind: "ask", ev: "ask", picks });
 
 test("an ask from the page waits on the app, apart from its data and history, and list counts it", async () => {
   await call("home", { action: "create", name: "reading", title: "Reading", starter: "tracker" });
@@ -67,7 +67,7 @@ test("one text covers every pick; dismiss clears an ask without changing anythin
   await call("home", { action: "create", name: "shared", title: "Shared", starter: "tracker" });
   ask("shared", [{ part: "counter", ref: "more", tag: "button", shown: "+" }, { part: "date-grid", tag: "div" }, { tag: "p" }], "home", "shared-1");
   // A page sends one text for all its picks; an older one sends a text per pick.
-  post({ workspace: "home", app: "shared", secret: store.read("home", "shared").secret, id: "shared-2", kind: "ask", ev: "ask", text: "Why is this 60%?", picks: [{ part: "counter", ref: "more", tag: "button", shown: "+" }, { part: "date-grid", tag: "div" }] });
+  from("home", "shared", { id: "shared-2", kind: "ask", ev: "ask", text: "Why is this 60%?", picks: [{ part: "counter", ref: "more", tag: "button", shown: "+" }, { part: "date-grid", tag: "div" }] });
   await call("home", { action: "list" });
   const asks = store.read("home", "shared").asks;
   assert.equal(asks.length, 1, "picks with no words and no shared text aren't an ask");

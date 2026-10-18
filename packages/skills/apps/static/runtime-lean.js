@@ -78,8 +78,8 @@ var AppsLean = (() => {
       barEl.setAttribute("role", "status");
       barEl.style.cssText = "position:fixed;left:12px;right:12px;bottom:12px;z-index:9;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:12px;background:var(--ink,#222);color:var(--panel,#fff);font:15px/1.4 system-ui,sans-serif";
     }
-    if (barEl.dataset && barEl.dataset.said === text) return;
-    if (barEl.dataset) barEl.dataset.said = text;
+    if (barEl.dataset.said === text) return;
+    barEl.dataset.said = text;
     barEl.textContent = text;
     if (label) {
       const b = document.createElement("button");
@@ -96,7 +96,7 @@ var AppsLean = (() => {
   let gone = false;
   async function sync(body) {
     // App.log asks without waiting: the newest changes, as the page was written with them.
-    if (body.wait === false) return answer(200, { line, lines: (cfg.log || []).filter((l) => l.n > (body.since || 0)) });
+    if (body.wait === false) return answer(200, { line, lines: cfg.log.filter((l) => l.n > (body.since || 0)) });
     if (gone) return new Promise(() => {}); // nothing more will come
     await pause();
     if (!host.isConnected) tray(); // a page that drew itself again took the button out
@@ -108,13 +108,13 @@ var AppsLean = (() => {
         bar("This app was deleted.");
         return new Promise(() => {});
       }
-      if (next && next.version && cfg.version && next.version !== cfg.version) {
+      if (next && next.version && next.version !== cfg.version) {
         // The page itself changed: a reload gets it. This page's unrecorded changes are kept in
         // the browser's storage, so they come back over it.
         if (!typing()) location.reload();
         else bar("This app's page changed.", "Reload", () => location.reload());
       }
-      if (!next || typeof next.line !== "number" || (next.line === served && !pending.length)) return answer(200, { line: body.since, lines: [] });
+      if (!next || typeof next.line !== "number") return answer(200, { line: body.since, lines: [] });
       // A change the app saw is recorded, or was refused, which leaves the line as it was: either
       // way it no longer goes over the data.
       const seen = next.seen || [], left = pending.filter((e) => !seen.includes(e.id));
@@ -134,7 +134,7 @@ var AppsLean = (() => {
   // or a change; it goes to the chat as an ask, which the agent acts on only when the user asks it to
   // there. While picking, taps pick instead of pressing: these listeners, on the window and added
   // before any part's, see each tap first and keep it from the page; scrolling still works.
-  const PICKS = cfg.picks || 5, WORDS = cfg.words || 500;
+  const PICKS = cfg.picks, WORDS = cfg.words;
   let picking = false, picks = [], text = "", sending = false, failed = false, row = null;
   const host = document.createElement("div");
   const ui = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
@@ -249,6 +249,6 @@ var AppsLean = (() => {
   };
   return {
     /** The app as app.js's App.start takes it. */
-    app: () => ({ title: cfg.title, card: cfg.card, data: over(cfg.data), line, token: "", append: "lean:append", sync: "lean:sync" }),
+    app: () => ({ title: cfg.title, card: cfg.card, data: over(cfg.data), line, append: "lean:append", sync: "lean:sync" }),
   };
 })();

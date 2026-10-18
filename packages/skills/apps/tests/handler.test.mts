@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { call, handler, inWorkspace, PLAN, post, publicDir, SAMPLES } from "./harness.mts";
+import { call, from, handler, inWorkspace, PLAN, publicDir, SAMPLES } from "./harness.mts";
 import * as store from "../src/store.ts";
 
 /** app.json for a list, as the agent writes it after reading the item-list part. */
@@ -116,8 +116,6 @@ test("guide gives several topics in one answer, with the runtime after a compone
 test("undo takes back the newest change, to a file or the data, and read lists the earlier files", async () => {
   await make("home", "pages", "Pages");
   await call("home", { action: "do", name: "pages", ev: "add", patch: [{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }] });
-  // A second later, so the file's change is the newer one.
-  await new Promise((r) => setTimeout(r, 1100));
   await call("home", { action: "edit", name: "pages", file: "page.html", find: "--accent-h:272", text: "--accent-h:140" });
   assert.match(await call("home", { action: "read", name: "pages" }), /\nEarlier files \(undo with file takes back the newest change to one\):\n- \S+ page\.html\n/);
   assert.doesNotMatch(await call("home", { action: "read", name: "pages" }), /<!doctype/, "read without file leaves the page out");
@@ -269,7 +267,7 @@ test("every page a call touches is written, and they share one key for pages", a
     await call("keys", { action: "create", name, title: name, starter: "checklist" });
     await store.mark("keys", name, { pageToken: `tok-${name}` });
   }
-  post({ workspace: "keys", app: "two", secret: store.read("keys", "two").secret, id: "e1", ev: "add", patch: [{ op: "add", path: "/items/-", value: { text: "Jam", done: false } }] });
+  from("keys", "two", { id: "e1", ev: "add", patch: [{ op: "add", path: "/items/-", value: { text: "Jam", done: false } }] });
   const patch = JSON.stringify([{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }]);
   await call("keys", { action: "do", name: "one", ev: "add", patch }, base);
   const page = (name: string) => fs.readFileSync(path.join(publicDir, "apps-lean", `tok-${name}.html`), "utf8");

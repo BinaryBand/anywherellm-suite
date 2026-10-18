@@ -4,7 +4,7 @@
 //   <script src="app.js"></script>
 //   <script>App.start(/*APP*/null); App.onchange(draw); draw();</script>
 //
-//   App.start(app)          takes {title, card, data, line, token, append, sync}; returns
+//   App.start(app)          takes {title, card, data, line, append, sync}; returns
 //                           App.data, the one object for good: every change is made in it
 //   App.data, App.title, App.card, App.line   the app as this page has it now
 //   App.patch(ops, event)   change the data: a JSON patch (RFC 6902) on the data, applied
@@ -59,7 +59,7 @@ const App = (() => {
   const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   const sleep = (ms) => new Promise((go) => setTimeout(go, ms));
 
-  // --- JSON Patch, as the host applies it (skill/apps-lean/patch.js); "" is the data as a whole ---
+  // --- JSON Patch, as the host applies it (src/patch.ts); "" is the data as a whole ---
 
   function pointer(path) {
     if (typeof path !== "string" || (path && !path.startsWith("/"))) throw new Error(`bad path ${path}`);
@@ -73,28 +73,26 @@ const App = (() => {
     if (i > list.length || (i === list.length && !appending)) throw new Error(`${path}: there's no item ${i}`);
     return i;
   }
-  function parent(doc, parts, path) {
-    let here = doc;
+  // The container the path's last token is in, that token, and how deep the path goes
+  function slot(doc, path) {
+    const parts = pointer(path);
+    let where = doc;
     for (const token of parts.slice(0, -1)) {
-      if (Array.isArray(here)) here = here[index(here, token, path, false)];
-      else if (here && typeof here === "object" && Object.hasOwn(here, token)) here = here[token];
+      if (Array.isArray(where)) where = where[index(where, token, path, false)];
+      else if (where && typeof where === "object" && Object.hasOwn(where, token)) where = where[token];
       else throw new Error(`${path}: there's nothing at ${token}`);
     }
-    return here;
+    return [where, parts[parts.length - 1], parts.length];
   }
   function at(doc, path) {
-    const parts = pointer(path);
-    const where = parent(doc, parts, path);
-    const last = parts[parts.length - 1];
+    const [where, last] = slot(doc, path);
     if (Array.isArray(where)) return where[index(where, last, path, false)];
     if (where && typeof where === "object" && Object.hasOwn(where, last)) return where[last];
     throw new Error(`${path}: there's nothing there`);
   }
   function remove(doc, path) {
-    const parts = pointer(path);
-    if (parts.length === 1) throw new Error("the data as a whole can't be removed");
-    const where = parent(doc, parts, path);
-    const last = parts[parts.length - 1];
+    const [where, last, depth] = slot(doc, path);
+    if (depth === 1) throw new Error("the data as a whole can't be removed");
     if (Array.isArray(where)) return where.splice(index(where, last, path, false), 1)[0];
     if (where && typeof where === "object" && Object.hasOwn(where, last)) {
       const value = where[last];
@@ -104,9 +102,7 @@ const App = (() => {
     throw new Error(`${path}: there's nothing there`);
   }
   function add(doc, path, value) {
-    const parts = pointer(path);
-    const where = parent(doc, parts, path);
-    const last = parts[parts.length - 1];
+    const [where, last] = slot(doc, path);
     if (Array.isArray(where)) where.splice(index(where, last, path, true), 0, value);
     else if (where && typeof where === "object") where[last] = value;
     else throw new Error(`${path}: its parent isn't an object or a list`);
@@ -119,11 +115,8 @@ const App = (() => {
       else if (op === "remove") remove(doc, path);
       else if (op === "replace") {
         at(doc, path);
-        const parts = pointer(path);
-        const where = parent(doc, parts, path);
-        const last = parts[parts.length - 1];
-        if (Array.isArray(where)) where[index(where, last, path, false)] = clone(step.value);
-        else where[last] = clone(step.value);
+        const [where, last] = slot(doc, path);
+        where[Array.isArray(where) ? Number(last) : last] = clone(step.value);
       } else if (op === "test") {
         if (!equal(at(doc, path), step.value)) throw new Error(`${path} isn't what the patch expected`);
       } else if (op === "move" || op === "copy") {
@@ -203,7 +196,7 @@ const App = (() => {
     const answer = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ token: app.token, ...body }),
+      body: JSON.stringify(body),
       signal,
     });
     return [answer.status, await answer.json().catch(() => ({}))];
@@ -307,7 +300,7 @@ const App = (() => {
       }
       if (flight || settled) continue; // the append's answer has these lines too
       catchUp(reply);
-      show();
+      if (reply.data !== undefined || reply.lines?.length) show();
     }
   }
 

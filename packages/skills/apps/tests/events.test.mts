@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { definitionFor, eventsDir, post, publicDir, root } from "./harness.mts";
+import { definitionFor, eventsDir, from, post, publicDir, root } from "./harness.mts";
 import { caughtUp, collect, keepWatching, MOST_AT_ONCE, news, NEWS_KEPT, TRIES, upgrade, versionOf } from "../src/page.ts";
 import { perProcess } from "#shared/anythingllm";
 import { compose, template } from "../src/parts.ts";
@@ -14,9 +14,6 @@ const upgradeAgain = () => {
   perProcess("apps.upgraded", () => ({ at: "" })).at = "";
   return upgrade();
 };
-
-/** What a page posts for `app`: its event with the app's secret, as the page has it. */
-const from = (workspace: string, app: string, event: Record<string, unknown>) => post({ workspace, app, secret: store.read(workspace, app).secret, ...event });
 
 /** The events still waiting in AnythingLLM's documents folder. */
 const waiting = () => (fs.existsSync(eventsDir) ? fs.readdirSync(eventsDir).filter((f) => f.startsWith("raw-apps-lean-event-")) : []);

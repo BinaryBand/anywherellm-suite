@@ -196,9 +196,6 @@ export function compose(page: string, name: string): string {
 /** A parts entry: a component's name, or a group of them repeated for each item of a list. */
 export type Entry = string | { each: string; parts: string[] };
 
-/** Components that can't repeat over a list: tabs switches the whole page's views, and a timer is
- *  one for the page. */
-const SINGLE = ["tabs", "timer"];
 /** The component names in a parts entry. */
 const namesIn = (entry: Entry): string[] => (typeof entry === "string" ? [entry] : entry.parts);
 /** How a parts list reads in a reply. */
@@ -253,7 +250,8 @@ function partsProblems(used: unknown): string[] {
   for (const g of entries.filter((e) => typeof e !== "string")) {
     once(g.parts, `each ${g.each} item`);
     if (!/^[a-z][A-Za-z0-9_]{0,39}$/.test(g.each)) out.push(`each names a list in the data, such as habits, not ${JSON.stringify(g.each)}`);
-    const single = g.parts.filter((n) => SINGLE.includes(n));
+    // A header's `single` marks one for the whole page, such as tabs, which switches its views.
+    const single = g.parts.filter((n) => parts()[n]?.header.single);
     if (single.length) out.push(`${single.join(" and ")} can't repeat for each item`);
   }
   const lists = entries.filter((e) => typeof e !== "string").map((g) => g.each);
@@ -290,19 +288,19 @@ export function assemble(name: string = DEFAULT_TEMPLATE, used: Json = []): { pa
 /** The starter called `name` without its page: its line, template and parts, its app.json
  *  (`definition`) with the schema its components ask for, and their first data under its own; null
  *  when there's no such starter. */
-function recipe(name: string): { line: string; template: string; parts: Entry[]; definition: Json; data: Json } | null {
+function recipe(name: string): { line: string; template: string; parts: Entry[]; definition: Json; data: Json; script?: string } | null {
   const own = starters()[starterNamed(name) ?? ""];
   if (!own) return null;
   const { schema, data } = merged(own.parts);
-  return { line: own.line, template: own.template, parts: own.parts, definition: { ...definitionOf(own), schema }, data: { ...data, ...own.data } };
+  return { line: own.line, template: own.template, parts: own.parts, definition: { ...definitionOf(own), schema }, data: { ...data, ...own.data }, script: own.script };
 }
 
 /** The starter called `name`, made whole: its recipe and its page, with the starter's own script
  *  after its components'; null when there's no such starter. */
-export function starter(name: string): ReturnType<typeof recipe> & { page: string } | null {
-  const made = recipe(name);
-  if (!made) return null;
-  const { script } = starters()[starterNamed(name)!];
+export function starter(name: string): Omit<NonNullable<ReturnType<typeof recipe>>, "script"> & { page: string } | null {
+  const found = recipe(name);
+  if (!found) return null;
+  const { script, ...made } = found;
   const { page } = assemble(made.template, made.parts);
   return { ...made, page: script ? page.replace(SCRIPTS, () => `<script>\n${script}\n</script>\n${SCRIPTS}`) : page };
 }

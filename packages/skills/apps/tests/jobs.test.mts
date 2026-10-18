@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { asJob, call, post, root } from "./harness.mts";
+import { asJob, call, from, root } from "./harness.mts";
 import * as store from "../src/store.ts";
 
 const add = (text: string) => JSON.stringify([{ op: "add", path: "/items/-", value: { text, done: false } }]);
@@ -37,7 +37,7 @@ test("a job naming a workspace may list and read there, and do only on an app th
 });
 
 test("what pages did is told to a chat, never to a job", async () => {
-  post({ workspace: "home", app: "shop", secret: store.read("home", "shop").secret, id: "p1", ev: "add", fields: { text: "Jam" }, patch: [{ op: "add", path: "/items/-", value: { text: "Jam", done: false } }] });
+  from("home", "shop", { id: "p1", ev: "add", fields: { text: "Jam" }, patch: [{ op: "add", path: "/items/-", value: { text: "Jam", done: false } }] });
   assert.doesNotMatch(await asJob({ action: "read", workspace: "home", name: "shop" }), /Changes made on app pages/);
   assert.match(await call("home", { action: "list" }), /^Changes made on app pages since the last call[^\n]*\n- add Jam on shop\n/);
 });

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { call, post } from "./harness.mts";
+import { call, from } from "./harness.mts";
 import * as store from "../src/store.ts";
 
 const answer = (choice: string, note = "", id = `q-${Math.random()}`) =>
-  post({ workspace: "home", app: "which-worktop", secret: store.read("home", "which-worktop").secret, id, ev: "answer", fields: { text: choice }, patch: [{ op: "test", path: "/question", value: "Which worktop?" }, { op: "replace", path: "/answer", value: { choice, note, at: "2026-10-16T10:00:00Z" } }] });
+  from("home", "which-worktop", { id, ev: "answer", fields: { text: choice }, patch: [{ op: "test", path: "/question", value: "Which worktop?" }, { op: "replace", path: "/answer", value: { choice, note, at: "2026-10-16T10:00:00Z" } }] });
 
 test("the agent asks on a page in one call, and its turn ends with the card: nothing waits", async () => {
   const made = await call("home", { action: "create", name: "which-worktop", title: "Which worktop?", starter: "question", data: { question: "Which worktop?", choices: ["Oak", "White quartz", "Concrete grey"] } });

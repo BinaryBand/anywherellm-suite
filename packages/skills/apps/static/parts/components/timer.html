@@ -1,5 +1,5 @@
 <!--part
-{"name":"timer","line":"counts down from a stored start","schema":{"type":"object","required":["minutes","started"],"properties":{"minutes":{"type":"integer","minimum":1,"maximum":240},"started":{"type":["string","null"],"maxLength":40}}},"data":{"minutes":25,"started":null},"events":["start","stop"]}
+{"name":"timer","line":"counts down from a stored start","single":true,"schema":{"type":"object","required":["minutes","started"],"properties":{"minutes":{"type":"integer","minimum":1,"maximum":240},"started":{"type":["string","null"],"maxLength":40}}},"data":{"minutes":25,"started":null},"events":["start","stop"]}
 -->
 <div class="stack center" data-part="timer">
 <div class="dial"><span class="big" data-ref="left"></span></div>

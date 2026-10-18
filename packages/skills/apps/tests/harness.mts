@@ -60,6 +60,10 @@ export function post(event: Record<string, unknown>, raw: string | null = null):
   fs.utimesSync(file, t, t);
 }
 
+/** What a page posts for `app`: its event with the app's secret, as the page has it. */
+export const from = (workspace: string, app: string, event: Record<string, unknown>): void =>
+  post({ workspace, app, secret: JSON.parse(fs.readFileSync(path.join(root, workspace, `${app}.json`), "utf8")).secret, ...event });
+
 /** Forgets every app, page and event between tests. */
 export function reset(): void {
   for (const dir of [root, path.join(storage, "documents"), publicDir]) fs.rmSync(dir, { recursive: true, force: true });

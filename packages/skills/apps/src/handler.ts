@@ -133,8 +133,9 @@ const ACTIONS = {
     } else {
       if (given === undefined && !used.length) problems.push("create needs starter, or a template with parts (components), or text: app.json's about, rules, schema and card");
       try {
-        const made = parts.assemble(p.template || undefined, used);
-        base = { template: p.template || parts.DEFAULT_TEMPLATE, parts: used, definition: used.length ? { schema: made.schema } : {}, data: made.data, page: made.page };
+        const template = p.template || parts.DEFAULT_TEMPLATE;
+        const made = parts.assemble(template, used);
+        base = { template, parts: used, definition: used.length ? { schema: made.schema } : {}, data: made.data, page: made.page };
       } catch (e) {
         problems.push((e as Error).message);
       }
