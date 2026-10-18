@@ -14,18 +14,18 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { updateJson, writeAtomicIfChanged } from "#shared/atomic";
+import { updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
-import { listPublic, newSecret, pageHtml, pageKey, publicDir, removePublic, sameSecret, takeEvents, watch, inTurn } from "#shared/pages";
+import { listPublic, newSecret, pageHtml, pageKey, removePublic, sameSecret, takeEvents, watch, inTurn, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 import * as listing from "./listing";
 import { OAUTH_PAGE, PENDING_MS, finish, redirectFor, waiting } from "./oauth";
 import * as secrets from "./secrets";
-import { recentRuns } from "./runs";
+import { outcomeOf, recentRuns } from "./runs";
 import * as store from "./store";
 
-export const TITLE = "library-lean-event";
+const TITLE = "library-lean-event";
 /** How long the page is watched for events after it was last shown. */
 const WATCH_MS = 30 * 60 * 1000;
 /** How long the agent's request for a key shows on the page. */
@@ -69,7 +69,7 @@ function template(name: "library" | "oauth"): string {
 }
 
 /** Writes `text` to the public file `name` unless it holds it already. */
-const putPublic = (name: string, text: string) => writeAtomicIfChanged(path.join(publicDir(), pub(name)), text, 0o644);
+const putPublic = (name: string, text: string) => writePublic(pub(name), text);
 
 /** The page's state, as it reads it: nothing secret. */
 function state(p: PageFile, base: string | null) {
@@ -80,9 +80,9 @@ function state(p: PageFile, base: string | null) {
     secrets: secrets.secrets(),
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
-      return { service, title: kit.title, base_urls: kit.base_urls, hosts: store.hostsOf(kit), secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
+      return { service, title: kit.title, base_urls: kit.base_urls, secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
     }),
-    runs: recentRuns(20).map((r) => ({ id: r.id, fn: r.fn, status: r.status, trigger: r.trigger, ended: r.ended, ms: r.ms, error: r.error ? `${r.error.name}: ${r.error.message}` : null, result: r.status === "ok" ? (JSON.stringify(r.result) ?? "null").slice(0, 500) : null })),
+    runs: recentRuns(20).map((r) => ({ id: r.id, fn: r.fn, status: r.status, trigger: r.trigger, ended: r.ended, ms: r.ms, error: r.error ? outcomeOf(r) : null, result: r.status === "ok" ? outcomeOf(r).slice(0, 500) : null })),
   };
 }
 

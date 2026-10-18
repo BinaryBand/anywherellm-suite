@@ -7,7 +7,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
-import { after } from "node:test";
+import { after, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
@@ -43,12 +43,35 @@ export interface Call {
   base?: string;
 }
 
-/** Calls the skill as AnythingLLM's agent would: from workspace `slug` (null: none, as a job), in a
- *  chat that could show a question card, and with ANYTHINGLLM_URL set to `base`. */
-export function call(args: Record<string, unknown>, { slug = "work", base }: Call = {}): Promise<string> {
+/** Calls the skill as AnythingLLM's agent would: from workspace `slug` (null: none, as a job; given
+ *  alone, or in a Call), in a chat that could show a question card, and with ANYTHINGLLM_URL set to
+ *  `base`. */
+export function call(args: Record<string, unknown>, at: Call | string | null = {}): Promise<string> {
+  const { slug = "work", base } = at === null || typeof at === "string" ? { slug: at } : at;
   const card = { requestUserClarification: async (q: unknown) => (cardsShown.push(q), { skipped: true }), addClarifyingQuestionSurvey: () => {} };
   const self = { super: { handlerProps: { invocation: slug ? { workspace: { slug }, thread_id: 3 } : {} }, ...card }, runtimeArgs: base ? { ANYTHINGLLM_URL: base } : {}, logger: () => {} };
   return handler().call(self, args);
+}
+
+/** The run id an answer names. */
+export const idOf = (text: string): string => text.match(/\((r-[\w-]+)\)/)![1];
+
+/** A run as recorded. */
+export function runRecord(id: string): Record<string, any> {
+  const dir = path.join(library, "runs");
+  return JSON.parse(fs.readFileSync(path.join(dir, fs.readdirSync(dir).find((f) => f.startsWith(`${id}.`))!), "utf8"));
+}
+
+/** The skill as installed, where AnythingLLM keeps it, with plugin.json as shipped (and `extra`), for
+ *  the test `t`: its description as it is now. */
+export function installed(t: TestContext, extra: Record<string, unknown> = {}): { description: () => string; config: () => Record<string, unknown> } {
+  const dir = path.join(storage, "plugins", "agent-skills", "library-lean");
+  fs.mkdirSync(dir, { recursive: true });
+  t.after(() => fs.rmSync(path.join(storage, "plugins"), { recursive: true, force: true }));
+  const file = path.join(dir, "plugin.json");
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(skillDir, "plugin.json"), "utf8")), ...extra }));
+  const config = () => JSON.parse(fs.readFileSync(file, "utf8"));
+  return { description: () => config().description, config };
 }
 
 /** Asks for the key `label` for `site`, and gives it on the page, as the user does. */

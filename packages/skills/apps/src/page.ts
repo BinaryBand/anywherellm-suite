@@ -12,7 +12,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { jobTimeLeft, perProcess } from "#shared/anythingllm";
-import { readJson, updateJson, writeAtomicIfChanged } from "#shared/atomic";
+import { readJson, updateJson } from "#shared/atomic";
 import { embed, inTurn, newSecret, pageKey, publicDir, putBack, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import { HUB_ID, root } from "./dirs.ts";
 import type { Json } from "./patch.ts";
@@ -66,8 +66,6 @@ const pageFile = (token: string): string => `${HUB_ID}/${token}.html`;
 /** What an open page reads every 2 s to keep up: never the secret, the plan or the history. */
 const stateFile = (token: string): string => `${HUB_ID}/${token}.json`;
 export const stateOf = (app: Json, version = versionOf(app)): Json => ({ line: app.line || 0, data: app.data, seen: app.seen || [], refused: app.refused || [], version });
-/** Writes a file of the public folder, unless it holds that already: an open page polls its state. */
-const putPublic = (rel: string, text: string): boolean => writeAtomicIfChanged(path.join(publicDir(), rel), text, 0o644);
 
 /** The address of a page from its token: under `base`, AnythingLLM's address as the user's browser
  *  reaches it, or relative to AnythingLLM's own pages without it; null when it has no page yet. */
@@ -80,8 +78,8 @@ export async function publish(app: Json, workspace: string): Promise<string | nu
   const token = app.pageToken || newSecret();
   const version = versionOf(app);
   try {
-    putPublic(pageFile(token), render(app, workspace, pageKey(), version)!);
-    putPublic(stateFile(token), JSON.stringify(stateOf(app, version)));
+    writePublic(pageFile(token), render(app, workspace, pageKey(), version)!);
+    writePublic(stateFile(token), JSON.stringify(stateOf(app, version)));
   } catch {
     return null;
   }

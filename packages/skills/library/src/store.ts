@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { objectOf } from "#shared/answer";
 import { storageDir } from "#shared/anythingllm";
-import { writeAtomic } from "#shared/atomic";
+import { readJson as readJsonOr, writeAtomic } from "#shared/atomic";
 import { checkUrl, hostOf } from "#shared/fence";
 import { staticFiles, type StaticFiles } from "#shared/static";
 import { LibraryError } from "./errors";
@@ -31,7 +31,8 @@ const MAX_DOCS = 20;
 /** What a function keeps between runs, as JSON. */
 export const MAX_STATE = 64 * 1024;
 
-export interface Secret {
+/** A key a toolkit calls with, by name: not the key itself (secrets.ts has that). */
+export interface KeyUse {
   /** The saved key's name (secrets.ts). */
   label: string;
   /** How it goes with a request (secrets.ts's asOf). */
@@ -46,7 +47,7 @@ export interface Toolkit {
   /** Hosts its functions may reach besides the base addresses' (hostsOf has them all). */
   hosts: string[];
   /** The keys its functions call with, the first unless a request names another. */
-  secrets: Secret[];
+  secrets: KeyUse[];
   docs: string[];
   /** What the agent learned of the API: endpoints, paging, limits, quirks. */
   notes: string;
@@ -100,9 +101,8 @@ const unseenDir = () => path.join(libraryDir(), "unseen");
 
 function readJson<T>(file: string): T | null {
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8")) as T;
+    return readJsonOr<T | null>(file, () => null);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw new LibraryError(`${path.relative(libraryDir(), file)} can't be read: ${(e as Error).message}`);
   }
 }
@@ -169,9 +169,9 @@ export function saveToolkit(service: string, given: Record<string, unknown>): To
     "secrets",
     (v) => {
       if (!Array.isArray(v)) throw new LibraryError('secrets is a list, like [{ "label": "github", "as": "bearer" }]');
-      return v.map((s) => ({ label: labelOf((s as Secret)?.label), as: asOf((s as Secret)?.as) }));
+      return v.map((s) => ({ label: labelOf((s as KeyUse)?.label), as: asOf((s as KeyUse)?.as) }));
     },
-    [] as Secret[],
+    [] as KeyUse[],
   );
   const notes = pick("notes", (v) => String(v ?? ""), "");
   if (notes.length > MAX_NOTES) throw new LibraryError(`a toolkit's notes are at most ${MAX_NOTES} characters: keep what a function needs`);
@@ -288,7 +288,7 @@ export const rewrite = (run: RunRecord): void => writeJson(runFile(run), run);
 const readRun = (file: string) => readJson<RunRecord>(path.join(runsDir(), file));
 
 /** The last `n` runs, newest first, of a service's functions (`service`) or of all, as recorded. */
-export function recentRuns(n = 5, service = ""): RunRecord[] {
+export function recentRuns(n: number, service: string): RunRecord[] {
   const files = namesIn(runsDir()).filter((f) => f.startsWith("r-") && (!service || f.split(".")[1] === service));
   return files
     .slice(-n)

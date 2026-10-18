@@ -9,7 +9,7 @@
 //
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
-import { push, pushTo, workspaceOf } from "#shared/anythingllm";
+import { baseUrlOf as baseOf, push, pushTo, workspaceOf } from "#shared/anythingllm";
 import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
@@ -17,23 +17,18 @@ import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { define, redirectFor, start as startSignIn } from "./oauth";
+import { LOOPBACK, define, redirectFor, start as startSignIn } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
 import { send } from "./request";
 import * as runs from "./runs";
-import { runText } from "./runs";
-import { check as compiles } from "./sandbox";
+import { check as compiles, failureText } from "./sandbox";
 import * as secrets from "./secrets";
 import * as store from "./store";
 
 type Args = Record<string, unknown>;
 
 const clean = (v: unknown): string => String(v ?? "").trim();
-
-/** AnythingLLM's address, as the user set it for the skill (ANYTHINGLLM_URL); null when unset, and
- *  then the page's links are relative, which only AnythingLLM's own chat opens. */
-const baseOf = (self: HandlerContext): string | null => clean(self.runtimeArgs?.ANYTHINGLLM_URL).replace(/\/+$/, "") || null;
 
 function guide(args: Args): string {
   const s = store.statics();
@@ -42,12 +37,6 @@ function guide(args: Args): string {
     return `Snippet ${name} (a worked example: adapt it, don't save it as is):\n\n${text}`;
   }
   return entryOf(s, "guide", ".md", "topic", args.topic, "index").text;
-}
-
-/** The scripts every function runs after, by their names. */
-function prelude(): Record<string, string> {
-  const s = store.statics();
-  return Object.fromEntries(s.list("prelude/").map((f) => [`prelude/${f}`, s.get(`prelude/${f}`)!.text]));
 }
 
 const ago = (iso: string): string => {
@@ -149,9 +138,9 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
     await page.need(label, found.site, "client");
     return `"${label}" needs the user's own OAuth client at the provider (${new URL(found.oauth.authorize_url).host}). Tell them to make one in its developer console: a web application client, with this redirect address registered: ${redirect}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID and secret on the Library page, under Sign-ins: ${await page.show(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
   }
-  const { url, state } = await startSignIn(label, redirect);
+  const { url, state } = await startSignIn(found, redirect);
   await page.oauthPage(state);
-  const back = base?.startsWith("https://") ? "After they agree, the provider sends them to a page that says it was sent." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Library page's Sign-ins tab (Finish a sign-in): ${await page.show(base)}`;
+  const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Library page's Sign-ins tab (Finish a sign-in): ${await page.show(base)}`;
   return `Give the user this sign-in link, to open in their browser; it's good for 10 minutes:\n${url}\n${back} When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
 }
 
@@ -174,11 +163,6 @@ async function call(args: Args): Promise<string> {
   return answerText(textOf(sent.answer), `${sent.method} ${target.href}${key ? ` (with the key "${key.label}")` : ""}`, keep, sent.secret ? [sent.secret] : []);
 }
 
-const start = (self: HandlerContext) => {
-  const workspace = workspaceOf(self);
-  return { trigger: workspace ? ("chat" as const) : ("job" as const), workspace, prelude: prelude() };
-};
-
 /** Saves a toolkit, a function or both; removes one; runs what was saved with `test`. */
 async function save(args: Args, self: HandlerContext): Promise<string> {
   const service = store.serviceOf(args.service);
@@ -200,7 +184,7 @@ async function save(args: Args, self: HandlerContext): Promise<string> {
     const { name } = store.qualified(`${service}.${clean(given.name)}`);
     const source = String(given.source ?? "");
     const failure = await compiles(source);
-    if (failure) throw new LibraryError(`${service}.${name} wasn't saved: ${failure.name}: ${failure.message}${failure.line ? ` (line ${failure.line})` : ""}`);
+    if (failure) throw new LibraryError(`${service}.${name} wasn't saved: ${failureText(failure)}`);
     check({ op: "save", fn: `${service}.${name}`, source });
     const f = store.saveFn(service, name, { description: given.description, inputs: given.inputs, source });
     saved = `${service}.${name}`;
@@ -226,19 +210,20 @@ async function within<T>(done: Promise<T>, ms: number): Promise<T | null> {
  *  calls library or run, on the Library page, and by a push. A run stays marked not shown until an
  *  answer shows how it ended: a scheduled job's that didn't end well stays so, for the next chat. */
 async function runNow(name: string, inputs: unknown, self: HandlerContext): Promise<string> {
-  const s = start(self);
-  const { running, done } = runs.begin(name, inputs, s);
+  const workspace = workspaceOf(self);
+  const trigger = workspace ? "chat" : "job";
+  const { running, done } = runs.begin(name, inputs, { trigger, workspace });
   // Only what the end needs, so a background run doesn't hold on to the agent that started it.
   const base = baseOf(self);
   const to = pushTo(self);
-  void done.then(() => (refreshPage(base), listing.refresh(console.error)));
-  const record = s.trigger === "job" ? await done : await within(done, waitMs());
+  void done.then(() => refreshPage(base));
+  const record = trigger === "job" ? await done : await within(done, waitMs());
   if (record) {
-    if (s.trigger === "chat" || record.status === "ok") store.markSeen(record.id);
-    return runText(record);
+    if (trigger === "chat" || record.status === "ok") store.markSeen(record.id);
+    return runs.runText(record);
   }
   refreshPage(base);
-  void done.then((r) => pushed(r, to));
+  void done.then((r) => (listing.refresh(console.error), pushed(r, to)));
   return `Still running ${running.fn} in the background (${running.id}): carry on. When it ends, the user gets a push (if they switched AnythingLLM's notifications on), the Library page shows it, and it's at the top of the next library or run answer. run with run_id "${running.id}" shows it now; add stop: true to stop it.`;
 }
 
@@ -286,7 +271,7 @@ async function run(args: Args, self: HandlerContext): Promise<string> {
   if (record.status === "running" && !going && flag(args.stop)) throw new LibraryError(`the run ${id} goes on in another process (a scheduled job's), and ends with it`);
   if (record.status === "running") return `${record.fn} is still running (${id}), started ${ago(record.started)}; it stops by ${record.until} at the latest. Ask again later, or stop it with stop: true.`;
   store.markSeen(id);
-  return told(self, runText(record));
+  return told(self, runs.runText(record));
 }
 
 const ACTIONS: Record<string, (args: Args, self: HandlerContext) => Promise<string> | string> = { guide, library, secret, call, save, run };
@@ -310,13 +295,14 @@ export const runtime = {
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
       await fromPage(this);
-      const answer = await act(args, this);
-      if (action === "save" || action === "run" || action === "library") listing.refresh(this.logger);
-      return answer;
+      return await act(args, this);
     } catch (e) {
       if (e instanceof Told) return `Library: ${e.message}.`;
       this.logger?.(`library-lean ${action} failed: ${(e as Error)?.stack || e}`);
       return `Library ${action} failed: ${(e as Error)?.message || e}. Tell the user what went wrong; don't retry on your own.`;
+    } finally {
+      // Whatever the call changed (a save, a run's end, runs shown), even one that failed partway.
+      listing.refresh(this.logger);
     }
   },
 };

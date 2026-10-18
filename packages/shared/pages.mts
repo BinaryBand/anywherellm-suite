@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pageKeyFile, perProcess, readPageKey, serverDir, storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
-import { writeAtomic } from "./atomic.mts";
+import { writeAtomic, writeAtomicIfChanged } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
 
 /** A file still being written is left this long before it's dropped as unreadable. */
@@ -27,8 +27,9 @@ const RECENT_MS = 2000;
 /** AnythingLLM's public folder, served at its root: ANYTHINGLLM_PUBLIC_DIR, else <server>/public. */
 export const publicDir = (): string => process.env.ANYTHINGLLM_PUBLIC_DIR || path.join(serverDir(), "public");
 
-/** Writes a file into the public folder, at `rel` ("library-lean/<token>.json"). */
-export const writePublic = (rel: string, text: string): void => writeAtomic(path.join(publicDir(), rel), text, 0o644);
+/** Writes a file into the public folder, at `rel` ("library-lean/<token>.json"), unless it holds
+ *  `text` already; whether it wrote. */
+export const writePublic = (rel: string, text: string): boolean => writeAtomicIfChanged(path.join(publicDir(), rel), text, 0o644);
 
 export const removePublic = (rel: string): void => fs.rmSync(path.join(publicDir(), rel), { force: true });
 

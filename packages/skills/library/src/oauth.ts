@@ -15,6 +15,7 @@ import { objectOf } from "#shared/answer";
 import { perProcess } from "#shared/anythingllm";
 import { hostOf, secureFor } from "#shared/fence";
 import * as net from "#shared/net";
+import { newSecret } from "#shared/pages";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 
@@ -22,7 +23,7 @@ import { LibraryError } from "./errors";
  *  when that isn't https (a provider refuses plain http but on this machine), an address on this
  *  machine where nothing answers, whose address the user pastes into the Library page. */
 export const OAUTH_PAGE = "library-lean/oauth.html";
-const LOOPBACK = "http://127.0.0.1/library-lean/oauth";
+export const LOOPBACK = "http://127.0.0.1/library-lean/oauth";
 /** How long a sign-in waits for the provider to send the user back. */
 export const PENDING_MS = 10 * 60 * 1000;
 /** A sign-in's own parameters, which a definition's params can't set. */
@@ -68,8 +69,6 @@ export interface SignIn extends vault.Entry {
 
 export const isSignIn = (e: Readonly<vault.Entry>): e is SignIn => e.kind === "oauth";
 
-const b64url = (buf: Buffer) => buf.toString("base64url");
-
 /** An https address (or plain http to a host the user lets through), as the definition's `what`. */
 function secureUrl(value: unknown, what: string): string {
   let url: URL;
@@ -108,15 +107,15 @@ export const waiting = (): string[] =>
     .filter(isSignIn)
     .flatMap((e) => (e.pending && e.pending.until > Date.now() ? [e.pending.state] : []));
 
-/** Starts the sign-in `label`: answers the provider's sign-in address and the state it comes back
+/** Starts the sign-in `given`: answers the provider's sign-in address and the state it comes back
  *  with, which the vault keeps (with the PKCE verifier) until the code comes back or it runs out. */
-export async function start(label: string, redirect: string): Promise<{ url: string; state: string }> {
-  const state = b64url(crypto.randomBytes(24));
-  const verifier = b64url(crypto.randomBytes(32));
+export async function start(given: Readonly<SignIn>, redirect: string): Promise<{ url: string; state: string }> {
+  const state = newSecret(24);
+  const verifier = newSecret(32);
   const signIn = await vault.update((v) => {
-    const found = v.entries.find((e) => isSignIn(e) && e.user.toLowerCase() === label.toLowerCase()) as SignIn | undefined;
-    if (!found) throw new LibraryError(`there's no sign-in "${label}"`);
-    if (!found.client_id) throw new LibraryError(`"${label}" is waiting for the user's OAuth client: its ID and secret`);
+    const found = v.entries.find((e) => e.id === given.id) as SignIn | undefined;
+    if (!found) throw new LibraryError(`there's no sign-in "${given.user}"`);
+    if (!found.client_id) throw new LibraryError(`"${given.user}" is waiting for the user's OAuth client: its ID and secret`);
     found.pending = { state, verifier, redirect, until: Date.now() + PENDING_MS };
     return structuredClone(found);
   });
@@ -129,7 +128,7 @@ export async function start(label: string, redirect: string): Promise<{ url: str
   if (o.scopes) url.searchParams.set("scope", o.scopes);
   url.searchParams.set("state", state);
   if (o.pkce) {
-    url.searchParams.set("code_challenge", b64url(crypto.createHash("sha256").update(verifier).digest()));
+    url.searchParams.set("code_challenge", crypto.createHash("sha256").update(verifier).digest("base64url"));
     url.searchParams.set("code_challenge_method", "S256");
   }
   return { url: url.href, state };

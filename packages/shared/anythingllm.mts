@@ -71,6 +71,12 @@ export interface Invoked {
  *  says; null for a call with none (a scheduled job's). */
 export const workspaceOf = (self: Invoked | undefined): string | null => self?.super?.handlerProps?.invocation?.workspace?.slug || null;
 
+/** AnythingLLM's address, as the user set it for a skill (its ANYTHINGLLM_URL setting), without a
+ *  trailing slash; null when unset, and then a skill's page links are relative, which only
+ *  AnythingLLM's own chat opens. */
+export const baseUrlOf = (self: { runtimeArgs?: Record<string, string | undefined> } | undefined): string | null =>
+  String(self?.runtimeArgs?.ANYTHINGLLM_URL ?? "").trim().replace(/\/+$/, "") || null;
+
 /** The time a scheduled job has left, in the process AnythingLLM forks for each job's run
  *  (jobs/run-scheduled-job.js, which ends it at SCHEDULED_JOB_TIMEOUT_MS, 5 minutes by default), so
  *  the process's age is the job's; null in any other process. */

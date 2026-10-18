@@ -37,6 +37,9 @@ export interface Failure {
   line?: number;
 }
 
+/** A failure as one line: its name, its message and its line. */
+export const failureText = (f: Failure): string => `${f.name}: ${f.message}${f.line ? ` (line ${f.line})` : ""}`;
+
 export type Outcome = { ok: true; value: unknown } | { ok: false; error: Failure };
 
 export interface Run {

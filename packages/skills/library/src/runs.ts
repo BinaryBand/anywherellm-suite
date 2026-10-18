@@ -15,12 +15,12 @@ import { checkUrl, onSite } from "#shared/fence";
 import { LibraryError } from "./errors";
 import { check } from "./policy";
 import { send } from "./request";
-import { run as runScript, type Kit, type Outcome } from "./sandbox";
+import { failureText, run as runScript, type Kit, type Outcome } from "./sandbox";
 import * as store from "./store";
 import type { Fn, RunRecord, Toolkit } from "./store";
 
 /** How long a run may take (LIBRARY_RUN_MS), and what it may do in that time. */
-export const LIMITS = { wallMs: Number(process.env.LIBRARY_RUN_MS) || 10 * 60 * 1000, requests: 200, depth: 4, logs: 200, logChars: 500, sleepMs: 10 * 1000 };
+const LIMITS = { wallMs: Number(process.env.LIBRARY_RUN_MS) || 10 * 60 * 1000, requests: 200, depth: 4, logs: 200, logChars: 500, sleepMs: 10 * 1000 };
 /** What of a scheduled job's time to leave for the agent's report after a run, and the least a run
  *  is started with. */
 const JOB = { margin: 30 * 1000, least: 10 * 1000 };
@@ -30,13 +30,12 @@ const ENDED: Record<string, RunRecord["status"]> = { Timeout: "timeout", Stopped
 export interface Start {
   trigger: RunRecord["trigger"];
   workspace: string | null;
-  /** The scripts every function runs after (static/prelude). */
-  prelude: Record<string, string>;
 }
 
 /** What a run and the functions it runs share. */
 interface Budget {
-  start: Start;
+  /** The scripts every function runs after (static/prelude), by their names. */
+  prelude: Record<string, string>;
   deadline: number;
   requests: number;
   logs: string[];
@@ -48,6 +47,19 @@ interface Budget {
 /** The runs going in this process, by id: their record once they end, and how to stop them. Kept per
  *  process, since AnythingLLM loads handler.js afresh for each agent run, and a run outlives one. */
 export const live = () => perProcess("library-lean.runs", () => new Map<string, { done: Promise<RunRecord>; stop: AbortController }>());
+
+/** What a function keeps between runs, as the run has it: read once, written at its end if changed. */
+interface FnState {
+  read: boolean;
+  value: unknown;
+  changed: boolean;
+}
+
+/** The scripts every function runs after, by their names. */
+function prelude(): Record<string, string> {
+  const s = store.statics();
+  return Object.fromEntries(s.list("prelude/").map((f) => [`prelude/${f}`, s.get(`prelude/${f}`)!.text]));
+}
 
 /** When a run must end: its own limit, or before a scheduled job's time runs out. */
 function deadlineFor(start: Start): number {
@@ -66,7 +78,7 @@ export function begin(qualifiedName: string, input: unknown, start: Start): { ru
   const values = store.inputChecked(f, input);
   check({ op: "run", fn: `${service}.${name}`, trigger: start.trigger });
   const deadline = deadlineFor(start);
-  const budget: Budget = { start, deadline, requests: 0, logs: [], made: [], secrets: [] };
+  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [] };
   const started = new Date();
   const base = { id: store.runId(started), fn: `${service}.${name}`, trigger: start.trigger, workspace: start.workspace, started: started.toISOString(), logs: budget.logs, calls: budget.made };
   const running: RunRecord = { ...base, pid: process.pid, until: new Date(deadline).toISOString(), ended: base.started, ms: 0, status: "running" };
@@ -114,7 +126,7 @@ function settled(run: RunRecord): RunRecord {
 }
 
 /** The last `n` runs, newest first, of a service's functions (`service`) or of all. */
-export const recentRuns = (n = 5, service = ""): RunRecord[] => store.recentRuns(n, service).map(settled);
+export const recentRuns = (n: number, service = ""): RunRecord[] => store.recentRuns(n, service).map(settled);
 
 /** A run by its id; null when it isn't kept. */
 export const runOf = (id: string): RunRecord | null => {
@@ -141,9 +153,9 @@ async function call(kit: Toolkit, f: Fn, input: unknown, budget: Budget, depth: 
   const stop = new AbortController(); // the sandbox aborts it as the function ends
   const onParent = () => stop.abort();
   parent?.addEventListener("abort", onParent, { once: true });
-  const state = { read: false, value: null as unknown, changed: false };
+  const state: FnState = { read: false, value: null, changed: false };
   try {
-    const outcome = await runScript({ source: f.source, input, kit: kitFor(kit, f, budget, depth, state, stop.signal), prelude: budget.start.prelude, deadline: budget.deadline, stop });
+    const outcome = await runScript({ source: f.source, input, kit: kitFor(kit, f, budget, depth, state, stop.signal), prelude: budget.prelude, deadline: budget.deadline, stop });
     if (outcome.ok && state.changed) store.saveState(kit.service, f.name, state.value);
     return outcome;
   } finally {
@@ -153,7 +165,7 @@ async function call(kit: Toolkit, f: Fn, input: unknown, budget: Budget, depth: 
 
 const logged = (v: unknown) => (typeof v === "string" ? v : (JSON.stringify(v) ?? String(v)));
 
-function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: { read: boolean; value: unknown; changed: boolean }, signal: AbortSignal): Kit {
+function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: FnState, signal: AbortSignal): Kit {
   return {
     http: (req) => http(kit, f, (req ?? {}) as Request, budget, signal),
     log: (...args) => {
@@ -165,7 +177,7 @@ function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: { rea
       const next = loaded(q.service, q.name);
       const outcome = await call(next.kit, next.f, store.inputChecked(next.f, input), budget, depth + 1, signal);
       if (outcome.ok) return outcome.value;
-      throw new LibraryError(`${q.service}.${q.name} failed: ${outcome.error.name}: ${outcome.error.message}${outcome.error.line ? ` (its line ${outcome.error.line})` : ""}`);
+      throw new LibraryError(`${q.service}.${q.name} failed: ${failureText(outcome.error)}`);
     },
     state: {
       get: () => {
@@ -230,7 +242,7 @@ async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: A
 export function runText(run: RunRecord): string {
   const lines = [`Ran ${run.fn} (${run.id}): ${run.status}, ${(run.ms / 1000).toFixed(1)} s, ${run.calls.length} request${run.calls.length === 1 ? "" : "s"}.`];
   if (run.status === "ok") lines.push(...clipped("Result", "JSON", JSON.stringify(run.result, null, 1) ?? "null", run.result));
-  else if (run.error) lines.push(`Error: ${run.error.name}: ${run.error.message}${run.error.line ? ` (line ${run.error.line} of the function)` : ""}`);
+  else if (run.error) lines.push(`Error: ${failureText(run.error)}`);
   if (run.logs.length) lines.push("", `Log (${run.logs.length > 20 ? "the last 20 lines" : "every line"}):`, ...run.logs.slice(-20));
   if (run.calls.length) {
     lines.push("", "Requests:");

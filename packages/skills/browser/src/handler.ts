@@ -11,7 +11,7 @@
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
 import { BINARY, answerText, bodyOf, headersOf, keepOf, methodOf, withParams } from "#shared/answer";
-import { workspaceOf } from "#shared/anythingllm";
+import { baseUrlOf, workspaceOf } from "#shared/anythingllm";
 import { Told } from "#shared/errors";
 import { FENCED, checkUrl, hostOf, onSite } from "#shared/fence";
 import { entryOf } from "#shared/static";
@@ -44,16 +44,12 @@ const CODES: Record<string, string> = {
   email: "The code sent to your email",
 };
 
-/** AnythingLLM's address, as the user set it for the skill (ANYTHINGLLM_URL); null when unset, and
- *  then the card's links are relative, which only AnythingLLM's own chat opens. */
-const baseOf = (self: HandlerContext): string | null => clean(self.runtimeArgs?.ANYTHINGLLM_URL).replace(/\/+$/, "") || null;
-
 /** The page as the agent reads it, then its card; `page` false when the tab has no page the user
  *  could answer on. While the user is asked for something there, the card comes first, before the
  *  read, so it isn't lost at the end of a long one. */
 async function reply(self: HandlerContext, at: Tab, lead: string, find = "", from: unknown = 0, read?: Read): Promise<{ text: string; page: boolean; snap: Snap }> {
   const { snap, title, url } = read ?? (await readPage(at.page));
-  const drawn = await card(at, baseOf(self), { snap, title });
+  const drawn = await card(at, baseUrlOf(self), { snap, title });
   const held = holder(at.entry, at.key);
   const asking = at.entry.needs.has(at.key);
   const shown = render({ title, url, snap, notes: takeNotes(at.entry, at.key), find, from, secrets: at.entry.secrets });

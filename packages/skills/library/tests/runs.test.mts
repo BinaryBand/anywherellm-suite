@@ -9,19 +9,15 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
-import { call as called, library, reset, skillDir, storage } from "./harness.mts";
+import { call, idOf, installed, library, reset, runRecord as recordOf } from "./harness.mts";
 
 process.env.LIBRARY_WAIT_MS = "300";
 
-const call = (args: Record<string, unknown>, slug: string | null = "work") => called(args, { slug });
 const pushes: { to: unknown; payload: { title: string; body: string; data: { onClickUrl: string } } }[] = ((globalThis as Record<string, unknown>).__libraryLeanPushes ||= []) as never;
 
 const SLOW = "async function main(i, kit) { for (let n = 0; n < (i.n || 1); n++) await kit.sleep(i.ms || 400); if (i.fail) throw new Error('it failed'); return { slept: i.n || 1 }; }";
 const inputs = { n: { type: "number" }, ms: { type: "number" }, fail: { type: "boolean" } };
-
-const idOf = (text: string) => text.match(/\((r-[\w-]+)\)/)![1];
 const runsDir = () => path.join(library, "runs");
-const recordOf = (id: string) => JSON.parse(fs.readFileSync(path.join(runsDir(), fs.readdirSync(runsDir()).find((f) => f.startsWith(id))!), "utf8"));
 
 async function until(ok: () => boolean): Promise<void> {
   for (let i = 0; i < 200 && !ok(); i++) await sleep(20);
@@ -53,12 +49,7 @@ test("a run the chat stops waiting for goes on, is pushed, and is shown once at 
 });
 
 test("a background run's end is in the installed skill's description, which the model reads every turn, until an answer shows it", async (t) => {
-  const installed = path.join(storage, "plugins", "agent-skills", "library-lean");
-  fs.mkdirSync(installed, { recursive: true });
-  t.after(() => fs.rmSync(path.join(storage, "plugins"), { recursive: true, force: true }));
-  const file = path.join(installed, "plugin.json");
-  fs.copyFileSync(path.join(skillDir, "plugin.json"), file);
-  const description = () => JSON.parse(fs.readFileSync(file, "utf8")).description as string;
+  const { description } = installed(t);
   const id = idOf(await call({ action: "run", name: "clock.slow", inputs: { n: 2 } }));
   assert.doesNotMatch(description(), /Ended, not shown/, "not while it runs");
   await until(() => description().includes("Ended, not shown"));

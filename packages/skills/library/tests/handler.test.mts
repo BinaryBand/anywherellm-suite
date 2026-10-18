@@ -9,9 +9,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
 import { check } from "../src/sandbox.ts";
-import { call as called, cardsShown, giveKey, library, reset, skillDir, storage } from "./harness.mts";
-
-const call = (args: Record<string, unknown>, slug: string | null = "work") => called(args, { slug });
+import { call, cardsShown, giveKey, idOf, installed, library, reset, runRecord, skillDir, storage } from "./harness.mts";
 
 const KEY = "tok-1234567890";
 
@@ -145,8 +143,8 @@ test("inputs are checked against what the function takes", async () => {
 test("a run from a scheduled job (no workspace) is recorded as one, and shows in the library", async () => {
   await demo();
   const ran = await call({ action: "run", name: "demo.list_issues" }, null);
-  const id = ran.match(/\((r-[\w-]+)\)/)![1];
-  const record = JSON.parse(fs.readFileSync(path.join(library, "runs", `${id}.demo.list_issues.json`), "utf8"));
+  const id = idOf(ran);
+  const record = runRecord(id);
   assert.equal(record.trigger, "job");
   assert.equal(record.workspace, null);
   assert.equal(await call({ action: "run", run_id: id }), ran, "a run is shown again by its id");
@@ -248,20 +246,12 @@ test("the bundle ships two text files, QuickJS and the static folder inside hand
   assert.ok(!bytes.includes(0), "text, which install's payload and the Hub's upload both carry");
 });
 
-test("the installed skill's description ends with the functions saved now, for the model to see on every turn", async () => {
-  const installed = path.join(storage, "plugins", "agent-skills", "library-lean");
-  fs.mkdirSync(installed, { recursive: true });
-  const file = path.join(installed, "plugin.json");
+test("the installed skill's description ends with the functions saved now, for the model to see on every turn", async (t) => {
   const shippedDescription = JSON.parse(fs.readFileSync(path.join(skillDir, "plugin.json"), "utf8")).description;
-  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(path.join(skillDir, "plugin.json"), "utf8")), active: false }));
-  const description = () => JSON.parse(fs.readFileSync(file, "utf8")).description;
-  try {
-    await demo();
-    assert.equal(description(), `${shippedDescription}\n\nSaved now: demo.list_issues (The open issues.). When one does what's asked, run it (run, name) rather than searching the web.`);
-    assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).active, false, "the rest of plugin.json as AnythingLLM saved it");
-    await call({ action: "save", service: "demo", remove: "list_issues" });
-    assert.equal(description(), shippedDescription, "nothing listed once nothing is saved");
-  } finally {
-    fs.rmSync(path.join(storage, "plugins"), { recursive: true, force: true });
-  }
+  const { description, config } = installed(t, { active: false });
+  await demo();
+  assert.equal(description(), `${shippedDescription}\n\nSaved now: demo.list_issues (The open issues.). When one does what's asked, run it (run, name) rather than searching the web.`);
+  assert.equal(config().active, false, "the rest of plugin.json as AnythingLLM saved it");
+  await call({ action: "save", service: "demo", remove: "list_issues" });
+  assert.equal(description(), shippedDescription, "nothing listed once nothing is saved");
 });

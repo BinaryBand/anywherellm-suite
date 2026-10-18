@@ -2,7 +2,7 @@
 // SAVED_NOW), and the runs that ended with no answer showing them yet: AnythingLLM reads plugin.json
 // again for each agent run, so the model sees what's saved without calling library first, picks a
 // saved function over a web search, and knows a background run ended. Refreshed where either changes
-// (save, a run's end, an answer that shows runs, and the page's deletes); written in place, as
+// (after every call, a background run's end, and the page's deletes); written in place, as
 // AnythingLLM writes it when a setting changes, and only when the list changed.
 
 import fs from "node:fs";
@@ -28,8 +28,8 @@ function listing(): string {
 }
 
 /** Ends the installed skill's description with the list as it is now. With no plugin.json where
- *  AnythingLLM keeps the skill (a test, a bundle run elsewhere), there's nothing to write; a write
- *  that fails is logged, since the list is a hint and the change it follows stands. */
+ *  AnythingLLM keeps the skill (a test, a bundle run elsewhere), there's nothing to write; a list or
+ *  a write that fails is logged, since the list is a hint and the change it follows stands. */
 export function refresh(log?: (message: string) => void): void {
   const file = pluginFile();
   let config: { description?: unknown };
@@ -38,11 +38,10 @@ export function refresh(log?: (message: string) => void): void {
   } catch {
     return;
   }
-  const description = String(config.description ?? "");
-  const next = description.split(SAVED_NOW)[0] + listing();
-  if (next === description) return;
   try {
-    fs.writeFileSync(file, JSON.stringify({ ...config, description: next }, null, 2));
+    const description = String(config.description ?? "");
+    const next = description.split(SAVED_NOW)[0] + listing();
+    if (next !== description) fs.writeFileSync(file, JSON.stringify({ ...config, description: next }, null, 2));
   } catch (e) {
     log?.(`library-lean couldn't list its functions in its description: ${(e as Error).message}`);
   }
