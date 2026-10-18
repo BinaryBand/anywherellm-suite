@@ -157,7 +157,7 @@ interface Row {
   event: Json;
   change?: store.Change;
   /** An ask: what was picked, and its own id as its page sent it, so one sent twice is kept once. */
-  ask?: { event?: string; text?: unknown; picks: Json[] };
+  ask?: Parameters<typeof store.addAsk>[2];
   answer?: Result;
 }
 

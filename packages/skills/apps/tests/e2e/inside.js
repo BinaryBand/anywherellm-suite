@@ -3,7 +3,7 @@
 // agent would, and drives it against the real server: a page published into AnythingLLM's public
 // folder and served by AnythingLLM itself, with its state file; a tap posted to the real
 // browser-extension upload, written by the real collector and applied by the skill's folder watch
-// with no call; an event without the app's secret refused; Change this picking in the collector's
+// with no call; an event without the app's secret refused; Comment picking in the collector's
 // real Chrome and its ask reaching the app; the page check in its worker on the image's own Node; a
 // delete that leaves its page saying so. Prints "ok" or throws.
 const assert = require("assert");

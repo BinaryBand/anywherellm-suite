@@ -16,7 +16,8 @@ test("a job works in its own workspace as a chat would, but deletes nothing", as
   assert.match(await asJob({ action: "create", name: "digest", title: "Digest", starter: "checklist" }), /^Made the app digest/);
   assert.match(await asJob({ action: "do", name: "digest", ev: "add", patch: add("Item") }), /^Done: add on digest\./);
   assert.equal(store.read("_jobs", "digest").history.at(-1).by, "job");
-  assert.match(await asJob({ action: "delete", name: "digest" }), /^Apps: a scheduled job can't delete an app/);
+  assert.match(await asJob({ action: "delete", name: "digest" }), /^Apps: a scheduled job can't delete:/);
+  assert.match(await asJob({ action: "dismiss", name: "digest", ask: "a1" }), /^Apps: a scheduled job can't dismiss:/);
   assert.ok(store.read("_jobs", "digest"));
 });
 
@@ -25,7 +26,7 @@ test("a job naming a workspace may list and read there, and do only on an app th
   assert.match(await asJob({ action: "read", workspace: "home", name: "shop" }), /^shop's app\.json/);
   assert.match(await asJob({ action: "do", workspace: "home", name: "shop", ev: "add", patch: add("Milk") }), /^Apps: shop doesn't take changes from scheduled jobs: the user lets it from a chat/);
   for (const action of ["create", "edit", "undo", "page", "delete"])
-    assert.match(await asJob({ action, workspace: "home", name: "shop", file: "page.html", text: "x" }), action === "delete" ? /can't delete an app/ : /in a workspace it names, a scheduled job may list, do, read, guide, not /, action);
+    assert.match(await asJob({ action, workspace: "home", name: "shop", file: "page.html", text: "x" }), action === "delete" ? /can't delete:/ : /in a workspace it names, a scheduled job may list, do, read, guide, not /, action);
   // The user lets it, from a chat.
   assert.match(await call("home", { action: "edit", name: "shop", file: "app.json", find: '"card": {', text: '"jobs": true,\n  "card": {' }), /^Changed shop's app\.json\./);
   assert.match(await asJob({ action: "do", workspace: "home", name: "shop", ev: "add", patch: add("Milk") }), /^Done: add on shop\./);

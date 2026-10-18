@@ -450,19 +450,19 @@ export async function addAsk(workspace: string, name: unknown, ask: { event?: st
   const clip = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : undefined);
   const text = clip(ask.text, ASK_TEXT);
   const clean = picks
-    .map((p: Json) => ({ id: clip(p?.id, 80), ref: clip(p?.ref, 80), part: clip(p?.part, 80), at: clip(p?.at, 200), figure: clip(p?.figure, 40), tag: clip(p?.tag, 20), cls: clip(p?.cls, 60), shown: clip(p?.shown, 80), text: clip(p?.text, ASK_TEXT) }))
-    .filter((p: Json) => text || p.text);
-  if (!clean.length) throw new AppError("an ask says what the user wants of something picked on the page");
+    .map((p: Json) => ({ id: clip(p?.id, 80), ref: clip(p?.ref, 80), part: clip(p?.part, 80), at: clip(p?.at, 200), figure: clip(p?.figure, 40), tag: clip(p?.tag, 20), cls: clip(p?.cls, 60), shown: clip(p?.shown, 80), text: clip(p?.text, ASK_TEXT) }));
+  const kept = text ? clean : clean.filter((p: Json) => p.text);
+  if (!kept.length) throw new AppError("an ask says what the user wants of something picked on the page");
   const app = await update(workspace, name, (app) => {
     // A page may send an ask twice: it's kept once, as a change is.
     if (isSeen(app, ask.event)) return { ...app, duplicate: true };
     const asks: Json[] = app.asks || [];
     if (asks.length >= ASKS_WAITING) throw new AppError(`${ASKS_WAITING} asks are waiting already: the chat has to catch up first`);
     const seq = (app.askSeq || 0) + 1;
-    const next = { ...app, askSeq: seq, asks: [...asks, { id: `a${seq}`, t: now(), ...(text ? { text } : {}), picks: clean }] };
+    const next = { ...app, askSeq: seq, asks: [...asks, { id: `a${seq}`, t: now(), ...(text ? { text } : {}), picks: kept }] };
     return ask.event ? seenWith(next, ask.event) : next;
   });
-  return app.duplicate ? null : { id: app.asks.at(-1).id, kept: clean.length };
+  return app.duplicate ? null : { id: app.asks.at(-1).id, kept: kept.length };
 }
 
 /** The app with the ask `id` cleared and nothing else changed: a question answered in the chat, or a
