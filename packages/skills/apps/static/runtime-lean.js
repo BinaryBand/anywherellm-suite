@@ -172,6 +172,9 @@ var AppsLean = (() => {
     if (!open && !(row && row.isConnected)) row = heading();
     const into = open || !row ? document.body : row;
     if (host.parentNode !== into) into.append(host);
+    // The shut button sits in the row, or in the corner when the page no longer has one.
+    const shut = !open && ui.querySelector ? ui.querySelector(".b") : null;
+    if (shut) shut.classList.toggle("in", !!row);
   }
   function tray() {
     if (!document.body) return;

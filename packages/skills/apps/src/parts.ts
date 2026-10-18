@@ -251,7 +251,7 @@ function partsProblems(used: unknown): string[] {
     once(g.parts, `each ${g.each} item`);
     if (!/^[a-z][A-Za-z0-9_]{0,39}$/.test(g.each)) out.push(`each names a list in the data, such as habits, not ${JSON.stringify(g.each)}`);
     // A header's `single` marks one for the whole page, such as tabs, which switches its views.
-    const single = g.parts.filter((n) => parts()[n]?.header.single);
+    const single = g.parts.filter((n) => components.includes(n) && parts()[n].header.single);
     if (single.length) out.push(`${single.join(" and ")} can't repeat for each item`);
   }
   const lists = entries.filter((e) => typeof e !== "string").map((g) => g.each);

@@ -39,7 +39,6 @@ export interface Skill {
 export type Runtime = "container" | "native";
 
 export const NAME = "control";
-const DIR = SUITE_DIR;
 const CONTROL = "control.cjs";
 /** Where the container sees its storage (contract/versions.env INNER_STORAGE). */
 export const INNER_STORAGE = "/app/server/storage";
@@ -48,12 +47,12 @@ type Obj = Record<string, unknown>;
 export type Check = [what: string, ok: boolean, detail: string];
 
 export const serversFile = (storage: string): string => path.join(storage, "plugins", "anythingllm_mcp_servers.json");
-const controlFile = (storage: string): string => path.join(storage, DIR, CONTROL);
+const controlFile = (storage: string): string => path.join(storage, SUITE_DIR, CONTROL);
 const skillDir = (storage: string, skill: Skill): string => path.join(storage, "plugins", "agent-skills", skill.hubId);
 
 /** The servers-file entry that starts the control server. */
 export function entry(runtime: Runtime, storage: string, roles: string[], node: string): Obj {
-  const [command, file] = runtime === "container" ? ["node", `${INNER_STORAGE}/${DIR}/${CONTROL}`] : [node, controlFile(storage)];
+  const [command, file] = runtime === "container" ? ["node", `${INNER_STORAGE}/${SUITE_DIR}/${CONTROL}`] : [node, controlFile(storage)];
   return { command, args: [file], env: { [ROLES_ENV]: roles.join(",") } };
 }
 
@@ -63,7 +62,7 @@ export function parseEntry(found: unknown): { runtime: Runtime; roles: string[] 
   const { command, args, env } = (found ?? {}) as Obj;
   const words = Array.isArray(args) ? args.map(String) : [];
   const file = (words.at(-1) ?? "").replace(/\\/g, "/");
-  if (![`/${DIR}/${CONTROL}`, "/anythingllm-mcp/control.sock"].some((end) => file.endsWith(end)) && !words.includes("control_mcp")) return null;
+  if (![`/${SUITE_DIR}/${CONTROL}`, "/anythingllm-mcp/control.sock"].some((end) => file.endsWith(end)) && !words.includes("control_mcp")) return null;
   const roles = ((env ?? {}) as Obj)[ROLES_ENV];
   return { runtime: command === "node" && file.startsWith(INNER_STORAGE) ? "container" : "native", roles: typeof roles === "string" ? roles.split(",") : DEFAULT_ROLES };
 }
