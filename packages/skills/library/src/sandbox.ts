@@ -105,18 +105,17 @@ export async function check(source: string): Promise<Failure | null> {
 
 /** Runs a function to its answer, or to what stopped it. Never throws for what the script does. */
 export async function run({ source, input, kit, prelude = {}, deadline, stop = new AbortController() }: Run): Promise<Outcome> {
-  /** When the script last went on (from the start, or from a promise the host settled), and whether
-   *  it was interrupted for computing too long since. */
-  let since = Date.now();
-  let busy = false;
+  /** Until when the script may compute before it awaits a kit call (set as it starts, and each time
+   *  it goes on from one), and why it was interrupted, once it is. */
+  let busyUntil = Infinity;
+  let cause: Failure | null = null;
   const rt = (await quickjs()).newRuntime({
     memoryLimitBytes: LIMITS.memoryBytes,
     maxStackSizeBytes: LIMITS.stackBytes,
     interruptHandler: () => {
-      if (Date.now() > deadline || stop.signal.aborted) return true;
-      if (Date.now() - since <= LIMITS.busyMs) return false;
-      busy = true;
-      return true;
+      const now = Date.now();
+      cause ||= now > deadline || stop.signal.aborted ? timedOut() : now > busyUntil ? BUSY : null;
+      return cause !== null;
     },
   });
   const ctx = rt.newContext();
@@ -160,16 +159,18 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
       if (!isPromise(answer)) return fromJson(answer);
       const deferred = ctx.newPromise();
       pending.add(deferred);
+      // The script goes on in a turn of its own, so AnythingLLM's thread is free between two of its
+      // stretches even when the host answers at once (a refusal, say).
       answer.then(
-        (value) => settle(deferred, () => fromJson(value), "resolve"),
-        (e) => settle(deferred, () => ctx.newError(hostMessage(name, e)), "reject"),
+        (value) => setImmediate(() => settle(deferred, () => fromJson(value), "resolve")),
+        (e) => setImmediate(() => settle(deferred, () => ctx.newError(hostMessage(name, e)), "reject")),
       );
       return deferred.handle;
     }
 
     function settle(deferred: QuickJSDeferredPromise, make: () => QuickJSHandle, how: "resolve" | "reject") {
       if (finished) return; // the run's outcome is decided: its script runs no further
-      since = Date.now();
+      busyUntil = Date.now() + LIMITS.busyMs;
       pending.delete(deferred);
       const handle = make();
       deferred[how](handle);
@@ -184,10 +185,11 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
       if (done.error) done.error.dispose(); // the script's own rejection reaches `settled`
     }
 
+    busyUntil = Date.now() + LIMITS.busyMs; // the prelude and main's first stretch are one turn
     for (const [name, text] of Object.entries(prelude)) {
       const done = ctx.evalCode(text, name);
       if (done.error) {
-        const error = failure(ctx, done.error);
+        const error = interrupted(failure(ctx, done.error));
         return { ok: false, error: { ...error, message: `${name}: ${error.message}`, line: undefined } };
       }
       done.value.dispose();
@@ -196,7 +198,6 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
     const inputHandle = fromJson(input);
     ctx.setProp(ctx.global, "__input", inputHandle);
     inputHandle.dispose();
-    since = Date.now();
     const started = ctx.evalCode(`${source}\n;main(globalThis.__input, kit)`, "main.js");
     if (started.error) return { ok: false, error: interrupted(failure(ctx, started.error)) };
     const settled = ctx.resolvePromise(started.value);
@@ -232,14 +233,14 @@ export async function run({ source, input, kit, prelude = {}, deadline, stop = n
     return stop.signal.aborted && Date.now() <= deadline ? { name: "Stopped", message: "the run was stopped" } : { name: "Timeout", message: "the function ran past its time and was stopped" };
   }
 
-  /** An interrupt is QuickJS's way of saying the deadline passed, the run was stopped, or the
-   *  script computed too long without awaiting. */
+  /** The error an evaluation gave, as what interrupted it when something did (the deadline, a stop,
+   *  or computing too long): QuickJS's own is a bare "interrupted". */
   function interrupted(error: Failure): Failure {
-    if (error.name !== "InternalError" || error.message !== "interrupted") return error;
-    const why = busy ? { name: "Busy", message: `the function computed for over ${LIMITS.busyMs / 1000} s without awaiting, which holds up AnythingLLM: do less at once (a page at a time), or await between batches` } : timedOut();
-    return { ...why, line: error.line };
+    return cause ? { ...cause, line: error.line } : error;
   }
 }
+
+const BUSY: Failure = { name: "Busy", message: `the function computed for over ${LIMITS.busyMs / 1000} s without awaiting a kit call, which holds up AnythingLLM: do less at once (a page at a time), or await a kit call between batches (kit.sleep(0) will do)` };
 
 function hostMessage(name: string, e: unknown): { name: string; message: string } {
   return e instanceof Told ? { name: e.name === "Error" ? "KitError" : e.name, message: e.message } : { name: "KitError", message: `kit.${name} failed` };

@@ -58,24 +58,52 @@ test("a runaway loop is stopped at the deadline", async () => {
   assert.ok(Date.now() - started < 2000);
 });
 
-test("a function that computes too long without awaiting is stopped, before or after an await, so AnythingLLM isn't held up", async () => {
-  const kit: Kit = { tick: () => Promise.resolve(1) };
-  for (const source of ["async function main() { while (true) {} }", "async function main(i, kit) { await kit.tick(); while (true) {} }"]) {
-    const started = Date.now();
-    const outcome = await run({ source, input: null, kit, deadline: soon(30_000) });
-    assert.equal(!outcome.ok && outcome.error.name, "Busy", source);
-    assert.match(!outcome.ok ? outcome.error.message : "", /without awaiting/);
-    assert.ok(Date.now() - started < LIMITS.busyMs + 1500, "stopped at the limit, not the deadline");
+/** Runs `fn` with a busy limit short enough for a test to reach. */
+async function withBusyMs(ms: number, fn: () => Promise<void>): Promise<void> {
+  const was = LIMITS.busyMs;
+  LIMITS.busyMs = ms;
+  try {
+    await fn();
+  } finally {
+    LIMITS.busyMs = was;
   }
-});
+}
 
-test("work split by awaits may take longer than the limit in all", async () => {
-  const source = `async function main(i, kit) {
-    for (let n = 0; n < 3; n++) { const until = Date.now() + ${LIMITS.busyMs * 0.6}; while (Date.now() < until) {} await kit.tick(); }
-    return "done";
-  }`;
-  const outcome = await run({ source, input: null, kit: { tick: () => new Promise((r) => setTimeout(() => r(1), 5)) }, deadline: soon(30_000) });
-  assert.deepEqual(outcome, { ok: true, value: "done" });
+const ticking: Kit = { tick: () => later(1, 5), refused: () => Promise.reject(new Told("no")) };
+
+test("a function that computes too long without awaiting a kit call is stopped, so AnythingLLM isn't held up", () =>
+  withBusyMs(150, async () => {
+    const sources = [
+      "async function main() { while (true) {} }",
+      "async function main(i, kit) { await kit.tick(); while (true) {} }",
+      "async function main(i, kit) { for (;;) { await null; } }",
+    ];
+    for (const source of sources) {
+      const started = Date.now();
+      const outcome = await run({ source, input: null, kit: ticking, deadline: soon(30_000) });
+      assert.equal(!outcome.ok && outcome.error.name, "Busy", source);
+      assert.match(!outcome.ok ? outcome.error.message : "", /without awaiting a kit call/);
+      assert.ok(Date.now() - started < 1500, "stopped at the limit, not the deadline");
+    }
+  }));
+
+test("work split by kit calls may take longer than the limit in all, even when the host answers at once", () =>
+  withBusyMs(150, async () => {
+    const source = `async function main(i, kit) {
+      for (let n = 0; n < 3; n++) { const until = Date.now() + 90; while (Date.now() < until) {} await kit.tick(); }
+      for (let n = 0; n < 3; n++) { const until = Date.now() + 90; while (Date.now() < until) {} try { await kit.refused(); } catch {} }
+      return "done";
+    }`;
+    assert.deepEqual(await run({ source, input: null, kit: ticking, deadline: soon(30_000) }), { ok: true, value: "done" });
+  }));
+
+test("the thread is free between a function's stretches, even when the host answers at once: a stop gets through", async () => {
+  const stop = new AbortController();
+  setTimeout(() => stop.abort(), 100);
+  const started = Date.now();
+  const outcome = await run({ source: "async function main(i, kit) { for (;;) try { await kit.refused(); } catch {} }", input: null, kit: ticking, deadline: soon(5000), stop });
+  assert.equal(!outcome.ok && outcome.error.name, "Stopped");
+  assert.ok(Date.now() - started < 1500, "not at the deadline");
 });
 
 test("a function waiting on the host is stopped at the deadline, and the host is told to stop too", async () => {
