@@ -10,7 +10,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, cardsShown, logged, post, postVault, publicDir, reset, seal, skillDir, storage, vaultState } from "./harness.mts";
+import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, storage, vaultState } from "./harness.mts";
 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
@@ -19,15 +19,16 @@ import { call, cardsShown, logged, post, postVault, publicDir, reset, seal, skil
 // down or that the code ran out, how long a code lasts, how many codes it gave (each a new one), how
 // many seconds its token lasts (0: the provider doesn't say, as GitHub's), and how many times the
 // token address was asked.
-const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expired: false, expires: 900, deviceLifetime: 0, asks: 0, codes: 0 });
+const fresh = () => ({ hold: null as Promise<void> | null, challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expired: false, expires: 900, deviceLifetime: 0, asks: 0, codes: 0 });
 const provider = fresh();
-const server = http.createServer((req, res) => {
+const serve = (req: http.IncomingMessage, res: http.ServerResponse) => {
   let body = "";
   req.on("data", (c) => (body += c));
-  req.on("end", () => {
+  req.on("end", async () => {
     const json = (status: number, value: unknown) => (res.writeHead(status, { "content-type": "application/json" }), res.end(JSON.stringify(value)));
     const form = new URLSearchParams(body);
     if (req.url === "/device/code") {
+      await provider.hold;
       if (form.get("client_id") !== "client-1") return json(401, { error: "invalid_client" });
       const n = ++provider.codes;
       return json(200, { device_code: `dev-secret-${n}`, user_code: n === 1 ? "WDJB-MJHT" : `CODE-000${n}`, verification_uri: "https://example.com/login/device", expires_in: provider.expires, interval: 0 });
@@ -62,10 +63,16 @@ const server = http.createServer((req, res) => {
     if (req.url === "/me") return req.headers.authorization === `Bearer ${provider.access}` ? json(200, { name: "Ada" }) : json(401, { error: "no" });
     json(404, {});
   });
-});
-await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-const BASE = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-test.after(() => server.close());
+};
+// The provider at two addresses, which count as two providers (one sign-in each).
+const [BASE, OTHER] = await Promise.all(
+  [0, 1].map(async () => {
+    const server = http.createServer(serve);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    test.after(() => server.close());
+    return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  }),
+);
 
 const definition = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, token_url: `${BASE}/token`, scopes: ["me.read"], params: { access_type: "offline" } };
 const LLM = "https://llm.example.com";
@@ -218,6 +225,12 @@ async function code(): Promise<string> {
 
 const devStatus = () => vaultState().secrets.find((s: { label: string }) => s.label === "dev").status;
 
+/** Waits until `done` holds, as the loop gets there with no call, for at most `ms`. */
+async function until(done: () => boolean, ms = 3000): Promise<void> {
+  for (const end = Date.now() + ms; !done() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
+  assert.ok(done(), `not within ${ms} ms`);
+}
+
 test("a device sign-in: the code to show, the user agrees, and library finds it signed in", async () => {
   const said = await code();
   assert.match(said, /^Show the user this code in a code block of its own, so they can copy it:\n\n```\nWDJB-MJHT\n```\n\nThey open https:\/\/example\.com\/login\/device, enter the code and agree; it's good for 15 minutes\./);
@@ -274,11 +287,23 @@ test("the user agrees and no call follows: the Vault shows signed in once the lo
   await call({ action: "library" });
   assert.equal(devStatus(), "waiting for the user to enter its code");
   provider.agreed = true;
-  await new Promise((r) => setTimeout(r, 1000)); // the loop asks every half second
-  assert.equal(devStatus(), "signed in");
+  await until(() => devStatus() === "signed in"); // the loop asks every half second
 });
 
-test("a device sign-in that ends says how in the log, and nothing secret", async () => {
+test("the loop writes the Vault with AnythingLLM's address from the latest call, not the one that started it", async () => {
+  const [first, latest] = ["https://first.example.com", "https://latest.example.com"];
+  await call({ action: "secret", kind: "oauth", label: "dev", definition: deviceDef }, { base: first });
+  giveClient("dev");
+  await call({ action: "secret", kind: "oauth", label: "dev" }, { base: first }); // starts the loop
+  await call({ action: "guide" }, { base: latest });
+  provider.agreed = true;
+  await until(() => devStatus() === "signed in");
+  assert.equal(vaultState().redirect, `${latest}/library-lean/oauth.html`);
+});
+
+test("a device sign-in that ends says how in the log, and nothing secret", async (t) => {
+  const logged: string[] = [];
+  t.mock.method(console, "log", (m: string) => void logged.push(m));
   await code();
   provider.declined = true;
   await call({ action: "library" });
@@ -403,8 +428,10 @@ test("a device sign-in whose token ran out with nothing to renew it signs in aga
   provider.deviceLifetime = 1; // and no refresh token
   await code();
   provider.agreed = true;
-  await call({ action: "library" });
-  assert.equal(devStatus(), "signed in");
+  await call({ action: "save", service: "dev", toolkit: { base_urls: [BASE], secrets: [{ label: "dev", as: "bearer" }] }, function: { name: "me", description: "Who signed in.", source: "async function main() { return 1; }" } });
+  const ranOut = "its sign-in ran out and can't be renewed: start it again with secret";
+  assert.match(await call({ action: "library" }), new RegExp(`dev \\(bearer, ${ranOut}\\)`), "library says what secret finds");
+  assert.equal(devStatus(), ranOut, "and so does the Vault");
   const again = await call({ action: "secret", kind: "oauth", label: "dev" });
   assert.match(again, /^Show the user this code[^]*CODE-0002/, "not \"signed in already\"");
   assert.equal(provider.codes, 2);
@@ -511,4 +538,20 @@ test("a hand-written Google-style definition given again and again keeps one lin
   const fresh = await ask();
   assert.ok(!fresh.includes("still waits"));
   assert.notEqual(linkIn(fresh).searchParams.get("state"), first.searchParams.get("state"));
+});
+
+test("a sign-in waiting on its provider holds up no other sign-in", async () => {
+  const otherDevice = { ...deviceDef, authorize_url: `${OTHER}/authorize`, token_url: `${OTHER}/token`, device_url: `${OTHER}/device/code` };
+  await call({ action: "secret", kind: "oauth", label: "dev", definition: otherDevice });
+  giveClient("dev");
+  await link();
+  let release!: () => void;
+  provider.hold = new Promise((r) => (release = r));
+  let devAnswered = false;
+  const dev = call({ action: "secret", kind: "oauth", label: "dev" }).then((said) => ((devAnswered = true), said));
+  await new Promise((r) => setTimeout(r, 100)); // dev waits on the provider, holding its own lock
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM }), /still waits/);
+  assert.equal(devAnswered, false, "demo answered while dev still waited");
+  release();
+  assert.match(await dev, /```\nWDJB-MJHT\n```/);
 });

@@ -13,7 +13,7 @@ import { allowedHosts, bareHost, onSite, secureFor, siteOf } from "#shared/fence
 import type { Headers } from "#shared/net";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { accessToken, isSignIn, type Definition, type SignIn } from "./oauth";
+import { accessToken, isSignIn, minutesLeft, signedIn, type Definition, type SignIn } from "./oauth";
 
 /** How a secret goes with a request: as a bearer token, by HTTP Basic (the key the password, with a
  *  user name or none), as Authorization with another scheme, in a header, or in the query. */
@@ -27,7 +27,8 @@ export interface Secret {
   label: string;
   kind: "key" | "oauth";
   /** "saved" (a key), or a sign-in's: "signed in", "waiting for the user to enter its code",
-   *  "ready to sign in", "waiting for its client", or why its last sign-in didn't finish. */
+   *  "ready to sign in", "waiting for its client", that it ran out, or why its last sign-in didn't
+   *  finish. */
   status: string;
   /** A sign-in's scopes, and the host it signs in at. */
   scopes?: string;
@@ -70,10 +71,11 @@ export function siteChecked(site: unknown): string {
 /** Whether an entry is a secret (a key or a sign-in) named `label` (any case), or any secret. */
 const named = (label?: string) => (e: Readonly<vault.Entry>) => (e.kind === "key" || e.kind === "oauth") && (label === undefined || e.user.toLowerCase() === label.toLowerCase());
 
-/** Where a sign-in is. */
+/** Where a sign-in is, as secret finds it: signed in only with a token it can call with or renew. */
 function status(e: Readonly<SignIn>): string {
-  if (e.tokens?.access_token) return "signed in";
-  if (e.device) return "waiting for the user to enter its code";
+  if (signedIn(e)) return "signed in";
+  if (e.device && minutesLeft(e.device.until)) return "waiting for the user to enter its code";
+  if (e.tokens?.access_token) return "its sign-in ran out and can't be renewed: start it again with secret";
   if (e.error) return `its last sign-in didn't finish: ${e.error}`;
   return e.client_id ? "ready to sign in" : "waiting for its client";
 }

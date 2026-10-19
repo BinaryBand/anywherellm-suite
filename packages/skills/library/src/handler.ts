@@ -16,7 +16,7 @@ import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
 import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
-import { askDevices, startDevice, waitingCode, type Report } from "./device";
+import { askDevices, startDevice, waitingCode } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
 import { LOOPBACK, PENDING_MS, define, redirectFor, signedIn, start as startSignIn, waitingLink } from "./oauth";
@@ -117,7 +117,7 @@ function listingLines(saved: Saved): string[] {
 async function secret(args: Args, self: HandlerContext): Promise<string> {
   const named = clean(args.label);
   const kind = clean(args.kind).toLowerCase() || (named && !clean(args.site) && secrets.signIn(named) ? "oauth" : "key"); // the label of a sign-in, alone, means it
-  if (kind === "oauth") return serial("library-lean.sign-in", () => signIn(args, self)); // two chats at once share one code
+  if (kind === "oauth") return serial(`library-lean.sign-in.${(named || clean(args.preset)).toLowerCase()}`, () => signIn(args, self)); // two chats at once share one code; other sign-ins go on
   if (kind !== "key") throw new LibraryError('secret\'s kind is "key" (an API key or token) or "oauth" (a sign-in)');
   const site = secrets.siteChecked(args.site);
   const label = secrets.labelOf(clean(args.label) || site);
@@ -150,12 +150,11 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
     return `"${label}" needs the user's own OAuth client at the provider (${host}). Tell them to make one in its developer console: ${kind}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID (and its secret, if it has one) on the Vault, under Sign-ins: ${await page.showVault(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
   }
   if (found.oauth.device_url) {
-    const report = deviceReport(self);
-    if (waitingCode(found)) await askDevices(true, report); // the user may have agreed since the last ask
+    if (waitingCode(found)) await askDevices(true, base, found.id); // the user may have agreed since the last ask
     const now = secrets.signIn(label) ?? found;
     if (signedIn(now)) return already;
     const waits = waitingCode(now);
-    const code = waits ?? (await startDevice(now, report));
+    const code = waits ?? (await startDevice(now, base));
     return `${waits ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
   }
   if (signedIn(found)) return already;
@@ -251,13 +250,6 @@ async function runNow(name: string, inputs: unknown, self: HandlerContext): Prom
   return `Still running ${running.fn} in the background (${running.id}): carry on. When it ends, the user gets a push (if they switched AnythingLLM's notifications on), the Library page shows it, and it's at the top of the next library or run answer. run with run_id "${running.id}" shows it now; add stop: true to stop it.`;
 }
 
-/** How the device flow reports for the call `self`: to its logger, and by writing the pages' state
- *  again with its AnythingLLM address. */
-function deviceReport(self: HandlerContext): Report {
-  const base = baseOf(self);
-  return { log: (m) => self.logger?.(m), ended: () => refreshPage(base) };
-}
-
 /** Shows the page's state as it is now, when there's a page; a hint, so a failure is only logged. */
 function refreshPage(base: string | null): void {
   try {
@@ -326,7 +318,7 @@ export const runtime = {
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
       await fromPage(this);
-      await askDevices(action === "library", deviceReport(this));
+      await askDevices(action === "library", baseOf(this));
       return await act(args, this);
     } catch (e) {
       if (e instanceof Told) return `Library: ${e.message}.`;

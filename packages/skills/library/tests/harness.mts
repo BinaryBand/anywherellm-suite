@@ -42,9 +42,6 @@ const handler = (): ((this: unknown, args: Record<string, unknown>) => Promise<s
 /** The question cards the skill showed: none, ever (a card shows its answers in the chat). */
 export const cardsShown: unknown[] = [];
 
-/** What the skill wrote to the handler's logger, as AnythingLLM's container log shows it. */
-export const logged: string[] = [];
-
 export interface Call {
   slug?: string | null;
   base?: string;
@@ -56,7 +53,7 @@ export interface Call {
 export function call(args: Record<string, unknown>, at: Call | string | null = {}): Promise<string> {
   const { slug = "work", base } = at === null || typeof at === "string" ? { slug: at } : at;
   const card = { requestUserClarification: async (q: unknown) => (cardsShown.push(q), { skipped: true }), addClarifyingQuestionSurvey: () => {} };
-  const self = { super: { handlerProps: { invocation: slug ? { workspace: { slug }, thread_id: 3 } : {} }, ...card }, runtimeArgs: base ? { ANYTHINGLLM_URL: base } : {}, logger: (m: string) => void logged.push(m) };
+  const self = { super: { handlerProps: { invocation: slug ? { workspace: { slug }, thread_id: 3 } : {} }, ...card }, runtimeArgs: base ? { ANYTHINGLLM_URL: base } : {}, logger: () => {} };
   return handler().call(self, args);
 }
 
@@ -92,7 +89,6 @@ export async function giveKey(label: string, site: string, value: string): Promi
 /** Forgets the library, the vault and the page between tests. */
 export function reset(): void {
   for (const dir of [library, path.join(storage, "vault-lean"), path.join(storage, "documents"), publicDir]) fs.rmSync(dir, { recursive: true, force: true });
-  logged.length = 0;
 }
 
 let posts = 0;
