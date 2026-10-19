@@ -180,6 +180,9 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   assert.match(JSON.stringify(vaultState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
   const again = await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM });
   assert.match(again, /^Its last sign-in didn't finish \(the provider didn't give a code: access_denied\), so this is a new one\./, "the definition given again keeps why");
+  const elsewhere = await call({ action: "secret", kind: "oauth", label: "demo" }, { base: "http://localhost:3001" });
+  assert.match(elsewhere, /^Its last sign-in didn't finish \(the provider didn't give a code: access_denied\), so this is a new one\./, "and so does a new link for another address");
+  assert.notEqual(linkIn(elsewhere).searchParams.get("state"), linkIn(again).searchParams.get("state"));
 });
 
 test("with ANYTHINGLLM_URL unset, the address the Vault was opened at is learned with the client", async () => {

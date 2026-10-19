@@ -19,7 +19,7 @@ import { LibraryError } from "./errors";
 import { askDevices, askNow, startDevice } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { LOOPBACK, define, givenLink, redirectFor, start as startSignIn, stateOf, type DeviceCode, type SignIn, type SignInLink } from "./oauth";
+import { LOOPBACK, define, givenLink, redirectFor, start as startSignIn, stateOf, type DeviceCode, type SignIn, type SignInLink, type SignInState } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
 import { presetOf } from "./presets";
@@ -165,23 +165,30 @@ async function signIn(args: Args, label: string, base: string | null): Promise<s
     case "code waits":
       return "The code shown before still waits, and no new one was made: show it again. " + codeText(state.code, label);
     case "link waits": {
-      if (state.redirect !== redirect) break; // it goes back to another address: a new one
+      // It goes back to another address: a new one, saying why as if the old link weren't there.
+      if (state.redirect !== redirect) {
+        lead = whyNew(stateOf({ ...found, pending: null }));
+        break;
+      }
       const link = givenLink(found, state.minutes);
       await page.oauthPage(link.state, label); // again, for a new container that lacks its page
       return "The link given before still waits, and no new one was made: give it again. " + (await linkText(link, label, base, redirect));
     }
-    case "failed":
-      lead = `Its last sign-in didn't finish (${state.why}), so this is a new one. `;
-      break;
-    case "ran out":
-      lead = "Its sign-in ran out and can't be renewed, so this is a new one. ";
-      break;
+    default:
+      lead = whyNew(state);
   }
   if (device) return lead + codeText(await startDevice(found), label);
   if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   const link = await startSignIn(found, redirect);
   await page.oauthPage(link.state, label);
   return lead + (await linkText(link, label, base, redirect));
+}
+
+/** Why a new code or link is made for a sign-in at `state`: its last one failed, or ran out. */
+function whyNew(state: SignInState): string {
+  if (state.at === "failed") return `Its last sign-in didn't finish (${state.why}), so this is a new one. `;
+  if (state.at === "ran out") return "Its sign-in ran out and can't be renewed, so this is a new one. ";
+  return "";
 }
 
 /** For a sign-in with no client yet: what OAuth client the user makes at the provider, and that
