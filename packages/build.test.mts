@@ -6,7 +6,7 @@ import path from "node:path";
 import { after, test } from "node:test";
 import { bundle, staticFiles } from "./build.mjs";
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-build-"));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "build-"));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 // a/src/main.ts imports a/src/own.ts (its own) and b/other.ts (another part's).

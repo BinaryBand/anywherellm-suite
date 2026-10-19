@@ -4,15 +4,11 @@ import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
 import { readEnv } from "#shared/envfile";
 import { desktopStorage } from "#shared/paths";
-import { Upstream } from "#shared/upstream";
 import { serversFile, type Payload } from "../src/addons.mts";
-import { health, install, uninstall, type Ctx, type Options } from "../src/install.mts";
-import { developerKey } from "../src/pair.mts";
-import { settingsFile } from "../src/settings.mts";
+import { health, install, settingsFile, uninstall, type Ctx, type Options } from "../src/install.mts";
 import { FakeAnythingLLM } from "./fakes/anythingllm.mts";
 import { tempDir } from "./fakes/tmp.mts";
 
-const DEFAULT = "/workspaces, GET /scheduled-jobs, GET /workspace/*/threads, POST /workspace/*/thread/new";
 const PAYLOAD: Payload = { control: "// control\n", skills: [{ name: "library", hubId: "library-lean", files: { "handler.js": "// library\n" }, pages: true }] };
 const tmp = tempDir("install");
 
@@ -31,20 +27,17 @@ beforeEach(async () => {
   printed = [];
   ctx = {
     home,
-    env: { ANYTHINGLLM_URL: fake.url, BRIDGE_PORT: "1" },
+    env: { ANYTHINGLLM_URL: fake.url },
     print: (l) => printed.push(l),
-    command: ["/usr/bin/node", "/x/anywherellm-suite.cjs", "serve"],
     node: "/opt/node/bin/node",
-    defaultAllow: DEFAULT,
     payload: PAYLOAD,
-    platform: "linux", // paths and service manager as on Linux, whatever runs the tests
-    run: () => ({ status: 1, stdout: "" }), // no service manager answers
+    platform: "linux", // paths as on Linux, whatever runs the tests
   };
 });
 afterEach(() => fake.stop());
 
 const settings = () => readEnv(settingsFile(ctx));
-const opts = (more: Partial<Options> = {}): Options => ({ storage, bridge: false, start: false, ...more });
+const opts = (more: Partial<Options> = {}): Options => ({ storage, ...more });
 const control = () => JSON.parse(fs.readFileSync(serversFile(storage), "utf8")).mcpServers.control;
 
 test("install puts the server, its entry and the skills into the storage, and asks nothing of AnythingLLM", async () => {
@@ -52,7 +45,7 @@ test("install puts the server, its entry and the skills into the storage, and as
   assert.equal(fs.readFileSync(path.join(storage, "anywherellm-suite", "control.cjs"), "utf8"), PAYLOAD.control);
   assert.deepEqual(control(), { command: "node", args: ["/app/server/storage/anywherellm-suite/control.cjs"], env: { ANYTHINGLLM_MCP_ROLES: "chat" } });
   assert.ok(fs.existsSync(path.join(storage, "plugins", "agent-skills", "library-lean", "handler.js")));
-  assert.deepEqual(settings(), { ANYTHINGLLM_STORAGE: storage }, "no BRIDGE_ALLOW without --bridge");
+  assert.deepEqual(settings(), { ANYTHINGLLM_STORAGE: storage });
   assert.deepEqual(fake.calls, []);
   assert.equal(fake.logins, 0);
   assert.match(printed.join("\n"), /refresh the MCP servers/);
@@ -98,38 +91,26 @@ test("--skills none puts in the server alone", async () => {
   assert.ok(!fs.existsSync(path.join(storage, "plugins", "agent-skills")));
 });
 
-test("--bridge sets BRIDGE_ALLOW when none is; an owner's stays, empty included", async () => {
-  await install(ctx, opts({ bridge: true }));
-  assert.deepEqual(settings(), { ANYTHINGLLM_STORAGE: storage, BRIDGE_ALLOW: DEFAULT });
-  assert.match(printed.join("\n"), /give the bridge an https address/);
-  fs.writeFileSync(settingsFile(ctx), "BRIDGE_ALLOW=\n");
-  printed.length = 0;
-  await install(ctx, opts({ bridge: true }));
-  assert.equal(settings().BRIDGE_ALLOW, "");
-  assert.match(printed.join("\n"), /BRIDGE_ALLOW is empty/);
-});
-
-test("uninstall takes it all out and forgets the storage; the skill's data and BRIDGE_ALLOW stay", async () => {
-  await install(ctx, opts({ bridge: true }));
+test("uninstall takes it all out and forgets the storage; the skill's data stays", async () => {
+  await install(ctx, opts());
   fs.mkdirSync(path.join(storage, "library-lean"));
   uninstall(ctx);
   assert.deepEqual(JSON.parse(fs.readFileSync(serversFile(storage), "utf8")).mcpServers, {});
   assert.ok(!fs.existsSync(path.join(storage, "anywherellm-suite")));
   assert.ok(!fs.existsSync(path.join(storage, "plugins", "agent-skills", "library-lean")));
   assert.ok(fs.existsSync(path.join(storage, "library-lean")));
-  assert.deepEqual(settings(), { BRIDGE_ALLOW: DEFAULT });
+  assert.deepEqual(settings(), {});
   printed.length = 0;
   uninstall(ctx);
   assert.match(printed[0], /No storage is known/);
 });
 
-test("health checks what install put in, and the bridge only when there is one", async () => {
+test("health checks what install put in", async () => {
   assert.equal(await health(ctx), false);
   assert.match(printed.join("\n"), /FAIL AnythingLLM's storage: not set: run install/);
   await install(ctx, opts({ pageKey: "brx-good" }));
   printed.length = 0;
   assert.equal(await health(ctx), true, printed.join("\n"));
-  assert.ok(!printed.some((l) => /bridge on :|BRIDGE_ALLOW/.test(l)), printed.join("\n"));
   fs.writeFileSync(path.join(storage, "anywherellm-suite", "control.cjs"), "old");
   printed.length = 0;
   assert.equal(await health(ctx), false);
@@ -171,31 +152,5 @@ test("with no skill that has pages, no key is asked for or checked", async () =>
   printed.length = 0;
   assert.equal(await health(quiet), true, printed.join("\n"));
   assert.ok(!printed.some((l) => l.includes("the pages' key")), printed.join("\n"));
-});
-
-test("with the bridge, health fails when it isn't answering, and says which check", async () => {
-  await install(ctx, opts({ bridge: true }));
-  printed.length = 0;
-  assert.equal(await health(ctx), false);
-  const report = printed.join("\n");
-  assert.match(report, /ok +the control server/);
-  assert.match(report, /FAIL bridge on :1: no answer/);
-  assert.match(report, /ok +AnythingLLM/);
-  assert.match(report, /ok +the internal API's login/);
-  assert.match(report, /ok +BRIDGE_ALLOW/);
-});
-
-test("the named developer key is reused, and made when there is none", async () => {
-  const api = new Upstream(fake.url, null);
-  fake.replies.set("GET /system/api-keys", { json: { apiKeys: [{ name: "other", secret: "o" }, { name: "AnywhereLLM", secret: "phone" }] } });
-  assert.equal(await developerKey(api), "phone");
-  assert.equal(fake.calls.length, 1);
-  fake.replies.set("GET /system/api-keys", { json: { apiKeys: [] } });
-  fake.replies.set("POST /system/generate-api-key", { json: { apiKey: { secret: "new" } } });
-  assert.equal(await developerKey(api), "new");
-  fake.replies.set("POST /system/generate-api-key", { json: { error: "no" } });
-  await assert.rejects(developerKey(api), /made no key: no/);
-  fake.replies.set("GET /system/api-keys", { status: 500, json: { error: "boom" } });
-  await assert.rejects(developerKey(api), /answered 500: boom/);
 });
 

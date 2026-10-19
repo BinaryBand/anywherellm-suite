@@ -8,11 +8,6 @@
     "files.trimTrailingWhitespace": false
   },
 
-  // Out of the explorer: caches no one opens.
-  "files.exclude": {
-    "**/.dart_tool": true
-  },
-
   // Out of the search and the file watcher: what the tools generate.
   "search.exclude": {
     "**/node_modules": true,

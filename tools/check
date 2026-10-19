@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
-# tools/check [bridge|control|skills|app ...]: the tests of each part; no argument: all, stopping
-# at the first part that fails. The bridge, the control server and the skills are written: their
-# type-check and the tests of what they share (packages/shared, the build script) run once, first,
-# then each part's tests (which build its bundle first).
+# tools/check [install|control|skills ...]: the tests of each part; no argument: all, stopping at
+# the first part that fails. Their type-check and the tests of what they share (packages/shared,
+# the build script) run once, first, then each part's tests (which build its bundle first).
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-[ $# -gt 0 ] || set -- bridge control skills app
-case " $* " in *" bridge "*|*" control "*|*" skills "*)
+[ $# -gt 0 ] || set -- install control skills
+case " $* " in *" install "*|*" control "*|*" skills "*)
   echo "[shared] type-check, then tests"
   npm --prefix "$ROOT/packages" run -s typecheck
   npm --prefix "$ROOT/packages" run -s shared:test
 esac
 for part in "$@"; do
   case "$part" in
-    bridge|control|skills)
+    install|control|skills)
       echo "[$part] tests"
       npm --prefix "$ROOT/packages" run -s "$part:test"
       ;;
-    app) not_yet "check $part" ;;
-    *) echo "tools/check: no such part: $part (one of: bridge control skills app)" >&2; exit 2 ;;
+    *) echo "tools/check: no such part: $part (one of: install control skills)" >&2; exit 2 ;;
   esac
 done

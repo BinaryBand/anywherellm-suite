@@ -2,12 +2,10 @@
 // beside it, and the build fails (removing the output) when a bundle took in a file from outside its
 // part: that is the boundary between parts, since a part cannot ship another part's code.
 //
-//   bridge  src/main.mts -> bridge/dist/anywherellm-suite.cjs, the command people run (install,
-//           the bridge), for Node 20.3 or later (AbortSignal.any). The extension is fixed (.cjs) so
-//           it runs the same wherever it is copied to. contract/default-allow.txt is inlined (the one
-//           copy of the default BRIDGE_ALLOW), and so is what install puts into AnythingLLM's storage:
-//           the control server and every skill, built first, as PAYLOAD. Allowed: src/, shared/ and
-//           the contract.
+//   install src/main.mts -> install/dist/anywherellm-suite.cjs, the command people run, for Node
+//           20. The extension is fixed (.cjs) so it runs the same wherever it is copied to. What
+//           install puts into AnythingLLM's storage, the control server and every skill, built
+//           first, is inlined as PAYLOAD. Allowed: src/ and shared/.
 //   control src/main.mts -> control/dist/control.cjs, the MCP server AnythingLLM starts itself, so
 //           for Node 18 (the one in its image). Allowed: src/ and shared/.
 //   skills  each skill's src/handler.ts -> <skill>/build/<hubId>/handler.js plus plugin.json, the
@@ -21,7 +19,7 @@
 //           packages' versions are inlined as VENDORED_VERSIONS ("puppeteer-core@24.43.1 ws@8.22.0
 //           ..."), for the per-process keys that keep a reloaded skill off an older copy.
 //
-// usage: node build.mjs [bridge | control | skills [skill ...]]   (no argument: every part)
+// usage: node build.mjs [install | control | skills [skill ...]]   (no argument: every part)
 import { build } from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
@@ -135,7 +133,7 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
   return Object.keys(metafile.inputs);
 }
 
-/** What install puts into the storage (bridge/src/addons.mts's Payload): the control server and
+/** What install puts into the storage (install/src/addons.mts's Payload): the control server and
  *  every skill, built first. */
 async function payload() {
   const control = fs.readFileSync(await buildControl(), "utf8");
@@ -148,20 +146,12 @@ async function payload() {
   return { control, skills };
 }
 
-async function buildBridge() {
+async function buildInstall() {
   const define = { PAYLOAD: JSON.stringify(await payload()) };
-  const outfile = path.join(here, "bridge", "dist", "anywherellm-suite.cjs");
-  await bundle({
-    entry: "bridge/src/main.mts",
-    outfile,
-    target: "node20",
-    define,
-    loader: { ".txt": "text" },
-    allowed: ["bridge/src/", "shared/", "../contract/"],
-    label: "the bridge",
-  });
+  const outfile = path.join(here, "install", "dist", "anywherellm-suite.cjs");
+  await bundle({ entry: "install/src/main.mts", outfile, target: "node20", define, allowed: ["install/src/", "shared/"], label: "the installer" });
   fs.chmodSync(outfile, 0o755);
-  console.log(`built bridge -> ${path.relative(here, outfile)}`);
+  console.log(`built install -> ${path.relative(here, outfile)}`);
 }
 
 async function buildControl() {
@@ -204,8 +194,8 @@ async function buildSkills(names) {
 
 if (process.argv[1] === self) {
   const [part, ...names] = process.argv.slice(2);
-  if (part && !["bridge", "control", "skills"].includes(part)) throw new Error(`usage: node build.mjs [bridge | control | skills [skill ...]], not ${part}`);
-  if (!part || part === "bridge") await buildBridge(); // builds the control server and the skills first
+  if (part && !["install", "control", "skills"].includes(part)) throw new Error(`usage: node build.mjs [install | control | skills [skill ...]], not ${part}`);
+  if (!part || part === "install") await buildInstall(); // builds the control server and the skills first
   else if (part === "control") await buildControl();
   else await buildSkills(names);
 }

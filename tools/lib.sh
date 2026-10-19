@@ -2,7 +2,7 @@
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
-# IMAGE, INNER_PORT and BRIDGE_PORT: the one AnythingLLM every check runs against.
+# IMAGE, INNER_PORT and INNER_STORAGE: the one AnythingLLM every check runs against.
 # shellcheck source=/dev/null
 . "$ROOT/contract/versions.env"
 
@@ -19,9 +19,6 @@ load_skill() {
   [ -f "$SKILL_DIR/plugin.json" ] || { echo "no such skill: $1 (one of: $(skills | tr '\n' ' '))" >&2; return 1; }
   HUB_ID=$(plugin_field hubId)
 }
-
-# not_yet <script>: the scripts below are stubs until the parts are moved in.
-not_yet() { echo "tools/$1: not written yet (the parts have not been moved in)" >&2; exit 1; }
 
 # need_engine: sets engine (podman, else docker) and podman (1 for podman) for the scripts that start a
 # container, or stops the script when neither is installed.

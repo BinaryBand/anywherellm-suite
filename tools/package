@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tools/package <skill>: builds a skill and zips build/<hubId> for the Community Hub, its files at the
-# zip's root. Prints the zip's path. (The bridge and mcp are not packaged here yet.)
+# zip's root. Prints the zip's path.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_skill "${1:-}"

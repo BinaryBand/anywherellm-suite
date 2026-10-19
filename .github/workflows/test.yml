@@ -27,7 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run shared:test
-      - run: npm run bridge:test
+      - run: npm run install:test
       - run: npm run control:test
       - run: npm run skills:test
 

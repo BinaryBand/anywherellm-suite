@@ -6,7 +6,7 @@
 # temporary folder are removed afterwards, pass or fail; nothing running on this machine is touched.
 #
 # Fresh storage matters: a folder left from an earlier run has tabs whose pages are gone. (Not
-# tools/e2e, which drives the control server and the bridge.) Needs podman or docker and Node 22.18
+# tools/e2e, which drives the control server.) Needs podman or docker and Node 22.18
 # or later; the first run pulls the image.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -44,7 +44,7 @@ e2e() {
 
   # The pages' key, as Settings > Browser Extension makes one (this AnythingLLM has no password).
   page_key=$(curl -fs -X POST "http://127.0.0.1:$port/api/browser-extension/api-keys/new" | json 'j.apiKey')
-  BRIDGE_ENV_FILE="$work/bridge.env" node "$cli" install --storage "$work/storage" --skills "$1" --page-key "$page_key"
+  XDG_CONFIG_HOME="$work/config" node "$cli" install --storage "$work/storage" --skills "$1" --page-key "$page_key"
   "$engine" exec -w /app/server -e HUB_ID="$HUB_ID" -e STORAGE_DIR="$INNER_STORAGE" -e INNER_PORT="$INNER_PORT" \
     -e FENCE_ALLOW=127.0.0.1,localhost "$name" node /e2e/inside.js
   echo "tools/e2e-skill: $1 ok"
@@ -52,6 +52,6 @@ e2e() {
 
 [ $# -gt 0 ] || set -- $(for s in $(skills); do [ -f "$ROOT/packages/skills/$s/tests/e2e/inside.js" ] && echo "$s"; done)
 echo "[e2e-skill] anywherellm-suite, built from packages/"
-(cd "$ROOT/packages" && node build.mjs bridge >/dev/null)
-cli="$ROOT/packages/bridge/dist/anywherellm-suite.cjs"
+(cd "$ROOT/packages" && node build.mjs install >/dev/null)
+cli="$ROOT/packages/install/dist/anywherellm-suite.cjs"
 for skill in "$@"; do (e2e "$skill"); done

@@ -1,13 +1,6 @@
 dist/
 node_modules/
 
-# Flutter / Dart
-app/.dart_tool/
-app/build/
-app/.flutter-plugins*
-app/.packages
-app/pubspec.lock.bak
-
 .DS_Store
 packages/skills/*/build/
 

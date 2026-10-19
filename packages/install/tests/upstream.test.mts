@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { passwordIn, Upstream } from "#shared/upstream";
+import { readEnv } from "#shared/envfile";
+import { Upstream, type Password } from "#shared/upstream";
 import { FakeAnythingLLM } from "./fakes/anythingllm.mts";
 import { tempDir } from "./fakes/tmp.mts";
-import { until } from "./fakes/until.mts";
 
 const tmp = tempDir("upstream");
 
@@ -14,6 +14,9 @@ beforeEach(async () => {
   fake = await new FakeAnythingLLM().start();
 });
 afterEach(() => fake.stop());
+
+/** The password in an .env file, as AUTH_TOKEN. */
+const passwordIn = (envFile: string): Password => ({ read: () => readEnv(envFile).AUTH_TOKEN || "", where: `the password in ${envFile}` });
 
 /** An AnythingLLM .env holding `password` (none when empty). */
 let envs = 0;
@@ -84,43 +87,4 @@ test("a wrong password is said, and a changed one is read at the next login", as
 test("an AnythingLLM that isn't there is a 502", async () => {
   const api = new Upstream("http://127.0.0.1:1", null);
   await refuses(api.exchange("GET", "/x"), 502, /can't be reached/);
-});
-
-test("a key is asked about once, and remembered longer when good", async () => {
-  let now = 0;
-  const api = new Upstream(fake.url, null, () => now);
-  assert.ok(await api.keyValid("good-key"));
-  assert.ok(await api.keyValid("good-key"));
-  assert.ok(!(await api.keyValid("bad")));
-  assert.ok(!(await api.keyValid("bad")));
-  assert.equal(fake.keyChecks, 2);
-  now = 11_000; // a refused key is asked about again after 10 s, a good one after 60
-  assert.ok(!(await api.keyValid("bad")));
-  assert.ok(await api.keyValid("good-key"));
-  assert.equal(fake.keyChecks, 3);
-  now = 71_000;
-  assert.ok(await api.keyValid("good-key"));
-  assert.equal(fake.keyChecks, 4);
-  assert.ok(!(await api.keyValid("")));
-});
-
-test("calls with one key at once share one question, and the memory of keys is bounded", async () => {
-  const api = new Upstream(fake.url, null);
-  assert.deepEqual(await Promise.all([api.keyValid("good-key"), api.keyValid("good-key"), api.keyValid("good-key")]), [true, true, true]);
-  assert.equal(fake.keyChecks, 1);
-  for (let i = 0; i < 300; i++) await api.keyValid(`bad-${i}`);
-  await api.keyValid("good-key"); // the oldest were let go, this one among them
-  assert.equal(fake.keyChecks, 1 + 300 + 1);
-});
-
-test("a call whose client left is ended with an AbortError, not a 502", async () => {
-  fake.hold.add("GET /slow");
-  const api = new Upstream(fake.url, null);
-  const gone = new AbortController();
-  const call = api.exchange("GET", "/slow", undefined, 5_000, gone.signal);
-  await until(() => fake.calls.length);
-  gone.abort();
-  await assert.rejects(call, { name: "AbortError" });
-  await until(() => fake.dropped.length); // AnythingLLM saw the connection go
-  assert.deepEqual([fake.calls.length, fake.dropped], [1, ["GET /slow"]]);
 });

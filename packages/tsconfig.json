@@ -20,8 +20,8 @@
   "include": [
     "control/src",
     "control/tests",
-    "bridge/src",
-    "bridge/tests",
+    "install/src",
+    "install/tests",
     "shared",
     "*.test.mts",
     "../tools/*.mts",
