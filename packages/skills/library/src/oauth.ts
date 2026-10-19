@@ -51,12 +51,14 @@ export interface Tokens {
   expires_at: number | null;
 }
 
-/** A sign-in waiting for the provider to send the user back with `state`. */
+/** A sign-in waiting for the provider to send the user back with `state`, and the link the user was
+ *  given, so a second call gives the same. */
 interface Pending {
   state: string;
   verifier: string;
   redirect: string;
   until: number;
+  url?: string;
 }
 
 /** A device-flow sign-in waiting for the user to enter its code: the provider's device code, how
@@ -131,13 +133,19 @@ export const waiting = (): string[] =>
 export async function start(given: Readonly<SignIn>, redirect: string): Promise<{ url: string; state: string }> {
   const state = newSecret(24);
   const verifier = newSecret(32);
-  const signIn = await vault.update((v) => {
+  const url = await vault.update((v) => {
     const found = v.entries.find((e) => e.id === given.id) as SignIn | undefined;
     if (!found) throw new LibraryError(`there's no sign-in "${given.user}"`);
     if (!found.client_id) throw new LibraryError(`"${given.user}" is waiting for the user's OAuth client: its ID and secret`);
-    found.pending = { state, verifier, redirect, until: Date.now() + PENDING_MS };
-    return structuredClone(found);
+    const href = signInLink(found, redirect, state, verifier);
+    found.pending = { state, verifier, redirect, until: Date.now() + PENDING_MS, url: href };
+    return href;
   });
+  return { url, state };
+}
+
+/** The provider's sign-in address for `signIn`, coming back to `redirect` with `state`. */
+function signInLink(signIn: Readonly<SignIn>, redirect: string, state: string, verifier: string): string {
   const o = signIn.oauth;
   const url = new URL(o.authorize_url);
   for (const [k, v] of Object.entries(o.params)) url.searchParams.set(k, v);
@@ -150,8 +158,25 @@ export async function start(given: Readonly<SignIn>, redirect: string): Promise<
     url.searchParams.set("code_challenge", crypto.createHash("sha256").update(verifier).digest("base64url"));
     url.searchParams.set("code_challenge_method", "S256");
   }
-  return { url: url.href, state };
+  return url.href;
 }
+
+/** The link `signIn` gave the user that still waits for them to come back to `redirect`, with its
+ *  state and the minutes it has left; null when none waits, it ran out, the redirect address
+ *  changed, or it was kept before the vault kept the link. */
+export function waitingLink(signIn: Readonly<SignIn>, redirect: string): { url: string; state: string; minutes: number } | null {
+  const p = signIn.pending;
+  const left = p ? p.until - Date.now() : 0;
+  if (!p?.url || p.redirect !== redirect || left <= 0) return null;
+  return { url: p.url, state: p.state, minutes: Math.max(1, Math.round(left / 60_000)) };
+}
+
+/** Whether `signIn` has tokens it can call with now: an access token that isn't about to run out,
+ *  or one that can be renewed. One that ran out with nothing to renew it is signed in no longer. */
+export const signedIn = (signIn: Readonly<SignIn>): boolean => {
+  const t = signIn.tokens;
+  return !!t?.access_token && (!t.expires_at || t.expires_at - RENEW_MS > Date.now() || !!t.refresh_token);
+};
 
 /** A provider's answer: JSON, or a form as some token addresses answer. */
 export interface ProviderAnswer {

@@ -19,7 +19,7 @@ import { LibraryError } from "./errors";
 import { askDevices, startDevice, waitingCode } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { LOOPBACK, define, redirectFor, start as startSignIn } from "./oauth";
+import { LOOPBACK, PENDING_MS, define, redirectFor, signedIn, start as startSignIn, waitingLink } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
 import { presetOf } from "./presets";
@@ -142,6 +142,7 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
   if (!found) throw new LibraryError(`there's no sign-in "${label}": give its definition { site, authorize_url, token_url, scopes, params }, or a preset (guide topic secrets)`);
   const host = new URL(found.oauth.authorize_url).host;
   const done = `When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
+  const already = `"${label}" is signed in already: start no new sign-in. Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }. If the provider refuses calls with it, the user deletes it on the Vault, and then you call secret again.`;
   if (!found.client_id) {
     await page.need(label, found.site, "client");
     const kind = found.oauth.device_url ? "a client with the device flow switched on (it needs no redirect address)" : redirect ? `a web application client, with this redirect address registered: ${redirect}` : "a web application client, with the redirect address the Vault shows registered";
@@ -151,16 +152,19 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
     const log = (m: string) => self.logger?.(m);
     if (waitingCode(found)) await askDevices(true, log); // the user may have agreed since the last ask
     const now = secrets.signIn(label) ?? found;
-    if (now.tokens?.access_token) return `"${label}" is signed in already: start no new sign-in. Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
+    if (signedIn(now)) return already;
     const waits = waitingCode(now);
     const code = waits ?? (await startDevice(now, log));
     return `${waits ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
   }
   if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
-  const { url, state } = await startSignIn(found, redirect);
-  await page.oauthPage(state, label);
+  if (signedIn(found)) return already;
+  const waits = waitingLink(found, redirect);
+  const { url, state } = waits ?? (await startSignIn(found, redirect));
+  await page.oauthPage(state, label); // again for a link that waits, whose page a new container lacks
+  const minutes = waits?.minutes ?? PENDING_MS / 60_000;
   const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent (on a phone, with a button back to the AnywhereLLM app)." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Vault's Sign-ins tab (Finish a sign-in): ${await page.showVault(base)}`;
-  return `Give the user this sign-in link, to open in their browser; it's good for 10 minutes:\n${url}\n${back} ${done}`;
+  return `${waits ? "The link given before still waits, and no new one was made: give it again. " : ""}Give the user this sign-in link, to open in their browser; it's good for ${minutes} minute${minutes === 1 ? "" : "s"}:\n${url}\n${back} ${done}`;
 }
 
 /** auth as call takes it: none, how the key saved for the address's site goes ("bearer"), or

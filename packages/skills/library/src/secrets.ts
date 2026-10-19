@@ -116,9 +116,10 @@ export async function saveKey(site: string, label: string, value: string): Promi
 }
 
 /** Saves how a sign-in signs in; one of the same name keeps its client (or takes `sharedClient`,
- *  the suite's own from a preset), and its tokens and the code it waits on while how it signs in
- *  and its client are unchanged. One sign-in per provider: a new name for a provider signed in at
- *  already is refused, naming the one there, and so is a definition for a preset's sign-in. */
+ *  the suite's own from a preset), and its tokens and the code or link it waits on while how it
+ *  signs in and its client are unchanged. One sign-in per provider: a new name for a provider
+ *  signed in at already is refused, naming the one there, and so is a definition for a preset's
+ *  sign-in. */
 export async function saveSignIn(site: string, label: string, oauth: Definition, sharedClient?: string): Promise<void> {
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;
@@ -129,7 +130,7 @@ export async function saveSignIn(site: string, label: string, oauth: Definition,
     if (kept?.shared && !sharedClient) throw new LibraryError(`"${label}" signs in with a preset, the suite's own client: don't give it a definition. To change its scopes, call secret with kind "oauth", its preset and the scopes; to see whether it signed in, call library`);
     const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };
     const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth) && kept.client_id === client.client_id;
-    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, tokens: unchanged ? kept.tokens : null, pending: null, device: unchanged ? (kept.device ?? null) : null, error: null });
+    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, tokens: unchanged ? kept.tokens : null, pending: unchanged ? (kept.pending ?? null) : null, device: unchanged ? (kept.device ?? null) : null, error: null });
   });
 }
 

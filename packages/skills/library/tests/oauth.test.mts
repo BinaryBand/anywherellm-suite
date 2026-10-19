@@ -16,9 +16,10 @@ import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, st
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
 // token.
 // For the device flow: whether the user agreed (or declined), whether the next ask is told to slow
-// down or that the code ran out, how long a code lasts, how many codes it gave (each a new one), and
-// how many times the token address was asked.
-const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expired: false, expires: 900, asks: 0, codes: 0 });
+// down or that the code ran out, how long a code lasts, how many codes it gave (each a new one), how
+// many seconds its token lasts (0: the provider doesn't say, as GitHub's), and how many times the
+// token address was asked.
+const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expired: false, expires: 900, deviceLifetime: 0, asks: 0, codes: 0 });
 const provider = fresh();
 const server = http.createServer((req, res) => {
   let body = "";
@@ -39,7 +40,7 @@ const server = http.createServer((req, res) => {
       if (provider.declined) return json(400, { error: "access_denied" });
       if (!provider.agreed) return json(400, { error: "authorization_pending" });
       provider.access = `at-${crypto.randomUUID()}`;
-      return json(200, { access_token: provider.access, token_type: "bearer", scope: "me.read" });
+      return json(200, { access_token: provider.access, token_type: "bearer", scope: "me.read", ...(provider.deviceLifetime ? { expires_in: provider.deviceLifetime } : {}) });
     }
     if (req.url === "/token") {
       provider.basic = req.headers.authorization === `Basic ${Buffer.from("client-1:shh-secret").toString("base64")}`;
@@ -363,4 +364,39 @@ test("a preset's sign-in takes no definition: the code waiting stays, and so do 
   assert.equal(gh().status, "signed in");
   assert.match(await call({ action: "secret", kind: "oauth", label: "gh", definition: deviceDef }), /signs in with a preset/);
   assert.equal(gh().status, "signed in", "a refused definition drops no tokens");
+});
+
+test("a device sign-in whose token ran out with nothing to renew it signs in again with a new code", async () => {
+  provider.deviceLifetime = 1; // and no refresh token
+  await code();
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.equal(devStatus(), "signed in");
+  const again = await call({ action: "secret", kind: "oauth", label: "dev" });
+  assert.match(again, /^Show the user this code[^]*CODE-0002/, "not \"signed in already\"");
+  assert.equal(provider.codes, 2);
+});
+
+// The sign-in link, asked again: a second call while the link waits gives the same one, since the
+// user may have opened the first.
+
+test("asked for the link again while it waits, secret gives the same one, and the first comes back signed in", async () => {
+  const first = await link();
+  const again = await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM });
+  assert.match(again, /^The link given before still waits, and no new one was made: give it again\. Give the user this sign-in link, to open in their browser; it's good for 10 minutes:\n/);
+  assert.equal(again.match(/^(http\S+)$/m)![1], first.href);
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM }), /still waits/, "the same definition again changes nothing");
+  post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
+  await call({ action: "library" });
+  assert.equal(vaultState().secrets.find((x: { label: string }) => x.label === "demo").status, "signed in");
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM }), /^"demo" is signed in already: start no new sign-in\./);
+});
+
+test("a link that waits for another redirect address, or with a changed definition, is made again", async () => {
+  const first = await link();
+  const elsewhere = await call({ action: "secret", kind: "oauth", label: "demo" }, { base: "http://llm.example.com" });
+  assert.ok(!elsewhere.includes("still waits"), "the redirect address changed");
+  const changed = await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, scopes: ["me.read", "me.write"] } }, { base: LLM });
+  assert.ok(!changed.includes("still waits"), "the scopes changed");
+  assert.notEqual(new URL(changed.match(/^(http\S+)$/m)![1]).searchParams.get("state"), first.searchParams.get("state"));
 });
