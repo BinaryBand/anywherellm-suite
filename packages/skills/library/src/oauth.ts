@@ -159,7 +159,7 @@ function signInLink(signIn: Readonly<SignIn>, redirect: string, state: string, v
 }
 
 /** The whole minutes left until `until`; null when less than one is, too little to give the user. */
-export function minutesLeft(until: number): number | null {
+function minutesLeft(until: number): number | null {
   const left = until - Date.now();
   return left >= 60_000 ? Math.round(left / 60_000) : null;
 }
@@ -174,7 +174,7 @@ export interface DeviceCode {
 
 /** The code `signIn` showed the user that still waits, with the minutes it has left; null when
  *  none waits or it (nearly) ran out. */
-export function waitingCode(signIn: Readonly<SignIn>): DeviceCode | null {
+function waitingCode(signIn: Readonly<SignIn>): DeviceCode | null {
   const d = signIn.device;
   const minutes = d ? minutesLeft(d.until) : null;
   return d && minutes ? { user_code: d.user_code, link: d.link, minutes } : null;
@@ -187,22 +187,42 @@ export interface SignInLink {
   minutes: number;
 }
 
-/** The link `signIn` gave the user that still waits for them to come back to `redirect`, made again
- *  from what the vault keeps, with its state and the minutes it has left; null when none waits, it
- *  (nearly) ran out, or the redirect address changed. */
-export function waitingLink(signIn: Readonly<SignIn>, redirect: string): SignInLink | null {
+/** The link `signIn` gave the user that still waits for them to come back, made again from what
+ *  the vault keeps, with its state and the minutes it has left; null when none waits, it (nearly)
+ *  ran out, or it goes back to another address than `redirect` (any, when undefined; none, when
+ *  null). */
+function waitingLink(signIn: Readonly<SignIn>, redirect: string | null | undefined): SignInLink | null {
   const p = signIn.pending;
-  if (!p || p.redirect !== redirect) return null;
+  if (!p || (redirect !== undefined && p.redirect !== redirect)) return null;
   const minutes = minutesLeft(p.until);
-  return minutes ? { url: signInLink(signIn, redirect, p.state, p.verifier), state: p.state, minutes } : null;
+  return minutes ? { url: signInLink(signIn, p.redirect, p.state, p.verifier), state: p.state, minutes } : null;
 }
 
-/** Whether `signIn` has tokens it can call with now: an access token that isn't about to run out,
- *  or one that can be renewed. One that ran out with nothing to renew it is signed in no longer. */
-export const signedIn = (signIn: Readonly<SignIn>): boolean => {
+/** Where a sign-in is, as every part of the library reads it: signed in (with a token it can call
+ *  with now, or renew), waiting on the code or link the user was given, waiting for its client, ran
+ *  out (a token, but neither fresh nor renewable), its last sign-in failed, or ready to sign in. */
+export type SignInState =
+  | { at: "signed in" }
+  | { at: "code waits"; code: DeviceCode }
+  | { at: "link waits"; link: SignInLink }
+  | { at: "no client" }
+  | { at: "ran out" }
+  | { at: "failed"; why: string }
+  | { at: "ready" };
+
+/** Where `signIn` is. `redirect` is the address a link must go back to to count as waiting: any
+ *  when undefined (what the pages show), none when null (AnythingLLM's address isn't known). */
+export function stateOf(signIn: Readonly<SignIn>, redirect?: string | null): SignInState {
   const t = signIn.tokens;
-  return !!t?.access_token && (fresh(t) || !!t.refresh_token);
-};
+  if (t?.access_token && (fresh(t) || t.refresh_token)) return { at: "signed in" };
+  const code = waitingCode(signIn);
+  if (code) return { at: "code waits", code };
+  const link = waitingLink(signIn, redirect);
+  if (link) return { at: "link waits", link };
+  if (!signIn.client_id) return { at: "no client" };
+  if (t?.access_token) return { at: "ran out" };
+  return signIn.error ? { at: "failed", why: signIn.error } : { at: "ready" };
+}
 
 /** Whether `tokens`' access token can be sent as it is: it doesn't run out, or not soon. */
 const fresh = (tokens: Readonly<Tokens>): boolean => !tokens.expires_at || tokens.expires_at - RENEW_MS > Date.now();
@@ -278,14 +298,15 @@ export async function finish(state: string, code: string | null, error: string |
  *  lock, and kept only if no other process renewed it first with the same refresh token, else that
  *  one's tokens are used. So a refresh token is spent once, as providers that rotate them require. */
 export async function accessToken(signIn: Readonly<SignIn>): Promise<string> {
-  const t = signIn.tokens;
-  if (!t?.access_token) throw new LibraryError(`"${signIn.user}" isn't signed in yet: start its sign-in with secret, kind "oauth", label "${signIn.user}"`);
+  const { at } = stateOf(signIn);
+  if (at === "ran out") throw new LibraryError(`the sign-in "${signIn.user}" has run out and can't be renewed: start it again with secret`);
+  if (at !== "signed in") throw new LibraryError(`"${signIn.user}" isn't signed in yet: start its sign-in with secret, kind "oauth", label "${signIn.user}"`);
+  const t = signIn.tokens!;
   if (fresh(t)) return t.access_token;
-  if (!t.refresh_token) throw new LibraryError(`the sign-in "${signIn.user}" has run out and can't be renewed: start it again with secret`);
   const renewing = perProcess("library-lean.oauth.renewing", () => new Map<string, Promise<string>>());
   const flight = renewing.get(signIn.id);
   if (flight) return flight;
-  const used = t.refresh_token;
+  const used = t.refresh_token!; // signed in and not fresh: it can be renewed
   const renewal = (async () => {
     const renewed = await tokenRequest(signIn, { grant_type: "refresh_token", refresh_token: used });
     return vault.update((v) => {

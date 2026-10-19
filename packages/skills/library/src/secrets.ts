@@ -13,7 +13,7 @@ import { allowedHosts, bareHost, onSite, secureFor, siteOf } from "#shared/fence
 import type { Headers } from "#shared/net";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { accessToken, isSignIn, signedIn, waitingCode, type Definition, type SignIn } from "./oauth";
+import { accessToken, isSignIn, stateOf, type Definition, type SignIn, type SignInState } from "./oauth";
 
 /** How a secret goes with a request: as a bearer token, by HTTP Basic (the key the password, with a
  *  user name or none), as Authorization with another scheme, in a header, or in the query. */
@@ -26,10 +26,10 @@ export interface Secret {
   site: string;
   label: string;
   kind: "key" | "oauth";
-  /** "saved" (a key), or a sign-in's: "signed in", "waiting for the user to enter its code",
-   *  "ready to sign in", "waiting for its client", that it ran out, or why its last sign-in didn't
-   *  finish. */
+  /** "saved" (a key), or where a sign-in is, in words (statusText). */
   status: string;
+  /** Where a sign-in is (oauth.ts stateOf), for a page to read rather than the words. */
+  state?: SignInState["at"];
   /** A sign-in's scopes, and the host it signs in at. */
   scopes?: string;
   authorize?: string;
@@ -71,13 +71,32 @@ export function siteChecked(site: unknown): string {
 /** Whether an entry is a secret (a key or a sign-in) named `label` (any case), or any secret. */
 const named = (label?: string) => (e: Readonly<vault.Entry>) => (e.kind === "key" || e.kind === "oauth") && (label === undefined || e.user.toLowerCase() === label.toLowerCase());
 
-/** Where a sign-in is, as secret finds it: signed in only with a token it can call with or renew. */
-function status(e: Readonly<SignIn>): string {
-  if (signedIn(e)) return "signed in";
-  if (waitingCode(e)) return "waiting for the user to enter its code";
-  if (e.tokens?.access_token) return "its sign-in ran out and can't be renewed: start it again with secret";
-  if (e.error) return `its last sign-in didn't finish: ${e.error}`;
-  return e.client_id ? "ready to sign in" : "waiting for its client";
+/** Where a sign-in is, in words, for the agent and the pages. */
+function statusText(state: SignInState): string {
+  switch (state.at) {
+    case "signed in":
+      return "signed in";
+    case "code waits":
+      return "waiting for the user to enter its code";
+    case "link waits":
+      return "waiting for the user to sign in at its link";
+    case "ran out":
+      return "its sign-in ran out and can't be renewed: start it again with secret";
+    case "failed":
+      return `its last sign-in didn't finish: ${state.why}`;
+    case "no client":
+      return "waiting for its client";
+    case "ready":
+      return "ready to sign in";
+  }
+}
+
+const status = (e: Readonly<SignIn>): string => statusText(stateOf(e));
+
+/** A sign-in as the agent and the pages see it. */
+function signInSecret(e: Readonly<SignIn>): Secret {
+  const state = stateOf(e);
+  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), state: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
 }
 
 /** The saved secrets, without their values. */
@@ -85,11 +104,7 @@ export const secrets = (): Secret[] =>
   vault
     .entries()
     .filter(named())
-    .map((e) =>
-      isSignIn(e)
-        ? { site: e.site, label: e.user, kind: "oauth", status: status(e), scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared }
-        : { site: e.site, label: e.user, kind: "key", status: "saved" },
-    );
+    .map((e): Secret => (isSignIn(e) ? signInSecret(e) : { site: e.site, label: e.user, kind: "key", status: "saved" }));
 
 /** The sign-in named `label`, as the vault keeps it; null when there's none. */
 export const signIn = (label: string): Readonly<SignIn> | null => (vault.entries().find((e) => named(label)(e) && isSignIn(e)) as SignIn | undefined) ?? null;

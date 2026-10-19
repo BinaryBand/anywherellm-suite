@@ -33,11 +33,14 @@ export function perProcess<T>(key: string, make: () => T): T {
   return g[at];
 }
 
-/** Runs `fn` after every earlier call with the same key in this process has finished. */
+/** Runs `fn` after every earlier call with the same key in this process has finished. A key is
+ *  kept only while calls with it are queued, so keys made from what the model names don't pile up. */
 export function serial<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
-  const queue = perProcess(`serial.${key}`, () => ({ tail: Promise.resolve() as Promise<unknown> }));
-  const run = queue.tail.then(fn);
-  queue.tail = run.catch(() => {});
+  const queues = perProcess("serial", () => new Map<string, Promise<unknown>>());
+  const run = (queues.get(key) ?? Promise.resolve()).then(fn);
+  const tail = run.catch(() => {});
+  queues.set(key, tail);
+  void tail.then(() => queues.get(key) === tail && queues.delete(key));
   return run;
 }
 

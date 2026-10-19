@@ -171,7 +171,7 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   const q = Object.fromEntries((await link()).searchParams);
   post({ ev: "oauth-code", state: "not-a-state-anyone-made", code: "good-code" });
   await call({ action: "library" });
-  assert.match(JSON.stringify(vaultState().secrets), /"status":"ready to sign in"/, "a code for no waiting sign-in is ignored");
+  assert.match(JSON.stringify(vaultState().secrets), /"status":"waiting for the user to sign in at its link","state":"link waits"/, "a code for no waiting sign-in is ignored");
   post({ ev: "oauth-code", state: q.state, error: "access_denied" });
   await call({ action: "library" });
   assert.match(JSON.stringify(vaultState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
@@ -376,7 +376,7 @@ test("a code the provider says ran out ends the sign-in, and the next secret mak
   await call({ action: "library" });
   assert.equal(devStatus(), "its last sign-in didn't finish: the code ran out before the user entered it: start the sign-in again");
   provider.expired = false;
-  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /^Show the user this code[^]*CODE-0002/);
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /^Its last sign-in didn't finish \(the code ran out before the user entered it: start the sign-in again\), so this is a new one\. Show the user this code[^]*CODE-0002/);
   assert.equal(provider.codes, 2);
 });
 
@@ -433,7 +433,7 @@ test("a device sign-in whose token ran out with nothing to renew it signs in aga
   assert.match(await call({ action: "library" }), new RegExp(`dev \\(bearer, ${ranOut}\\)`), "library says what secret finds");
   assert.equal(devStatus(), ranOut, "and so does the Vault");
   const again = await call({ action: "secret", kind: "oauth", label: "dev" });
-  assert.match(again, /^Show the user this code[^]*CODE-0002/, "not \"signed in already\"");
+  assert.match(again, /^Its sign-in ran out and can't be renewed, so this is a new one\. Show the user this code[^]*CODE-0002/, "not \"signed in already\"");
   assert.equal(provider.codes, 2);
 });
 
@@ -473,7 +473,7 @@ test("a changed definition makes a new link, and the old link's code is ignored"
   const changed = linkIn(await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, scopes: ["me.read", "me.write"] } }, { base: LLM }));
   provider.challenge = changed.searchParams.get("code_challenge") ?? "";
   post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
-  assert.equal(await statusOf("demo"), "ready to sign in", "the old link's state waits no more");
+  assert.equal(await statusOf("demo"), "waiting for the user to sign in at its link", "the old link's state waits no more, the new link's does");
   assert.equal(provider.access, "", "and no token was asked for with it");
   post({ ev: "oauth-code", state: changed.searchParams.get("state"), code: "good-code" });
   assert.equal(await statusOf("demo"), "signed in");
@@ -551,4 +551,28 @@ test("a sign-in waiting on its provider holds up no other sign-in", async () => 
   assert.equal(devAnswered, false, "demo answered while dev still waited");
   release();
   assert.match(await dev, /```\nWDJB-MJHT\n```/);
+});
+
+test("secret with no kind: a preset or a definition means a sign-in, not a key", async () => {
+  assert.match(await call({ action: "secret", preset: "nope" }), /there's no preset "nope"/, "a preset reaches the sign-in (an unknown one, so GitHub isn't asked)");
+  assert.match(await call({ action: "secret", label: "dev", definition: deviceDef }), /"dev" needs the user's own OAuth client/);
+  assert.match(await call({ action: "secret", label: "other", site: "api.example.com" }), /The user gives the key on the Vault/, "a label and site, and no definition, is still a key");
+});
+
+test("secret says why a new code is made: the last one declined", async () => {
+  provider.declined = true;
+  await code();
+  await call({ action: "library" });
+  provider.declined = false;
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /^Its last sign-in didn't finish \(the user didn't agree at the provider\), so this is a new one\. Show the user this code/);
+});
+
+test("the Vault reads where a sign-in is from its state, not its words", async () => {
+  await code();
+  const state = () => vaultState().secrets.find((s: { label: string }) => s.label === "dev").state;
+  await call({ action: "library" });
+  assert.equal(state(), "code waits");
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.equal(state(), "signed in");
 });
