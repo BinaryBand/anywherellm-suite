@@ -266,11 +266,3 @@ export function openSealed(sealed: string, dir: string = vaultDir()): string {
     throw new VaultError("a sealed value couldn't be opened; reload the page");
   }
 }
-
-/** What an older vault file holds, opened: the lean skills kept one per workspace, sealed as this
- *  one is under a key derived for `info` (or kept in `keyFile`). Null when there's no key for it;
- *  never makes one. Throws when it can't be opened. */
-export function openLegacy(file: string, info: string, keyFile: string): unknown {
-  const key = derivedKey(info) ?? keptKey(keyFile);
-  return key ? unseal(key, (JSON.parse(fs.readFileSync(file, "utf8")) as { box: Box }).box) : null;
-}

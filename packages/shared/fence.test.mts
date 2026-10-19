@@ -54,10 +54,8 @@ test("a name that doesn't resolve is left to the request's own lookup, which fai
   assert.equal(await refused("https://nowhere.example/"), null);
 });
 
-test("hosts the user lets through in FENCE_ALLOW, or BROWSER_LEAN_ALLOW, pass the fence", async () => {
+test("hosts the user lets through in FENCE_ALLOW pass the fence", async () => {
   assert.deepEqual(allowedHosts({ FENCE_ALLOW: " NAS.lan, 127.0.0.1 ,," }), ["nas.lan", "127.0.0.1"]);
-  assert.deepEqual(allowedHosts({ BROWSER_LEAN_ALLOW: "nas.lan" }), ["nas.lan"], "the earlier name still works");
-  assert.deepEqual(allowedHosts({ FENCE_ALLOW: "a.lan", BROWSER_LEAN_ALLOW: "b.lan" }), ["a.lan", "b.lan"]);
   assert.deepEqual(allowedHosts({}), []);
   const refused = makeFence({ allow: ["nas.lan", "127.0.0.1"], lookup: async () => [{ address: "192.168.1.5" }] });
   assert.equal(await refused("http://NAS.lan:5000/"), null);

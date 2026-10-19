@@ -193,8 +193,8 @@ test("App.log gives the newest changes the page was written with, at once", asyn
     ...groceries([{ text: "Eggs", done: true }]),
     line: 7,
     history: [
-      { t: "2026-10-13T12:00:00Z", by: "agent", ev: "add", fields: { text: "Eggs" }, patch: [{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }], before: { items: [] } },
-      { t: "2026-10-13T12:01:00Z", by: "page", ev: "tick", fields: { text: "Eggs" }, patch: [{ op: "replace", path: "/items/0/done", value: true }], before: { items: [{ text: "Eggs", done: false }] } },
+      { n: 6, t: "2026-10-13T12:00:00Z", by: "agent", ev: "add", fields: { text: "Eggs" }, patch: [{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }], before: { items: [] } },
+      { n: 7, t: "2026-10-13T12:01:00Z", by: "page", ev: "tick", fields: { text: "Eggs" }, patch: [{ op: "replace", path: "/items/0/done", value: true }], before: { items: [{ text: "Eggs", done: false }] } },
     ],
   };
   const { ctx } = browser(render(app, "home", "brx-k")!);

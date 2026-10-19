@@ -49,8 +49,9 @@ export const embed = (value: unknown): string =>
 /** A page's random name or secret. */
 export const newSecret = (bytes = 18): string => crypto.randomBytes(bytes).toString("base64url");
 
-/** Whether `given` (what an event carries) is `secret`, compared in constant time. */
-export const sameSecret = (given: unknown, secret: string): boolean => typeof given === "string" && given.length === secret.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret));
+/** Whether `given` (what an event carries) is `secret`, compared in constant time; false unless both are strings. */
+export const sameSecret = (given: unknown, secret: unknown): boolean =>
+  typeof given === "string" && typeof secret === "string" && given.length === secret.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(secret));
 
 /** A page's HTML: `template` with its settings in place of its /*CONFIG*\/null: `cfg`, and what it
  *  posts with (the pages' key) and seals with (the vault's public key). */

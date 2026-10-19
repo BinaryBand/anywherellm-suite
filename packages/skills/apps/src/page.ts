@@ -24,7 +24,7 @@ export const TITLE = "apps-lean-event";
 
 /** The app's newest changes as log lines, as App.log gives them, each with the line it made. A
  *  change's fields come first, so a page's own can't stand in for what the app recorded. */
-const logOf = (app: Json): Json[] => store.numbered(app).map((h) => ({ ...(h.fields || {}), n: h.n, t: h.t, by: h.by, ev: h.ev, patch: h.patch }));
+const logOf = (app: Json): Json[] => (app.history || []).map((h: Json) => ({ ...(h.fields || {}), n: h.n, t: h.t, by: h.by, ev: h.ev, patch: h.patch }));
 
 const inlineScript = (source: string): string => "<script>" + source.replace(/<\//g, "<\\/") + "</script>";
 const inlineStyle = (source: string): string => "<style>" + source.replace(/<\//g, "<\\/") + "</style>";
@@ -46,7 +46,7 @@ export const versionOf = (app: Json): string => sha(partsDigest() + "\0" + Strin
 export function render(app: Json, workspace: string, key: string, version = versionOf(app)): string | null {
   if (!app.page) return null;
   const lean = {
-    ...stateOf(app, version), workspace, app: app.name, secret: app.secret ?? null, title: app.title, card: app.card || {}, key, eventTitle: TITLE,
+    ...stateOf(app, version), workspace, app: app.name, secret: app.secret, title: app.title, card: app.card || {}, key, eventTitle: TITLE,
     log: logOf(app),
   };
   const libs = libraries();
@@ -167,16 +167,14 @@ interface Row {
 const told = ({ change }: Row): Pick<Result, "ev" | "fields"> => ({ ev: change.ev, fields: change.fields });
 
 /** Applies every waiting event, oldest first, and answers what happened to each. An event is
- *  applied only to the app whose secret it carries, so one page's link changes no other app; an app
- *  from before apps had a secret takes its page's events until it has one. Each is a patch on the
- *  data. The events for one app are applied together, so the app is read and written once however
+ *  applied only to the app whose secret it carries, so one page's link changes no other app. Each is
+ *  a patch on the data. The events for one app are applied together, so the app is read and written once however
  *  many the page sent. */
 export async function collect(): Promise<Result[]> {
   const rows: Row[] = [];
   const byApp = new Map<string, Row[]>();
   for (const e of takeEvents(TITLE, "apps_lean_event") as Json[]) {
-    // Not one this skill's pages send (an older page's Comment among them): dropped, as the shared
-    // intake drops what isn't marked.
+    // Not one this skill's pages send: dropped, as the shared intake drops what isn't marked.
     if (typeof e.workspace !== "string" || typeof e.app !== "string" || !Array.isArray(e.patch)) continue;
     const fields = e.fields && typeof e.fields === "object" ? e.fields : undefined;
     const id = typeof e.id === "string" ? e.id : undefined;
@@ -195,7 +193,7 @@ export async function collect(): Promise<Result[]> {
       // Read once and saved once: its changes, from those that carry its secret.
       await store.updateWith(workspace, app, async (found) => {
         answers = new Map();
-        const ours = waiting.filter((row) => !found.secret || sameSecret(row.event.secret, found.secret));
+        const ours = waiting.filter((row) => sameSecret(row.event.secret, found.secret));
         for (const row of waiting) if (!ours.includes(row)) answers.set(row, { ...told(row), ok: false, why: "it didn't come from this app's page" });
         if (!ours.length) return { next: found };
         const made = store.changesOn(found, ours.map((row) => row.change), MOST_AT_ONCE);
@@ -204,7 +202,7 @@ export async function collect(): Promise<Result[]> {
           const { error, duplicate } = made.answers[i];
           answers!.set(row, said(row, error ? { ok: false, why: firstLine(error) } : { ok: !duplicate, duplicate: !!duplicate }));
         });
-        return { next: store.secretOn(made.next) };
+        return { next: made.next };
       });
       for (const [row, answer] of answers!) row.answer = answer;
     } catch (error) {
@@ -221,11 +219,10 @@ export async function collect(): Promise<Result[]> {
 
 /** Whether `app`'s page is as this skill would write it, and still there: a public folder can be
  *  emptied, as a container's own is when the container is made again. */
-const current = (app: Json): boolean => !!app.secret && app.version === versionOf(app) && fs.existsSync(path.join(publicDir(), pageFile(app.pageToken)));
+const current = (app: Json): boolean => app.version === versionOf(app) && fs.existsSync(path.join(publicDir(), pageFile(app.pageToken)));
 
-/** Once per process: writes again every page an older skill or older parts wrote (a page of an
- *  app with no secret yet gets one first), and removes what earlier editions left in the public
- *  folder: the font, and the 0.19 branch's manager pages. */
+/** Once per process: writes again every page that isn't as this skill would write it now (its
+ *  parts changed) or that the public folder lost. */
 export async function upgrade(): Promise<void> {
   const done = perProcess("apps.upgraded", () => ({ at: "" }));
   if (done.at === root()) return;
@@ -236,16 +233,11 @@ export async function upgrade(): Promise<void> {
     return;
   }
   done.at = root();
-  fs.rmSync(path.join(publicDir(), "_apps"), { recursive: true, force: true });
-  try {
-    const managers = JSON.parse(fs.readFileSync(path.join(root(), ".managers.json"), "utf8"));
-    for (const m of Object.values(managers) as Json[]) if (typeof m?.token === "string") removePublic(pageFile(m.token));
-  } catch {}
   for (const workspace of store.workspaces())
     for (const app of store.list(workspace)) {
       if (app.broken || !app.pageToken || current(app)) continue;
       try {
-        await publish(app.secret ? app : await store.withSecret(workspace, app.name), workspace);
+        await publish(app, workspace);
       } catch {}
     }
 }

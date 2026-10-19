@@ -93,12 +93,8 @@ test("the servers file keeps other servers and AnythingLLM's settings in ours, a
   assert.match(setEntry(dir, null), /no control entry/);
 });
 
-test("an entry of the Python server before it is replaced; another server named control is refused", () => {
+test("another server named control is refused; a servers file that isn't JSON is refused", () => {
   const dir = storage();
-  const relay = { command: "node", args: ["-e", "...", "/app/server/storage/anythingllm-mcp/control.sock"] };
-  fs.writeFileSync(serversFile(dir), JSON.stringify({ mcpServers: { control: relay } }));
-  setEntry(dir, ENTRY);
-  assert.deepEqual(servers(dir), { control: ENTRY });
   fs.writeFileSync(serversFile(dir), JSON.stringify({ mcpServers: { control: { command: "npx", args: ["someone-elses"] } } }));
   assert.throws(() => setEntry(dir, ENTRY), { status: 400, message: /a server named control that isn't ours/ });
   fs.writeFileSync(serversFile(dir), "{oops");

@@ -56,13 +56,12 @@ export function entry(runtime: Runtime, storage: string, roles: string[], node: 
   return { command, args: [file], env: { [ROLES_ENV]: roles.join(",") } };
 }
 
-/** What an entry `entry` wrote says, the runtime and the roles; null for an entry that isn't ours.
- *  The Python server's entries before it (its socket relay, `-m control_mcp`) count as ours. */
+/** What an entry `entry` wrote says, the runtime and the roles; null for an entry that isn't ours. */
 export function parseEntry(found: unknown): { runtime: Runtime; roles: string[] } | null {
   const { command, args, env } = (found ?? {}) as Obj;
   const words = Array.isArray(args) ? args.map(String) : [];
   const file = (words.at(-1) ?? "").replace(/\\/g, "/");
-  if (![`/${SUITE_DIR}/${CONTROL}`, "/anythingllm-mcp/control.sock"].some((end) => file.endsWith(end)) && !words.includes("control_mcp")) return null;
+  if (!file.endsWith(`/${SUITE_DIR}/${CONTROL}`)) return null;
   const roles = ((env ?? {}) as Obj)[ROLES_ENV];
   return { runtime: command === "node" && file.startsWith(INNER_STORAGE) ? "container" : "native", roles: typeof roles === "string" ? roles.split(",") : DEFAULT_ROLES };
 }

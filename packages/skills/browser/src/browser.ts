@@ -20,7 +20,7 @@ import type { Browser, Page, Puppeteer } from "./host";
 import { forgetTab, redraw } from "./page";
 import * as passkey from "./passkey";
 import * as sessions from "./sessions";
-import { type Entry, type Tab, VIEWPORT, firstLine, note, state, threadKey, workspaceDir } from "./state";
+import { type Entry, type Tab, VIEWPORT, firstLine, note, state, threadKey } from "./state";
 
 /** Where a system Chrome or Chromium is looked for, after the ones Puppeteer downloaded (Linux only, so far). */
 const SYSTEM_CHROMES = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];
@@ -127,7 +127,6 @@ function touch(workspace: string, entry: Entry): void {
 }
 
 async function launch(workspace: string): Promise<Browser> {
-  fs.rm(path.join(workspaceDir(workspace), "profile"), { recursive: true, force: true }, () => {}); // a profile the storage kept before the cookies were sealed
   const profile = makeProfile();
   // Chrome may still be writing it as it goes, so it's removed in the background, with retries, and
   // never throws: this runs in an event handler, where a throw would take AnythingLLM down.

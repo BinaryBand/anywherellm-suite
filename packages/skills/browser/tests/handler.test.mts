@@ -3,7 +3,6 @@
 // the browsers are kept per process as AnythingLLM's are. `npm run skills:test` builds it first.
 
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -164,35 +163,6 @@ test("the tab's page links to the Vault, whose logins section lists the saved lo
   assert.ok(!logins.list().some((l) => l.site === "vault.example"));
 });
 
-test("the lean browser's vaults are imported once: logins, passkeys and keys, not OAuth, none twice", async () => {
-  const lean = path.join(storage, "browser-lean", "old");
-  fs.mkdirSync(lean, { recursive: true });
-  fs.rmSync(path.join(storage, "browser-lean", ".imported"), { force: true });
-  (globalThis as Record<symbol, { imported: boolean }>)[Symbol.for("anythingllm-suite.browser-lean.state")].imported = false; // as after a restart
-  const key = Buffer.from(crypto.hkdfSync("sha256", "test-sig-key", "test-sig-salt", "browser-lean vault", 32));
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const leanLogins = [
-    { id: "a", kind: "password", site: "old.example", user: "ada", pass: "old-pass" },
-    { id: "b", kind: "key", site: "api.old.example", user: "old-api", value: "k-123", writes: false },
-    { id: "c", kind: "oauth", site: "mail.example", user: "mail", oauth: {} },
-    { id: "d", site: "older.example", user: "bob", pass: "p" },
-    { id: "e", kind: "passkey", site: "keys.old.example", user: "ada", credential: { credentialId: "old-cred", rpId: "keys.old.example", privateKey: "old-private-key", signCount: 3, isResidentCredential: true } },
-  ];
-  const data = Buffer.concat([cipher.update(JSON.stringify({ priv: null, logins: leanLogins }), "utf8"), cipher.final()]);
-  fs.writeFileSync(path.join(lean, "vault.json"), JSON.stringify({ pub: null, box: { iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") } }));
-  await called({ action: "guide" }, { workspace: "imports" });
-  await called({ action: "guide" }, { workspace: "imports" });
-  await called({ action: "open", url: "https://shop.example/" }, { workspace: "imports" });
-  const sites = logins.list().map((l) => l.site).sort();
-  assert.ok(sites.includes("old.example") && sites.includes("older.example"), "passwords, and a login saved before kinds");
-  assert.equal(sites.filter((s: string) => s === "old.example").length, 1, "once");
-  assert.ok(logins.list().some((l) => l.kind === "passkey" && l.site === "keys.old.example"), "a passkey");
-  assert.equal(world.pages.at(-1)!.session!.credentials.get("old-cred")?.signCount, 3, "and it's in the tab's authenticator");
-  const vault = fs.readFileSync(path.join(storage, "vault-lean", "vault.json"), "utf8");
-  assert.ok(!vault.includes("old-pass") && !vault.includes("old-private-key"), "kept encrypted");
-});
-
 test("guide gives the overview, each topic it lists, and names the topics when one isn't there", async () => {
   const overview = await called({ action: "guide" }, { workspace: "guide" });
   const topics = [...overview.matchAll(/^- `(\w+)`/gm)].map((m) => m[1]);
@@ -208,13 +178,9 @@ test("a chat with no thread (AnythingLLM's developer API) gets the workspace's o
 });
 
 test("a workspace's cookies are kept in the vault and given back, and Chrome's profile is never in the storage", async () => {
-  const oldProfile = path.join(storage, "browser-lean", "keep", "profile");
-  fs.mkdirSync(path.join(oldProfile, "Default"), { recursive: true });
   await called({ action: "open", url: "https://shop.example/" }, { workspace: "keep" });
   const first = world.launched.at(-1) as { options: { userDataDir: string }; cookies: Record<string, unknown>[] };
   assert.ok(!first.options.userDataDir.startsWith(storage), "the profile is a temporary folder");
-  for (let i = 0; i < 50 && fs.existsSync(oldProfile); i++) await new Promise((r) => setTimeout(r, 20)); // removed in the background
-  assert.ok(!fs.existsSync(oldProfile), "the profile kept in the storage before is gone");
   const now = Date.now() / 1000;
   first.cookies.push(
     { name: "sid", value: "s-123", domain: "shop.example", path: "/", expires: now + 3600, size: 9, httpOnly: true, secure: true, session: false, sameSite: "Lax" },

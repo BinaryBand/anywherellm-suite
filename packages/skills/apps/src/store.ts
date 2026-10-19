@@ -91,15 +91,6 @@ export async function updateWith<R extends object>(workspace: string, name: unkn
   return { app, ...more };
 }
 
-/** `app`'s history with each change's line, for changes from before changes kept theirs: worked out
- *  back from the app's line, which is right only while none in the history has its own, so done at
- *  the first write that adds one. */
-export function numbered(app: Json): Json[] {
-  const history: Json[] = app.history || [];
-  if (history.every((h) => h.n !== undefined)) return history;
-  return history.map((h, i) => (h.n !== undefined ? h : { ...h, n: (app.line || 0) - (history.length - 1 - i) }));
-}
-
 /** `app` remembering the page event `id`, so one sent twice applies once. */
 const seenWith = (app: Json, id: string): Json => ({ ...app, seen: [...(app.seen || []), id].slice(-SEEN) });
 const isSeen = (app: Json, id: string | undefined): boolean => !!id && (app.seen || []).includes(id);
@@ -230,7 +221,7 @@ function applyChange(app: Json, { patch, ev, fields, thread, by, id }: Change): 
   // Each change keeps the line it made: an undo also takes a line, so the newest changes' lines
   // can't be worked out from where they stand in the history.
   const entry = { n: line, t: now(), by: by || "agent", ev: ev || "change", ...(fields ? { fields } : {}), ...(thread !== undefined ? { thread } : {}), patch, before: app.data };
-  const next = { ...app, data, line, changed: entry.t, history: [...numbered(app), entry].slice(-KEEP) };
+  const next = { ...app, data, line, changed: entry.t, history: [...(app.history || []), entry].slice(-KEEP) };
   return id ? seenWith(next, id) : next;
 }
 
@@ -284,7 +275,7 @@ export function changesOn(first: Json, changes: Change[], most = Infinity): { ne
 /** `app` with its newest data change taken back, checked: the data as it was may no longer fit the
  *  schema (app.json changed since). */
 async function undoOn(app: Json): Promise<{ next: Json; undone: Json }> {
-  const history = numbered(app);
+  const history: Json[] = app.history || [];
   const undone = history.at(-1);
   if (!undone) throw new AppError(`${app.name} has no change left to undo`);
   const next = { ...app, data: undone.before, line: (app.line || 0) + 1, changed: now(), history: history.slice(0, -1) };
@@ -294,9 +285,9 @@ async function undoOn(app: Json): Promise<{ next: Json; undone: Json }> {
 /** Whether `app`'s newest change is to one of its files rather than to its data. A file's change
  *  keeps the line the app was at, so it came after the data change that made that line. */
 function fileIsNewest(app: Json): boolean {
-  const data = numbered(app).at(-1), file = (app.versions || []).at(-1);
+  const data = (app.history || []).at(-1), file = (app.versions || []).at(-1);
   if (!file || !data) return !!file;
-  return file.n !== undefined ? file.n >= data.n : file.t > data.t; // a version from before versions kept their line
+  return file.n >= data.n;
 }
 
 /** The app with its newest change taken back, to its data (`undone`) or to one of its files
@@ -416,10 +407,6 @@ export async function editFile(workspace: string, name: unknown, file: unknown, 
 
 /** The app with `fields` outside its data and history set, such as its page's token. */
 export const mark = (workspace: string, name: unknown, fields: Json): Promise<Json> => update(workspace, name, (app) => ({ ...app, ...fields }));
-
-/** `app` with a secret for its page's events, made now for an app from before apps had one. */
-export const secretOn = (app: Json): Json => (app.secret ? app : { ...app, secret: newSecret() });
-export const withSecret = (workspace: string, name: unknown): Promise<Json> => update(workspace, name, secretOn);
 
 /** The workspaces that have apps. */
 export function workspaces(): string[] {

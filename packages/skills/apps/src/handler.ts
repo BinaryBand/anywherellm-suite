@@ -279,7 +279,7 @@ async function run(self: HandlerContext, params: Args): Promise<string> {
   // a call takes what's waiting first, so it reads every app as its pages left it.
   keepWatching();
   if (!rule.quiet) {
-    // What older pages posted, before upgrade gives their apps a secret those pages don't have.
+    // What pages posted, before upgrade writes the pages again.
     await caughtUp();
     // A job's process ends within minutes and starts afresh each run: the chat's does this.
     if (!scope.job) await upgrade();

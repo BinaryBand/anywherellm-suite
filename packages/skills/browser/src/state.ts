@@ -107,8 +107,6 @@ export const state = () =>
     /** A thread-less run's tab, by its agent (scope.ts). */
     runs: new WeakMap<object, string>(),
     leases: new Map<string, Map<string, { run: WeakRef<object>; last: number }>>(),
-    /** Whether the lean browser's logins were imported (logins.ts). */
-    imported: false,
   }));
 
 /** How long the agent's request for a login or a code waits on the page. */
@@ -119,7 +117,7 @@ export const NO_THREAD = "_";
 export const threadKey = (thread: string | number | undefined): string => (thread === undefined ? NO_THREAD : String(thread));
 
 /** The skill's folder in AnythingLLM's storage. */
-export const skillDir = (): string => path.join(storageDir(), "browser-lean");
+const skillDir = (): string => path.join(storageDir(), "browser-lean");
 
 /** The skill's static files (guide, pages), as shipped or as tuned on this instance, under
  *  <storage>/browser-lean/static/. */

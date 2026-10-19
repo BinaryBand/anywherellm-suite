@@ -101,20 +101,6 @@ test("an event is applied only to the app whose secret it carries: one page's li
   assert.deepEqual(store.read("work", "theirs").data.items, []);
 });
 
-test("an app from before apps had a secret takes its page's events, then gets one", async () => {
-  await store.create("home", "older", definitionFor("list", { title: "Older" }));
-  const file = path.join(root, "home", "older.json");
-  const { secret, ...before } = JSON.parse(fs.readFileSync(file, "utf8"));
-  fs.writeFileSync(file, JSON.stringify(before));
-  post({ workspace: "home", app: "older", ...add("Eggs", "o1") });
-  assert.deepEqual((await collect()).map((r) => r.ok), [true]);
-  const now = store.read("home", "older");
-  assert.deepEqual(now.data.items.map((i: any) => i.text), ["Eggs"]);
-  assert.ok(now.secret && now.secret !== secret, "a secret of its own from now on");
-  post({ workspace: "home", app: "older", ...add("Jam", "o2") });
-  assert.deepEqual((await collect()).map((r) => r.why), ["it didn't come from this app's page"]);
-});
-
 test("a page sends at most MOST_AT_ONCE changes in one pass; the rest are refused, so the history keeps", async () => {
   await store.create("home", "flood", definitionFor("list", { title: "Flood" }));
   for (let i = 0; i < MOST_AT_ONCE + 3; i++) from("home", "flood", add(`n${i}`, `f${i}`));
@@ -149,20 +135,13 @@ test("an event that meets something passing is put back and tried again, at most
   assert.deepEqual(store.read("home", "locked-out").data.items.map((i: any) => i.text), ["Jam"]);
 });
 
-test("once a process, pages from an older skill are written again, with a secret, and the old font goes", async () => {
+test("once a process, a page that isn't as the skill would write it now is written again", async () => {
   await store.create("home", "stale", { ...definitionFor("list", { title: "Stale" }) });
-  await store.mark("home", "stale", { pageToken: "tok-stale", version: "old", secret: undefined, page: listPage() });
-  fs.mkdirSync(path.join(publicDir, "_apps", "fonts"), { recursive: true });
-  fs.writeFileSync(path.join(root, ".managers.json"), JSON.stringify({ cloud: { token: "tok-manager" } }));
-  fs.mkdirSync(path.join(publicDir, "apps-lean"), { recursive: true });
-  fs.writeFileSync(path.join(publicDir, "apps-lean", "tok-manager.html"), "<p>manager</p>");
+  await store.mark("home", "stale", { pageToken: "tok-stale", version: "old", page: listPage() });
   await upgradeAgain();
   const app = store.read("home", "stale");
-  assert.ok(app.secret);
   assert.equal(app.version, versionOf(app));
   assert.match(fs.readFileSync(path.join(publicDir, "apps-lean", "tok-stale.html"), "utf8"), new RegExp(`"secret":"${app.secret}"`));
-  assert.ok(!fs.existsSync(path.join(publicDir, "_apps")));
-  assert.ok(!fs.existsSync(path.join(publicDir, "apps-lean", "tok-manager.html")));
 });
 
 test("once a process, a page gone from the public folder is written again", async () => {

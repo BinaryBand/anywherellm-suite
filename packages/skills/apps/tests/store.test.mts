@@ -136,19 +136,6 @@ test("each change keeps the line it made, so an undo between changes leaves thei
   assert.deepEqual([app.line, app.history.map((h: any) => h.n)], [4, [1, 4]], "line 2 was taken back by the undo at line 3");
 });
 
-test("an app whose changes are from before they kept their lines gets them at its next write, and keeps them", async () => {
-  await store.create("home", "older-lines", definitionFor("list", { title: "Older" }));
-  await store.change("home", "older-lines", { patch: add("a") });
-  await store.change("home", "older-lines", { patch: add("b") });
-  const file = `${root}/home/older-lines.json`;
-  const before = JSON.parse(fs.readFileSync(file, "utf8"));
-  fs.writeFileSync(file, JSON.stringify({ ...before, history: before.history.map(({ n, ...h }: any) => h) }));
-  await store.change("home", "older-lines", { patch: add("c") });
-  await store.undo("home", "older-lines");
-  await store.change("home", "older-lines", { patch: add("d") });
-  assert.deepEqual(store.read("home", "older-lines").history.map((h: any) => h.n), [1, 2, 5]);
-});
-
 test("undo takes back the newest change, data or file, told apart by the line each was made at", async () => {
   await store.create("home", "close", definitionFor("list", { title: "Close" }), undefined);
   const page = (b: number) => `<script src="app.js"></script><script>App.start(/*APP*/null)</script><b>${b}</b>`;

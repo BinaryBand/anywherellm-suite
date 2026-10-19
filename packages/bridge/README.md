@@ -57,8 +57,6 @@ The settings file is `bridge.env` in the user's settings folder (`~/.config/anyt
 | `ANYTHINGLLM_ENV` | `<storage>/.env` | AnythingLLM's `.env`, whose `AUTH_TOKEN` is the login |
 | `BRIDGE_SERVICE` | auto: the OS's own manager | what runs the bridge: `systemd`, `launchd`, `windows` or `foreground` (`install --service`) |
 
-This replaces the Python toolkit's `TOOLKIT_*` settings and `~/.config/anythingllm-toolkit/toolkit.env`; `TOOLKIT_SERVICE` is `BRIDGE_SERVICE`, and `TOOLKIT_DATA` has no equivalent.
-
 ## Deploy it
 
 1. Build the suite's command: `npm install` once in `packages/`, then `node build.mjs bridge` there. Copy `packages/bridge/dist/anythingllm-suite.cjs` where you want it to live; the service points at that path.

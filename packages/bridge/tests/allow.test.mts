@@ -69,7 +69,7 @@ test("a path cannot climb out of its prefix", () => {
 
 test("the path goes upstream requoted, with its query", () => {
   assert.equal(passes("/workspaces", "POST", "workspaces/a?b/c", "x=1&y=%20"), "/workspaces/a%3Fb/c?x=1&y=%20");
-  assert.equal(passes("/x", "GET", "x/it's(1)*!"), "/x/it%27s%281%29%2A%21"); // quoted as Python's quote(safe="") does
+  assert.equal(passes("/x", "GET", "x/it's(1)*!"), "/x/it%27s%281%29%2A%21"); // `!'()*` are encoded too
 });
 
 test("a query with control characters is refused", () => {

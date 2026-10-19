@@ -85,7 +85,7 @@ export function absentRules(rules: Rule[], declared: Declared[]): string[] {
   return rules.filter((rule) => !declared.some((route) => under(rule, route))).map(show);
 }
 
-/** Python's `quote(s, safe="")`, which JavaScript's encodeURIComponent differs from in `!'()*`. */
+/** `encodeURIComponent` that also encodes `!'()*`, so no character is left that could end a segment. */
 const quote = (s: string): string => encodeURIComponent(s).replace(/[!'()*]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase());
 
 /** The upstream path and query for a request the rules allow: each segment requoted, so an encoded

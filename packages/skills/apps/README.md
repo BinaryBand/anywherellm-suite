@@ -37,7 +37,7 @@ To ask you something a chat can't show well (pick a worktop from three, with a n
 
 To keep an app up on a schedule, ask the agent ("every morning at 6, put a new puzzle in it"): it lets the app take a job's changes (app.json's `"jobs": true`) and adds an AnythingLLM scheduled job with the tool `@@apps-lean` (guide topic `schedules`). A job has no workspace of its own, so it names the app's; in a workspace it names it can only list, read and change the data of an app that takes it, never make, rewrite, take back or delete one. A deleted app is kept under `apps-lean/.trash/` (the newest 20) in case it was a mistake.
 
-A page posts each change with its app's secret, and the skill applies it to that app alone, so one app's link changes no other. An app from before apps had a secret takes its page's events until it gets one; once per process the skill writes again every page an older skill or older parts made, which also gives those apps their secret.
+A page posts each change with its app's secret, and the skill applies it to that app alone, so one app's link changes no other. Once per process the skill writes again every page that isn't as the current parts would make it.
 
 ## What it needs of AnythingLLM
 

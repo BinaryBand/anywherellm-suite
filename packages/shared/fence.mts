@@ -1,10 +1,10 @@
 // What the skills may reach: the public web only. They run inside AnythingLLM, whose machine
 // reaches its LAN and its tailnet, so a request is refused when its host is, or resolves to, an
-// address that isn't public, unless it's one of the hosts named in FENCE_ALLOW (comma-separated;
-// BROWSER_LEAN_ALLOW, its earlier name, is read too), which the user lets through. The requests a
-// skill sends itself (net.mts) are checked at the lookup their connection uses, so a name can't
-// resolve one way for the check and another for the connection. makeFence is for what can only be
-// checked before (the browser's page requests): there a name could resolve differently in between.
+// address that isn't public, unless it's one of the hosts named in FENCE_ALLOW (comma-separated),
+// which the user lets through. The requests a skill sends itself (net.mts) are checked at the
+// lookup their connection uses, so a name can't resolve one way for the check and another for the
+// connection. makeFence is for what can only be checked before (the browser's page requests):
+// there a name could resolve differently in between.
 // Ported from the lean browser skill's fence.js.
 
 import dns from "node:dns";
@@ -81,10 +81,9 @@ export function checkUrl(raw: unknown): string {
   return httpUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`).href;
 }
 
-/** The hosts FENCE_ALLOW (or BROWSER_LEAN_ALLOW) lets through, in lower case. */
+/** The hosts FENCE_ALLOW lets through, in lower case. */
 export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] =>
-  [env.FENCE_ALLOW, env.BROWSER_LEAN_ALLOW]
-    .join(",")
+  (env.FENCE_ALLOW ?? "")
     .split(",")
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean);

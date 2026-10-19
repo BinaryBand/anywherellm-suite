@@ -25,7 +25,6 @@ The lean browser (`anythingllm-lean/skills/browser`, 4,800 lines of JavaScript) 
 - **The agent isn't told each tap**, only that the tab was taken and handed back; what the user typed is hidden like a login.
 - **Passkeys load into every tab, not by site:** Chrome keeps each to its rpId. Their sign count goes to every workspace's open tabs, the vault being the instance's.
 - **A redraw when a passkey is made:** a CDP event isn't a step, so the tab is drawn again for the offer to show (the lean page waited for the next step).
-- **The lean vaults are imported once** (`browser-lean/.imported`), opened with the lean key: logins, passkeys and API keys (the library reads them by name), not OAuth sign-ins; none already there twice.
 
 ## Check
 

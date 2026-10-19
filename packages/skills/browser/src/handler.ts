@@ -20,7 +20,6 @@ import { act, checkAct, element, isPassword, notTyped, reachable, settle, settle
 import { existing, load, tab } from "./browser";
 import { BrowserError } from "./errors";
 import type { HandlerContext } from "./host";
-import { importLean } from "./logins";
 import { card, caughtUp } from "./page";
 import * as research from "./research";
 import { type Scope, scopeOf } from "./scope";
@@ -249,11 +248,8 @@ export const runtime = {
     const fn = ACTIONS[action];
     if (!fn) return `The browser's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
-      if (workspaceOf(this)) {
-        // What the user did on a tab's page since the last call, and the lean browser's logins, once.
-        await caughtUp().catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
-        await importLean(this.logger).catch((e) => this.logger?.(`browser-lean couldn't import the lean logins: ${firstLine(e)}`));
-      }
+      // What the user did on a tab's page since the last call.
+      if (workspaceOf(this)) await caughtUp().catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
       const scope = scopeOf(this);
       return await (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args));
     } catch (e) {
