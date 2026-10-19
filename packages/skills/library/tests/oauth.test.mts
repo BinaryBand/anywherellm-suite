@@ -10,7 +10,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, storage, vaultState } from "./harness.mts";
+import { call, cardsShown, logged, post, postVault, publicDir, reset, seal, skillDir, storage, vaultState } from "./harness.mts";
 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
@@ -267,6 +267,28 @@ test("a preset is the suite's own client, and an unknown one names the presets",
   // Once it's registered, secret would ask GitHub itself for a code.
   if (registered) return t.skip("the suite's GitHub client is registered");
   assert.match(await call({ action: "secret", kind: "oauth", preset: "github", scopes: "repo" }), /the suite's github client isn't registered yet/);
+});
+
+test("the user agrees and no call follows: the Vault shows signed in once the loop finds it", async () => {
+  await code();
+  await call({ action: "library" });
+  assert.equal(devStatus(), "waiting for the user to enter its code");
+  provider.agreed = true;
+  await new Promise((r) => setTimeout(r, 1000)); // the loop asks every half second
+  assert.equal(devStatus(), "signed in");
+});
+
+test("a device sign-in that ends says how in the log, and nothing secret", async () => {
+  await code();
+  provider.declined = true;
+  await call({ action: "library" });
+  assert.ok(logged.includes('library-lean: the sign-in "dev" ended: the user didn\'t agree at the provider'), logged.join("\n"));
+  provider.declined = false;
+  await call({ action: "secret", kind: "oauth", label: "dev" });
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.ok(logged.includes('library-lean: the sign-in "dev" signed in'), logged.join("\n"));
+  assert.ok(!/dev-secret|WDJB-MJHT|CODE-0002|at-[\w-]{8}/.test(logged.join("\n")), "no device code, user code or token");
 });
 
 // The device flow, asked again: a second call while a code waits must never make a new one, since the
