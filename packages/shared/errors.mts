@@ -1,5 +1,5 @@
 /** A failure whose message is meant for whoever asked (the agent, a function's script, the user):
- *  safe to show as it is. Every part's own refusals extend it, so a catch tells them from a bug by
+ *  safe to show as it is. Every skill's own refusals extend it, so a catch tells them from a bug by
  *  this one class. */
 export class Told extends Error {}
 

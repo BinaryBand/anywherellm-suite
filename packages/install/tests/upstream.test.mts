@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, test } from "node:test";
-import { readEnv } from "#shared/envfile";
+import { readEnv } from "../src/envfile.mts";
 import { Upstream, type Password } from "#shared/upstream";
 import { FakeAnythingLLM } from "./fakes/anythingllm.mts";
 import { tempDir } from "./fakes/tmp.mts";

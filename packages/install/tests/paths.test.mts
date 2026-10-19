@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { configDir, desktopStorage, expandHome } from "./paths.mts";
+import { configDir, desktopStorage, expandHome } from "../src/paths.mts";
 
 test("the settings folder is each OS's own", () => {
   assert.equal(configDir("a", { platform: "linux", env: {}, home: "/home/u" }), "/home/u/.config/a");

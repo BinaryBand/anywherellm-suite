@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
-import { readEnv, saveEnv } from "#shared/envfile";
+import { readEnv, saveEnv } from "../src/envfile.mts";
 import { tempDir } from "./fakes/tmp.mts";
 
 const tmp = tempDir("env");

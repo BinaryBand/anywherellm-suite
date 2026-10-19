@@ -1,4 +1,4 @@
-// KEY=value files: the installer's settings file, `install.env` (install/src/install.mts says
+// KEY=value files: the installer's settings file, `install.env` (install.mts says
 // where), and contract/versions.env.
 
 import fs from "node:fs";

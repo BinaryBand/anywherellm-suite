@@ -44,7 +44,7 @@ The library's keys and sign-ins and the browser's logins and passkeys are in one
 packages/control/   the control MCP server (TypeScript; ships as control.cjs, inside the installer)
 packages/install/   the installer (TypeScript; ships as one file, anywherellm-suite.cjs)
 packages/skills/    one folder per skill; each ships as its own zip, and inside the installer
-packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the per-OS paths, AnythingLLM's login)
+packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the vault, the fence, AnythingLLM's login)
 packages/package.json, tsconfig.json   the toolchain: one install, one type-check
 contract/           versions.env, browser-tab.md: read by the parts and the test lab
 tools/              check, package, install, e2e, e2e-skill

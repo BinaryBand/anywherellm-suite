@@ -4,7 +4,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { checks, chosen, entry, put, serversFile, setEntry, take, type Payload } from "../src/addons.mts";
-import { readEnv } from "#shared/envfile";
+import { readEnv } from "../src/envfile.mts";
 import { tempDir } from "./fakes/tmp.mts";
 
 const tmp = tempDir("addons");
