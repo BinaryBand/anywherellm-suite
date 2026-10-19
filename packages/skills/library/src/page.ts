@@ -1,22 +1,22 @@
-// The library's two pages, the user's own view of it on any device, served by AnythingLLM from its
-// public folder (#shared/pages) from one template (static/pages/library.html) under one token:
-// - The Vault (`<token>-vault.html`) shows every secret in the instance's vault by name, never its
-//   value: the API keys and OAuth sign-ins, and the browser's logins and passkeys (#shared/logins).
-//   The user adds a key or an OAuth client there, sealed on their device with the vault's public
-//   key, and deletes any of them. It's where the user gives a key or an OAuth client, from any chat
-//   (AnywhereLLM Lite too): the agent asks, the need shows at the top of it, and the user enters it
-//   there. Its path is kept beside the vault (#shared/vault pagePath) for the browser's tab pages.
-// - The Library page (`<token>.html`) shows the toolkits, their functions' sources and the recent
-//   runs, and lets the user delete a function or a toolkit.
+// The library's pages, the user's own view of it on any device, served by AnythingLLM from its
+// public folder (#shared/pages):
+// - The Vault's keys section (#shared/vault-page, the page every skill that keeps secrets shares):
+//   the API keys and OAuth sign-ins by name, never their values. The user adds a key or an OAuth
+//   client there, sealed on their device with the vault's public key, and deletes one. It's where
+//   the user gives a key or an OAuth client, from any chat (AnywhereLLM Lite too): the agent asks,
+//   the need shows at the top of Keys, and the user enters it there.
+// - The Library page (static/pages/library.html): the toolkits, their functions' sources and the
+//   recent runs; the user deletes a function or a toolkit there.
 // What the user does is applied at once while a page is open, and at the start of the agent's next
 // call; library then shows it (a key saved, a sign-in signed in).
 //
-// The pages' addresses hold a random token, and each event they post carries a secret: anyone with
-// a link can read what it shows and act on it, so it's shared as a signed-in session would be,
-// and rotated (a new token and secret, for both) from either page. An OAuth provider sends the user back to
-// oauth.html, a fixed address; its event is taken only for a sign-in waiting with that state.
+// The Library page's address holds a random token, and each event it posts carries a secret:
+// anyone with the link can read what it shows and act on it, so it's shared as a signed-in session
+// would be, and rotated (a new token and secret) from the page. The Vault has names of its own. An
+// OAuth provider sends the user back to oauth.html, a fixed address; its event is taken only for a
+// sign-in waiting with that state.
 //
-// The page also tells the skill AnythingLLM's address when ANYTHINGLLM_URL is unset: the https
+// The Vault also tells the skill AnythingLLM's address when ANYTHINGLLM_URL is unset: the https
 // address it was opened at, sent with the client the user saves, which is the redirect address
 // it showed them to register.
 
@@ -24,20 +24,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
-import * as logins from "#shared/logins";
-import { listPublic, newSecret, pageHtml, pageKey, removePublic, sameSecret, takeEvents, watch, inTurn, writePublic } from "#shared/pages";
+import { inTurn, listPublic, newSecret, pageHtml, pageKey, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
+import * as vaultPage from "#shared/vault-page";
 import { LibraryError } from "./errors";
 import * as listing from "./listing";
 import { OAUTH_PAGE, PENDING_MS, finish, redirectFor, waiting } from "./oauth";
-import * as secrets from "./secrets";
 import { outcomeOf, recentRuns } from "./runs";
+import * as secrets from "./secrets";
 import * as store from "./store";
 
 const TITLE = "library-lean-event";
 /** How long the page is watched for events after it was last shown. */
 const WATCH_MS = 30 * 60 * 1000;
-/** How long the agent's request for a key shows on the page. */
+/** How long the agent's request for a key shows in the Vault. */
 const NEED_MS = 30 * 60 * 1000;
 
 interface Need {
@@ -52,7 +52,7 @@ interface PageFile {
   secret: string;
   needs: Need[];
   watchUntil: number;
-  /** The https address the user opened the page at, as the page said with a client it saved. */
+  /** The https address the user opened the Vault at, as it said with a client it saved. */
   origin?: string | null;
 }
 
@@ -60,11 +60,6 @@ const pageFile = () => path.join(store.libraryDir(), "page.json");
 const fresh = (): PageFile => ({ token: newSecret(), secret: newSecret(), needs: [], watchUntil: 0 });
 /** A file of the skill's in AnythingLLM's public folder. */
 const pub = (name: string) => `library-lean/${name}`;
-/** The two pages' files, by `view`, the template's: the Library page and the Vault. */
-const PAGES = { library: "", vault: "-vault" } as const;
-type View = keyof typeof PAGES;
-const VIEWS = Object.keys(PAGES) as View[];
-const pageName = (token: string, view: View) => `${token}${PAGES[view]}.html`;
 
 /** page.json as it is now, to read; changes go through `change`, under its lock. */
 function read(): PageFile | null {
@@ -88,13 +83,13 @@ function template(name: "library" | "oauth"): string {
 const putPublic = (name: string, text: string) => writePublic(pub(name), text);
 
 /** AnythingLLM's address: `base`, the skill's ANYTHINGLLM_URL, or else the https address the
- *  page last said it was opened at (from `p`, page.json as read); null when neither is known. */
+ *  Vault last said it was opened at (from `p`, page.json as read); null when neither is known. */
 const resolved = (base: string | null, p: PageFile | null): string | null => base ?? p?.origin ?? null;
 
-/** AnythingLLM's address, for the setting `base`, as the page's state and link take it. */
+/** AnythingLLM's address, for the setting `base`, as the pages' state and links take it. */
 export const baseFor = (base: string | null): string | null => resolved(base, read());
 
-/** An address the page says it was opened at, when it's an https origin and nothing more. */
+/** An address the Vault says it was opened at, when it's an https origin and nothing more. */
 function originOf(given: unknown): string | null {
   try {
     const url = new URL(String(given ?? ""));
@@ -104,14 +99,10 @@ function originOf(given: unknown): string | null {
   }
 }
 
-/** The page's state, as it reads it: nothing secret. */
-function state(p: PageFile, base: string | null) {
-  const now = Date.now();
+/** The Library page's state, as it reads it: nothing secret. */
+function state(base: string | null) {
   return {
-    redirect: redirectFor(resolved(base, p)),
-    needs: p.needs.filter((n) => n.until > now).map(({ label, site, kind }) => ({ label, site, kind })),
-    secrets: secrets.secrets(),
-    logins: logins.list(),
+    vault: vaultPage.linkOf(baseFor(base)),
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
       return { service, title: kit.title, base_urls: kit.base_urls, secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
@@ -120,31 +111,41 @@ function state(p: PageFile, base: string | null) {
   };
 }
 
-const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.json`, JSON.stringify(state(p, base)));
-
-/** Writes both pages and their state into AnythingLLM's public folder, keeps the Vault's path beside
- *  the vault, watches for their events for a while, and answers each page's address (absolute when
- *  AnythingLLM's address, `base`, is known). */
-export async function links(base: string | null): Promise<Record<View, string>> {
-  const kept = read();
-  const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
-  const pages = await Promise.all(VIEWS.map((view) => pageHtml(template("library"), { token: p.token, secret: p.secret, title: TITLE, view })));
-  VIEWS.forEach((view, i) => putPublic(pageName(p.token, view), pages[i]));
-  const at = `/${pub(pageName(p.token, "vault"))}`;
-  if (vault.pagePath() !== at) vault.setPagePath(at);
-  writeState(p, base);
-  watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
-  const origin = resolved(base, p) ?? "";
-  return Object.fromEntries(VIEWS.map((view) => [view, `${origin}/${pub(pageName(p.token, view))}`])) as Record<View, string>;
+/** The Vault's keys section, as the Vault reads it: nothing secret. */
+function keysState(p: PageFile | null, base: string | null) {
+  const now = Date.now();
+  return {
+    redirect: redirectFor(resolved(base, p)),
+    needs: (p?.needs ?? []).filter((n) => n.until > now).map(({ label, site, kind }) => ({ label, site, kind })),
+    secrets: secrets.secrets(),
+  };
 }
 
-/** links, for the page `view` alone. */
-export const show = async (base: string | null, view: View = "library"): Promise<string> => (await links(base))[view];
+const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.json`, JSON.stringify(state(base)));
 
-/** Writes the page's state again, when there's a page, as a run ends. */
+/** Writes the Library page and its state into AnythingLLM's public folder, watches for its events
+ *  for a while, and answers its address (absolute when AnythingLLM's address, `base`, is known). */
+export async function show(base: string | null): Promise<string> {
+  const kept = read();
+  const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
+  putPublic(`${p.token}.html`, await pageHtml(template("library"), { token: p.token, secret: p.secret, title: TITLE }));
+  writeState(p, base);
+  watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
+  return `${resolved(base, p) ?? ""}/${pub(`${p.token}.html`)}`;
+}
+
+/** Writes the Vault with its keys section, watches for the section's events for a while, and
+ *  answers its address (absolute when AnythingLLM's address is known). */
+export function showVault(base: string | null): Promise<string> {
+  const p = read();
+  return vaultPage.show("keys", keysState(p, base), () => drainKeys(base), resolved(base, p));
+}
+
+/** Writes both pages' state again, where there are pages, as a run or a sign-in ends. */
 export function refresh(base: string | null): void {
   const p = read();
   if (p) writeState(p, base);
+  vaultPage.refresh("keys", keysState(p, base));
 }
 
 /** Writes the oauth page, where a provider sends the user back, and the file it posts with for
@@ -158,7 +159,7 @@ export async function oauthPage(state: string, label: string): Promise<void> {
   await change((p) => void (p.watchUntil = Math.max(p.watchUntil, Date.now() + PENDING_MS + 60 * 1000)));
 }
 
-/** Shows a need at the top of the page: the agent asked for a key or a client the user gives there. */
+/** Shows a need at the top of the Vault's keys: the agent asked for a key or a client the user gives there. */
 export const need = (label: string, site: string, kind: Need["kind"]): Promise<void> =>
   change((p) => {
     p.needs = [...p.needs.filter((n) => n.label !== label && n.until > Date.now()), { label, site, kind, until: Date.now() + NEED_MS }];
@@ -166,64 +167,77 @@ export const need = (label: string, site: string, kind: Need["kind"]): Promise<v
 
 const text = (v: unknown, n = 500) => String(v ?? "").trim().slice(0, n);
 
-/** What applying an event did beyond the vault and the store: a need it met, a new link, or a
- *  function gone from the skill's description. */
-type Applied = { met?: string; rotate?: true; relist?: true } | null;
+/** A provider's redirect, as oauth.html (or the Vault's Finish a sign-in) posts it: taken only for a
+ *  sign-in waiting with its state, which is the check. */
+async function oauthCode(e: Record<string, unknown>): Promise<void> {
+  const state = text(e.state, 200);
+  await finish(state, text(e.code, 4000) || null, text(e.error) || null);
+  removePublic(pub(`s-${state}.json`));
+}
 
-/** Applies one event the page posted. */
-async function apply(e: Record<string, unknown>, secret: string): Promise<Applied> {
-  if (e.ev === "oauth-code") {
-    // A provider's redirect: taken only for a sign-in waiting with its state, which is the check.
-    const state = text(e.state, 200);
-    await finish(state, text(e.code, 4000) || null, text(e.error) || null);
-    removePublic(pub(`s-${state}.json`));
-    return null;
-  }
+/** Applies one event the Library page (or oauth.html) posted; answers whether the functions changed,
+ *  or the page asked for a new link. */
+async function apply(e: Record<string, unknown>, secret: string): Promise<"relist" | "rotate" | null> {
+  if (e.ev === "oauth-code") return (await oauthCode(e), null);
   if (!sameSecret(e.secret, secret)) return null; // not this page's: an old link's, or a forgery
-  const label = text(e.label, 60);
   switch (e.ev) {
-    case "key-save":
-      await secrets.saveKey(secrets.siteChecked(e.site), secrets.labelOf(label), vault.openSealed(text(e.sealed, 20000)));
-      return { met: label };
-    case "oauth-client": {
-      const sealed = text(e.sealed, 20000);
-      await secrets.saveClient(label, text(e.client_id), sealed ? vault.openSealed(sealed) : null);
-      const at = originOf(e.origin);
-      if (at) await change((p) => void (p.origin = at));
-      return { met: label };
-    }
-    case "key-delete":
-      await secrets.removeSecret(label);
-      return null;
-    case "login-delete":
-      // A passkey leaves the browser's open tabs at their next step (browser-lean's reconcile).
-      await logins.remove(text(e.id, 100));
-      return null;
     case "fn-delete": {
       const { service, name } = store.qualified(e.fn);
       store.removeFn(service, name);
-      return { relist: true };
+      return "relist";
     }
     case "toolkit-delete":
       store.removeToolkit(store.serviceOf(e.service));
-      return { relist: true };
+      return "relist";
     case "rotate":
-      return { rotate: true };
+      return "rotate";
     default:
       return null;
   }
 }
 
-/** Applies what the page posted, for a call, in its turn with the watch's (#shared/pages inTurn). */
-export const caughtUp = (base: string | null): Promise<void> => inTurn(TITLE, () => drain(base));
+/** Applies one event of the Vault's keys section (#shared/vault-page take checked its secret);
+ *  answers the need it met, if any. */
+async function applyKeys(e: Record<string, unknown>): Promise<string | null> {
+  const label = text(e.label, 60);
+  switch (e.ev) {
+    case "oauth-code":
+      await oauthCode(e);
+      return null;
+    case "key-save":
+      await secrets.saveKey(secrets.siteChecked(e.site), secrets.labelOf(label), vault.openSealed(text(e.sealed, 20000)));
+      return label;
+    case "oauth-client": {
+      const sealed = text(e.sealed, 20000);
+      await secrets.saveClient(label, text(e.client_id), sealed ? vault.openSealed(sealed) : null);
+      const at = originOf(e.origin);
+      if (at) await change((p) => void (p.origin = at));
+      return label;
+    }
+    case "key-delete":
+      await secrets.removeSecret(label);
+      return null;
+    case "rotate":
+      await vaultPage.rotate();
+      return null;
+    default:
+      return null;
+  }
+}
 
-/** Applies every event the page posted since the last time, in order, then writes the page's state
+/** Applies what both pages posted, for a call, each in its turn with its watch's (#shared/pages inTurn). */
+export const caughtUp = async (base: string | null): Promise<void> => {
+  await inTurn(TITLE, () => drain(base));
+  await vaultPage.inTurnFor("keys", () => drainKeys(base));
+};
+
+/** Applies every event the Library page posted since the last time, in order, then writes its state
  *  again (or a new page, after a rotate). One that fails is skipped; the page shows the state. */
 async function drain(base: string | null): Promise<void> {
   const events = takeEvents(TITLE, "library_lean_event");
   if (!events.length) return;
   const page = read() ?? (await change((p) => p));
-  const applied: Applied[] = [];
+  const applied: ("relist" | "rotate" | null)[] = [];
   for (const e of events) {
     try {
       applied.push(await apply(e, page.secret));
@@ -231,17 +245,30 @@ async function drain(base: string | null): Promise<void> {
       if (!(err instanceof Told)) throw err;
     }
   }
-  const met = new Set(applied.flatMap((a) => (a?.met ? [a.met] : [])));
-  const rotate = applied.some((a) => a?.rotate);
-  if (applied.some((a) => a?.relist)) listing.refresh();
-  const now = await change((p) => {
-    p.needs = p.needs.filter((n) => !met.has(n.label));
-    if (rotate) Object.assign(p, { token: newSecret(), secret: newSecret() });
-    return p;
-  });
-  if (rotate) {
-    for (const view of VIEWS) removePublic(pub(pageName(page.token, view)));
+  if (applied.includes("relist")) listing.refresh();
+  if (applied.includes("rotate")) {
+    await change((p) => void Object.assign(p, { token: newSecret(), secret: newSecret() }));
+    removePublic(pub(`${page.token}.html`));
     removePublic(pub(`${page.token}.json`));
     await show(base);
-  } else writeState(now, base);
+  } else writeState(read() ?? page, base);
+  vaultPage.refresh("keys", keysState(read(), base)); // a sign-in oauth.html finished
+}
+
+/** Applies every event of the Vault's keys section since the last time, in order, then writes the
+ *  section again, the needs met gone. One that fails is skipped; the Vault shows the state. */
+async function drainKeys(base: string | null): Promise<void> {
+  const events = vaultPage.take("keys", new Set(["oauth-code"]));
+  if (!events.length) return;
+  const met = new Set<string>();
+  for (const e of events) {
+    try {
+      const label = await applyKeys(e);
+      if (label) met.add(label);
+    } catch (err) {
+      if (!(err instanceof Told)) throw err;
+    }
+  }
+  if (met.size) await change((p) => void (p.needs = p.needs.filter((n) => !met.has(n.label))));
+  vaultPage.refresh("keys", keysState(read(), base));
 }

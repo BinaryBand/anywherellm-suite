@@ -1,6 +1,6 @@
 // A tab's card and its page. After each step the tab's picture is taken and written into
 // AnythingLLM's public folder (public/browser-lean/, served to any browser), with a small state file
-// beside it (its title and address, what the agent asks the user for, where the Vault page is) and
+// beside it (its title and address, what the agent asks the user for, where the Vault is) and
 // the tab's page (static/pages/tab.html), all under a random name kept for the chat's tab. The card
 // the agent puts in its reply is a crop of the picture that opens the page.
 //
@@ -9,7 +9,8 @@
 // upload (#shared/pages), checked against the tab's secret and typed into the tab here; never on
 // AnythingLLM's question card, which shows its answers in the chat. There they also take the tab
 // over to use it themselves (takeover.ts) and save what it offers. The saved logins are listed and
-// deleted on the Vault page (library-lean's), which the tab's page links to.
+// deleted on the Vault (#shared/vault-page), whose logins section this skill writes and applies,
+// and which the tab's page links to.
 // Events are applied as they come while a page was shown lately, and at the start of each call.
 
 import fs from "node:fs";
@@ -17,9 +18,12 @@ import path from "node:path";
 import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hostOf } from "#shared/fence";
+import * as logins from "#shared/logins";
 import { inTurn, newSecret, pageHtml, publicDir, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
+import * as vaultPage from "#shared/vault-page";
 import { isUnsent, submitted, typeIn } from "./act";
+import * as passkey from "./passkey";
 import { type Snap, asksPassword, fieldOf, isPasswordLine, lineOf, readPage } from "./snapshot";
 import { type Entry, NEED_MS, type Need, OFFER_MS, type Tab, VIEWPORT, clip, holder, live, note, say, state, statics, workspaceDir } from "./state";
 import * as takeover from "./takeover";
@@ -86,7 +90,7 @@ const plain = (text: string, n = 120) => text.replace(/[[\]()\n\r|*_`<>]/g, " ")
 
 /** The tab's state, as its page reads it: nothing secret. Who has the tab; while the user does, the
  *  fields in view, for the page to type into. */
-function tabState(at: Tab, title: string, url: string, snap: Snap) {
+function tabState(at: Tab, title: string, url: string, snap: Snap, vaultLink: string | null) {
   const host = hostOf(url);
   const need = pendingNeed(at.entry, at.key);
   const screen = at.page.viewport() ?? VIEWPORT;
@@ -103,7 +107,7 @@ function tabState(at: Tab, title: string, url: string, snap: Snap) {
     need: need ? { kind: need.kind, host: need.host, text: need.text, label: need.label ?? null, hasUser: !!need.userRef, confirm: !!need.confirmRef, until: need.until } : null,
     offer: takeover.shownOffer(at.entry, at.key),
     msg: msg && { text: msg.text, id: msg.id },
-    vault: vault.pagePath(),
+    vault: vaultLink,
   };
 }
 
@@ -121,7 +125,7 @@ async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<stri
       const { width, height } = at.page.viewport() ?? VIEWPORT;
       await at.page.screenshot({ path: `${shot}-card.jpg`, type: "jpeg", quality: QUALITY, clip: { x: 0, y: 0, width, height: Math.min(height, Math.round(width * 1.2)), scale: 0.5 } });
     }
-    writePublic(pub(names.token, ".json"), JSON.stringify(tabState(at, title, at.page.url(), snap)));
+    writePublic(pub(names.token, ".json"), JSON.stringify(tabState(at, title, at.page.url(), snap, await showVault())));
     if (card || !fs.existsSync(`${shot}.html`)) writePublic(pub(names.token, ".html"), await pageHtml(statics().get("pages/tab.html")!.text, { token: names.token, secret: names.secret, title: TITLE, workspace: at.workspace, tab: at.key }));
   } catch {
     return null;
@@ -225,7 +229,32 @@ async function stillAsks(at: Tab, need: Need): Promise<"same" | "other" | null> 
 }
 
 /** Applies what the tabs' pages posted, for a call, in its turn with the watch's (#shared/pages inTurn). */
-export const caughtUp = (): Promise<void> => inTurn(TITLE, drain);
+export const caughtUp = async (): Promise<void> => {
+  await inTurn(TITLE, drain);
+  await vaultPage.inTurnFor("logins", drainLogins);
+};
+
+/** The saved logins and passkeys, as the Vault's logins section shows them: never a password or a key. */
+const loginsState = () => ({ logins: logins.list() });
+
+/** Writes the Vault with its logins section and watches for the section's events for a while;
+ *  answers its path on this host, for the tab's page to link to. */
+const showVault = (): Promise<string> => vaultPage.show("logins", loginsState(), drainLogins, null);
+
+/** Applies what the user did in the Vault's logins section since the last time (#shared/vault-page
+ *  take checked its secret): a deleted passkey leaves every tab's authenticator at once. Then writes
+ *  the section again. */
+async function drainLogins(): Promise<void> {
+  const events = vaultPage.take("logins");
+  if (!events.length) return;
+  for (const e of events) {
+    if (e.ev === "login-delete") {
+      const gone = await logins.remove(text(e.id, 100));
+      if (gone?.kind === "passkey") await passkey.forget(gone.credentialId);
+    } else if (e.ev === "rotate") await vaultPage.rotate();
+  }
+  vaultPage.refresh("logins", loginsState());
+}
 
 /** Applies every event the tabs' pages posted since the last time, in order, each only with its
  *  tab's secret; then draws each tab that changed. One that fails is skipped, and its tab says so. */

@@ -51,7 +51,6 @@ async function step(e: Record<string, unknown>, at: Tab): Promise<boolean> {
       if (hold) return false;
       if (entry.busy.has(key)) throw new BrowserError("The agent is in the middle of a step: take over again in a moment");
       entry.holds.set(key, { last: Date.now(), typed: null });
-      await passkey.reconcile();
       return true;
     case "give":
       if (!hold) return false;

@@ -177,6 +177,7 @@ async function buildSkills(names) {
       outfile: path.join(out, entrypoint.file),
       target: "node18",
       define: { STATIC_FILES: JSON.stringify(staticFiles(path.join(dir, "static"))), VENDORED_VERSIONS: JSON.stringify(vendoredVersions(name)) },
+      loader: { ".html": "text" }, // shared/vault.html, the Vault's page, which each skill that keeps secrets serves
       allowed: [`skills/${name}/src/`, "shared/", ...(VENDORED[name] || [])],
       label: name,
       clean: out,

@@ -162,6 +162,16 @@ const server = http.createServer((req, res) => {
     };
     return { state, seal, post };
   };
+  // The Vault the tab pages link to, and its logins section: what it shows, and what it posts.
+  const vaultPage = () => {
+    const { token, secret } = JSON.parse(fs.readFileSync(`${storage}/vault-lean/vault-page.json`, "utf8"));
+    const logins = () => JSON.parse(fs.readFileSync(`${APP}/public/vault-lean/${token}-logins.json`, "utf8")).logins;
+    const post = (event) => {
+      fs.mkdirSync(`${storage}/documents/custom-documents`, { recursive: true });
+      fs.writeFileSync(path.join(`${storage}/documents/custom-documents`, `raw-vault-lean-logins-${crypto.randomUUID()}.json`), JSON.stringify({ pageContent: JSON.stringify({ vault_lean_event: 1, secret, ...event }) }));
+    };
+    return { token, logins, post };
+  };
   const seven = tabPage(7);
   assert.equal(seven.state().need.kind, "login");
   const signedIn = await seven.post({ ev: "need-answer", user: "ada", sealed: seven.seal("e2e-pass-123"), save: true });
@@ -183,7 +193,7 @@ const server = http.createServer((req, res) => {
   assert.equal(offered.title, "Home", "Enter sent the form");
   assert.deepEqual(offered.offer, { kind: "password", site: "127.0.0.1", user: "bea" });
   await tab8.post({ ev: "offer", save: true });
-  assert.match(tab8.state().msg?.text || "", /^Saved for 127\.0\.0\.1/, "saved");
+  assert.ok(vaultPage().logins().some((l) => l.user === "bea"), "saved, and listed on the Vault");
   const handedBack = await tab8.post({ ev: "give" });
   assert.match(handedBack, /handed it back to you/);
   assert.match(handedBack, /Welcome, •••\./, "what the user typed is hidden from the agent");
@@ -191,7 +201,7 @@ const server = http.createServer((req, res) => {
 
   // ---- Passkeys: one the page makes while the agent has the tab is taken out again; one made
   // while the user holds it is offered and saved, and signs in from another tab, the site checking
-  // its signature and count.
+  // its signature and count; deleted on the Vault, it signs in no more.
   const said = (reply) => reply.match(/Not signed in|Passkey added|Signed in with a passkey, count \d+|Passkey refused: \w+|Refused/)?.[0];
   const nine = await call({ action: "open", url: PASSKEYS }, 9);
   const add = nine.match(/\[(e\d+)\] button "Add a passkey"/)[1];
@@ -202,6 +212,7 @@ const server = http.createServer((req, res) => {
   for (let i = 0; !tab9.state().offer && i < 20; i++) await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(tab9.state().offer, { kind: "passkey", site: "localhost", user: "" });
   await tab9.post({ ev: "offer", save: true }, { ev: "give" });
+  assert.ok(vaultPage().logins().some((l) => l.kind === "passkey" && l.site === "localhost"));
 
   const ten = await call({ action: "open", url: PASSKEYS }, 10);
   const signIn = ten.match(/\[(e\d+)\] button "Sign in with a passkey"/)[1];
@@ -210,8 +221,10 @@ const server = http.createServer((req, res) => {
   assert.match(first, /Signed in with a passkey, count \d+/, first);
   assert.match(first, /the page signed in with the passkey saved for localhost/);
   assert.match(await read10(), /Signed in with a passkey, count \d+/, "the count went forward, so the site takes it again");
-  // Deleting it is the library's Vault page's, outside this skill: the browser's tests delete it
-  // through #shared/logins and check every tab's authenticator lets it go at the next step.
+  const vault = vaultPage();
+  assert.equal(new URL(`http://x${tabPage(10).state().vault}`).pathname, `/vault-lean/${vault.token}.html`, "the tab's page links to the Vault");
+  vault.post({ ev: "login-delete", id: vault.logins().find((l) => l.kind === "passkey").id });
+  assert.match(await read10(), /Passkey refused: NotAllowedError/, "deleted on the Vault, it signs in no more");
   assert.deepEqual(passkeys.log, ["registered", "registered", "signed in", "signed in"]);
 
   // ---- Fields in a shadow root, "Show password", a form that needs more than the login, and a new

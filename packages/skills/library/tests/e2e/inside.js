@@ -61,16 +61,16 @@ const server = http.createServer((req, res) => {
   };
 
   assert.match(await call({ action: "guide" }), /The library is the user's own set of API toolkits/);
-  assert.match(await call({ action: "secret", site: "127.0.0.1", label: "tasks" }), /^The user gives the key on the Vault: \/library-lean\/[\w-]+-vault\.html\n/);
+  assert.match(await call({ action: "secret", site: "127.0.0.1", label: "tasks" }), /^The user gives the key on the Vault: \/vault-lean\/[\w-]+\.html\n/);
   assert.equal(cards.length, 0, "never on a question card, which shows its answers in the chat");
   const storage = process.env.STORAGE_DIR || `${APP}/storage`;
-  const { token, secret } = JSON.parse(fs.readFileSync(`${storage}/library-lean/page.json`, "utf8"));
-  const cfg = JSON.parse(fs.readFileSync(`${APP}/public/library-lean/${token}.html`, "utf8").match(/const cfg = (\{.*?\});/)[1]);
+  const { token, secret } = JSON.parse(fs.readFileSync(`${storage}/vault-lean/vault-page.json`, "utf8"));
+  const cfg = JSON.parse(fs.readFileSync(`${APP}/public/vault-lean/${token}.html`, "utf8").match(/const cfg = (\{.*?\});/)[1]);
   const pub = crypto.createPublicKey({ key: Buffer.from(cfg.pub, "base64"), format: "der", type: "spki" });
   const sealed = crypto.publicEncrypt({ key: pub, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(KEY)).toString("base64");
   const events = `${storage}/documents/custom-documents`;
   fs.mkdirSync(events, { recursive: true });
-  fs.writeFileSync(path.join(events, `raw-${cfg.title}-${crypto.randomUUID()}.json`), JSON.stringify({ pageContent: JSON.stringify({ library_lean_event: 1, secret, ev: "key-save", label: "tasks", site: "127.0.0.1", sealed }) }));
+  fs.writeFileSync(path.join(events, `raw-vault-lean-keys-${crypto.randomUUID()}.json`), JSON.stringify({ pageContent: JSON.stringify({ vault_lean_event: 1, secret, ev: "key-save", label: "tasks", site: "127.0.0.1", sealed }) }));
   assert.match(await call({ action: "library" }), /The Library page/);
 
   const toolkit = { title: "Tasks", base_urls: [`http://127.0.0.1:${PORT}`], secrets: [{ label: "tasks", as: "bearer" }] };

@@ -52,7 +52,7 @@ test.beforeEach(reset);
 
 test("the user's key is given on the Vault, never on the card, kept unseen, and goes with a function's requests", async () => {
   const said = await giveKey("demo", "https://127.0.0.1/", KEY);
-  assert.match(said, /^The user gives the key on the Vault: \/library-lean\/[\w-]+-vault\.html\n/);
+  assert.match(said, /^The user gives the key on the Vault: \/vault-lean\/[\w-]+\.html\n/);
   assert.ok(!said.includes(KEY));
   assert.equal(cardsShown.length, 0, "a question card would show the key in the chat once answered");
   assert.ok(!fs.readFileSync(path.join(storage, "vault-lean", "vault.json"), "utf8").includes(KEY), "the vault holds it encrypted");

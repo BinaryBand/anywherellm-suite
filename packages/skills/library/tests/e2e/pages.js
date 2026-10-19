@@ -50,28 +50,29 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     return fn.handler.call(fn, args);
   };
 
-  // A key, given on the page.
+  // A key, given on the Vault.
   const asked = await call({ action: "secret", site: "api.example.com", label: "ex" });
-  const pagePath = asked.match(/(\/library-lean\/[\w-]+\.html)/)[1];
+  const pagePath = asked.match(/(\/vault-lean\/[\w-]+\.html)/)[1];
   const html = await (await fetch(SERVER + pagePath)).text();
   const cfg = JSON.parse(html.match(/const cfg = (\{.*?\});/)[1]);
   assert.match(cfg.key, /^brx-/, "the browser-extension key install was given");
-  const state = await (await fetch(SERVER + pagePath.replace(/(-vault)?\.html$/, ".json"))).json();
+  const state = await (await fetch(SERVER + pagePath.replace(/\.html$/, "-keys.json"))).json();
   assert.deepEqual(state.needs, [{ label: "ex", site: "api.example.com", kind: "key" }], "the server serves the page's state");
 
   const pub = crypto.createPublicKey({ key: Buffer.from(cfg.pub, "base64"), format: "der", type: "spki" });
   // Sealed as the page seals it, with the vault's public key.
   const seal = (text) => crypto.publicEncrypt({ key: pub, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
   const sealed = seal("e2e-api-key");
-  const postEvent = (key, event) =>
+  // Posted as the Vault posts in its keys section, or (with `title`) as oauth.html posts.
+  const postEvent = (key, event, title = "vault-lean-keys") =>
     fetch(SERVER + "/api/browser-extension/upload-content", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-      body: JSON.stringify({ textContent: JSON.stringify({ library_lean_event: 1, ...event }), metadata: { title: cfg.title, docSource: "library-lean page" } }),
+      body: JSON.stringify({ textContent: JSON.stringify({ [title === "vault-lean-keys" ? "vault_lean_event" : "library_lean_event"]: 1, ...event }), metadata: { title, docSource: "e2e" } }),
     });
   const posted = await postEvent(cfg.key, { secret: cfg.secret, ev: "key-save", label: "ex", site: "api.example.com", sealed });
   assert.equal(posted.status, 200, "AnythingLLM took the event");
-  const stateOf = async () => (await fetch(SERVER + pagePath.replace(/(-vault)?\.html$/, ".json"))).json();
+  const stateOf = async () => (await fetch(SERVER + pagePath.replace(/\.html$/, "-keys.json"))).json();
   let secrets = [];
   for (let i = 0; i < 40 && !secrets.length; i++) {
     await sleep(250);
@@ -96,7 +97,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const state2 = link.searchParams.get("state");
   const sFile = await (await fetch(`${SERVER}/library-lean/s-${state2}.json`)).json();
   assert.equal((await fetch(`${SERVER}/library-lean/oauth.html`)).status, 200, "the page a provider sends the user back to");
-  assert.equal((await postEvent(sFile.key, { ev: "oauth-code", state: state2, code: "e2e-code" })).status, 200);
+  assert.equal((await postEvent(sFile.key, { ev: "oauth-code", state: state2, code: "e2e-code" }, sFile.title)).status, 200);
   let status = "";
   for (let i = 0; i < 40 && status !== "signed in"; i++) {
     await sleep(250);

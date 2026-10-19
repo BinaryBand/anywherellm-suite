@@ -103,6 +103,24 @@ export function seal(text: string, pub = tabConfig().pub): string {
 
 let posts = 0;
 
+/** The Vault's names and its logins section, as the tab pages link to it and the Vault reads it. */
+export function vaultNames(): { token: string; secret: string } {
+  return JSON.parse(fs.readFileSync(path.join(storage, "vault-lean", "vault-page.json"), "utf8"));
+}
+export const vaultLogins = (): { id: string; site: string; user: string; kind: string }[] =>
+  JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultNames().token}-logins.json`), "utf8")).logins;
+
+/** What the Vault posts in its logins section, written as AnythingLLM's collector writes it. */
+export function postVault(event: Record<string, unknown>): void {
+  const dir = path.join(storage, "documents", "custom-documents");
+  fs.mkdirSync(dir, { recursive: true });
+  const id = crypto.randomUUID();
+  const file = path.join(dir, `raw-vault-lean-logins-${id}.json`);
+  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, secret: vaultNames().secret, ...event }) }));
+  const at = new Date(Date.now() + ++posts * 10);
+  fs.utimesSync(file, at, at);
+}
+
 /** What a tab's page posts, written as AnythingLLM's collector writes it, each after the one before. */
 export function post(event: Record<string, unknown>, { workspace = "home", tab = "1" } = {}): void {
   const dir = path.join(storage, "documents", "custom-documents");

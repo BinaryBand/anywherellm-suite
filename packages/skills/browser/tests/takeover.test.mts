@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as logins from "#shared/logins";
-import { call as called, post, seal, site, tabConfig, tabState, world } from "./harness.mts";
+import { call as called, post, postVault, seal, site, tabConfig, tabState, world } from "./harness.mts";
 
 const HERE = "https://take.example/";
 site(HERE, {
@@ -123,12 +123,11 @@ test("a passkey the site makes is taken out unless the user holds the tab; saved
   assert.match(await call({ action: "read" }, 2), /the page signed in with the passkey saved for keys\.example/);
   assert.match(await call({ action: "login", user_ref: "e1", pass_ref: "e2" }, 2), /^Browser: no password is saved for keys\.example, but a passkey is: click the site's passkey sign-in with act/);
 
-  // Deleted on the Vault (library-lean's page), it leaves every tab at the next step.
+  // Deleted on the Vault, it leaves every tab as the browser applies it.
   const [kept] = passkeys();
-  assert.deepEqual(await logins.remove(kept.id), { kind: "passkey", credentialId: "by-user" });
+  postVault({ ev: "login-delete", id: kept.id });
+  await call({ action: "guide" }, 2);
   assert.deepEqual(passkeys(), []);
-  assert.ok(world.authenticators.some((a) => a.credentials.has("by-user")), "still in the tabs until a step");
-  await call({ action: "act", do: "scroll_down" }, 2);
   assert.equal(world.authenticators.some((a) => a.credentials.has("by-user")), false, "taken out of every tab");
 
   post({ ev: "take" }, opts);

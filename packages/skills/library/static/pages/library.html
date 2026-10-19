@@ -18,12 +18,10 @@
   main { padding: 16px; max-width: 760px; margin: 0 auto; }
   section[hidden] { display: none; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; }
-  .need { border-color: var(--accent); }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
   .cap { color: var(--muted); font-size: 13px; }
   .bad { color: var(--warn); } .good { color: var(--ok); }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 2px; }
-  input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; }
+  a { color: var(--accent); }
   button.act { margin-top: 10px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   button.quiet { background: none; color: var(--warn); border-color: var(--line); }
   pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 360px; overflow: auto; }
@@ -33,25 +31,18 @@
 </style>
 </head>
 <body>
-<!-- One template, two pages: the Vault (cfg.view "vault": keys, sign-ins, the browser's logins)
-     and the Library page (cfg.view "library": toolkits, runs), under one token and one secret. -->
 <header>
-  <h1 id="heading">Library</h1>
+  <h1>Library</h1>
   <nav role="tablist">
-    <button role="tab" data-tab="keys" data-view="vault">Keys</button>
-    <button role="tab" data-tab="signins" data-view="vault">Sign-ins</button>
-    <button role="tab" data-tab="logins" data-view="vault">Logins</button>
-    <button role="tab" data-tab="toolkits" data-view="library">Toolkits</button>
-    <button role="tab" data-tab="runs" data-view="library">Runs</button>
+    <button role="tab" data-tab="toolkits" aria-selected="true">Toolkits</button>
+    <button role="tab" data-tab="runs">Runs</button>
   </nav>
 </header>
 <main>
-  <section id="keys" hidden></section>
-  <section id="signins" hidden></section>
-  <section id="logins" hidden></section>
-  <section id="toolkits" hidden></section>
+  <p class="cap" id="vault" hidden>The keys and sign-ins the toolkits call with are in the <a id="vaultlink">Vault</a>.</p>
+  <section id="toolkits"></section>
   <section id="runs" hidden></section>
-  <p class="cap"><span id="sealed">What you type for a key or a client is sealed on this device; the agent never sees it. </span>Anyone with this page's link can see what it shows and act on it.
+  <p class="cap">Anyone with this page's link can see what it shows and act on it.
     <button class="act quiet" id="rotate">New link</button></p>
 </main>
 <div id="toast" hidden></div>
@@ -82,138 +73,12 @@
     }
   }
 
-  // RSA-OAEP seals at most 190 bytes; a longer value (a token, say) is sealed with a new AES-GCM
-  // key, itself sealed with RSA: "h1.<sealed key>.<iv>.<sealed value>".
-  const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
-  let pubKey = null;
-  async function seal(text) {
-    if (!crypto.subtle) throw new Error("Open this page over https to give a key or a client secret: over plain http, the browser can't seal it");
-    const bytes = new TextEncoder().encode(text);
-    pubKey ||= await crypto.subtle.importKey("spki", Uint8Array.from(atob(cfg.pub), (c) => c.charCodeAt(0)), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
-    if (bytes.length <= 190) return b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, bytes));
-    const aes = crypto.getRandomValues(new Uint8Array(32));
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await crypto.subtle.importKey("raw", aes, "AES-GCM", false, ["encrypt"]);
-    const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes);
-    return ["h1", b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, aes)), b64(iv), b64(sealed)].join(".");
-  }
-
-  /** A labelled input: the label holds it, and `inputs[name]` keeps it for the form to read. */
-  // Not a login form: a password field asks for a new value (so the browser fills in no saved
-  // password, nor a user name beside it), and names hold nothing a browser reads as a login.
-  const field = (inputs, name, label, type = "text") =>
-    el("label", { textContent: label }, (inputs[name] = el("input", { type, name: `lib-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", spellcheck: false })));
-
-  function form(title, fields, submit, onsubmit, need = false) {
-    const inputs = {};
-    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type]) => field(inputs, name, label, type)), el("button", { className: "act", type: "submit", textContent: submit }));
-    node.onsubmit = async (e) => {
-      e.preventDefault();
-      const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()]));
-      try {
-        if (await onsubmit(v)) node.reset();
-      } catch (err) {
-        toast(err.message);
-      }
-    };
-    return node;
-  }
-
-  const keyForm = (need) =>
-    form(
-      el("div", {}, el("strong", { textContent: need ? `The agent asks for a key: ${need.label}` : "Add a key" }), need ? el("p", { className: "cap", textContent: `It's sent only to ${need.site}.` }) : null),
-      [...(need ? [] : [["label", "Name, like github"], ["site", "The site it's sent to, like api.github.com"]]), ["value", "The key or token", "password"]],
-      "Save",
-      async (v) => {
-        const label = need ? need.label : v.label, site = need ? need.site : v.site;
-        if (!v.value || !label || !site) return toast("Fill in every field"), false;
-        return post("key-save", { label, site, sealed: await seal(v.value) });
-      },
-      !!need,
-    );
-
-  // With ANYTHINGLLM_URL unset, the skill learns AnythingLLM's address from the client saved here: the
-  // https address this page was opened at, whose oauth page is the redirect address it shows.
-  const here = location.protocol === "https:" ? location.origin : "";
-  const saveClient = async (signIn, id, secret) => post("oauth-client", { label: signIn.label, client_id: id, sealed: secret ? await seal(secret) : "", origin: here });
-
-  // The JSON file a provider's console gives for a client (Google's client_secret_….json: { web:
-  // { client_id, client_secret, redirect_uris } }), read here: only its ID and sealed secret are sent.
-  async function loadClient(signIn, redirect, file) {
-    let c;
-    try {
-      const j = JSON.parse(await file.text());
-      c = j.web || j.installed || j;
-    } catch {}
-    if (!c?.client_id) return toast("That file has no client_id");
-    if (Array.isArray(c.redirect_uris) && !c.redirect_uris.includes(redirect)) return toast(`This client's redirect addresses don't include ${redirect}: add it at the provider, then load the file again`);
-    await saveClient(signIn, c.client_id, c.client_secret || "");
-  }
-
-  const clientForm = (signIn, redirect) => {
-    redirect = redirect || (here && `${here}/library-lean/oauth.html`);
-    const node = form(
-      el("p", { className: "cap", textContent: signIn.device ? "Switch the device flow on for the client: it needs no redirect address." : redirect ? `Register this redirect address for the client: ${redirect}` : "Open this page at AnythingLLM's https address, or set the Library skill's ANYTHINGLLM_URL (AnythingLLM's Agent Skills) to it, first: the redirect address depends on it." }),
-      [["id", "Client ID"], ["secret", "Client secret (leave empty to keep it, or if it has none)", "password"]],
-      "Save the client",
-      async (v) => (v.id ? saveClient(signIn, v.id, v.secret) : (toast("Give the client ID"), false)),
-    );
-    const file = el("input", { type: "file", accept: ".json,application/json", hidden: true, onchange: () => file.files[0] && loadClient(signIn, redirect, file.files[0]).catch((err) => toast(err.message)).finally(() => (file.value = "")) });
-    node.append(file, el("button", { className: "act quiet", type: "button", textContent: "Load the client's JSON file", onclick: () => file.click() }));
-    return node;
-  };
-
-  // Without an https address, the provider sends the user to a 127.0.0.1 address that doesn't load:
-  // its code and state are posted as oauth.html would post them.
-  const pasteForm = () =>
-    form(
-      el("div", {}, el("strong", { textContent: "Finish a sign-in" }), el("p", { className: "cap", textContent: "After signing in, your browser landed on a 127.0.0.1 address that didn't load: copy that whole address here." })),
-      [["url", "The address you landed on"]],
-      "Finish",
-      async (v) => {
-        let q;
-        try {
-          q = new URL(v.url).searchParams;
-        } catch {}
-        if (!q?.get("state")) return toast("That address has no state in it"), false;
-        return post("oauth-code", { state: q.get("state"), code: q.get("code") || "", error: q.get("error_description") || q.get("error") || "" });
-      },
-    );
-
-  // A delete button: asks `asked` first, and is heard as `label` when its text alone says too little.
-  const remove = (text, ev, fields, asked = `${text}?`, label = null) => {
-    const b = el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
-    if (label) b.setAttribute("aria-label", label);
-    return b;
-  };
+  const remove = (text, ev, fields) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(`${text}?`) && post(ev, fields) });
 
   function draw(s) {
-    const keys = $("keys"), signins = $("signins"), logins = $("logins"), toolkits = $("toolkits"), runs = $("runs");
-    keys.replaceChildren(...s.needs.filter((n) => n.kind === "key").map((n) => keyForm(n)));
-    for (const k of s.secrets.filter((x) => x.kind === "key")) keys.append(el("div", { className: "card row" }, el("span", {}, el("strong", { textContent: k.label }), " ", el("span", { className: "cap", textContent: k.site })), remove("Delete", "key-delete", { label: k.label })));
-    keys.append(keyForm(null));
-
-    const oauth = s.secrets.filter((x) => x.kind === "oauth");
-    signins.replaceChildren(...(oauth.length ? [] : [el("p", { className: "cap", textContent: "No sign-ins yet. The agent adds one when a service signs in with OAuth." })]));
-    for (const o of oauth) {
-      const needed = s.needs.some((n) => n.kind === "client" && n.label === o.label);
-      signins.append(el("div", { className: "card" + (needed ? " need" : "") },
-        el("div", { className: "row" }, el("strong", { textContent: o.label }), el("span", { className: o.status === "signed in" ? "good" : "cap", textContent: o.status })),
-        el("p", { className: "cap", textContent: `Signs in at ${o.authorize}${o.device ? " with a code" : ""}; sends to ${o.site}${o.scopes ? `; scopes: ${o.scopes}` : ""}${o.shared ? "; with the suite's own client" : ""}` }),
-        ...(o.shared ? [] : [clientForm(o, s.redirect)]), remove("Delete", "key-delete", { label: o.label })));
-    }
-    if (s.redirect && !s.redirect.startsWith("https://") && oauth.length) signins.append(pasteForm());
-
-    // The browser's logins and passkeys: saved as the user signs in on a tab's page, deleted here.
-    const saved = s.logins || [];
-    logins.replaceChildren(el("p", { className: "cap", textContent: saved.length ? "Saved as you sign in on the agent's browser, and typed in there on their own site only." : "No logins yet. The browser offers to save one when you sign in on its tab's page." }));
-    for (const l of saved) {
-      const passkey = l.kind === "passkey";
-      const asked = passkey ? `Delete the passkey for ${l.site}? The agent can't sign in with it after. Remove it in the site's own settings too.` : `Delete the login for ${l.site}?`;
-      const del = remove("Delete", "login-delete", { id: l.id }, asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`);
-      logins.append(el("div", { className: "card row" }, el("span", {}, el("strong", { textContent: l.site }), " ", el("span", { className: "cap", textContent: [l.user, passkey ? "passkey" : "password"].filter(Boolean).join(" · ") })), del));
-    }
-
+    $("vault").hidden = !s.vault;
+    if (s.vault) $("vaultlink").href = s.vault;
+    const toolkits = $("toolkits"), runs = $("runs");
     toolkits.replaceChildren(...(s.toolkits.length ? [] : [el("p", { className: "cap", textContent: "No toolkits yet." })]));
     for (const t of s.toolkits) {
       toolkits.append(el("div", { className: "card" },
@@ -236,7 +101,7 @@
   async function load() {
     try {
       const res = await fetch(cfg.token + ".json", { cache: "no-cache" });
-      if (res.status === 404) return toast("This link was replaced: ask the agent for the link again");
+      if (res.status === 404) return toast("This link was replaced: ask the agent for the Library page again");
       const text = await res.text();
       if (text !== last) (last = text), draw(JSON.parse(text));
     } catch (e) {
@@ -244,19 +109,13 @@
     }
   }
 
-  // The page's tabs, its view's alone; the first shows.
-  const vault = cfg.view === "vault";
-  document.title = $("heading").textContent = vault ? "Vault" : "Library";
-  $("sealed").hidden = !vault;
-  const tabs = [...document.querySelectorAll("nav button")].filter((b) => (b.dataset.view === "vault") === vault);
-  const select = (b) => {
-    for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
-    for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
-  };
-  for (const b of document.querySelectorAll("nav button")) b.hidden = (b.dataset.view === "vault") !== vault;
-  for (const b of tabs) b.onclick = () => select(b);
-  select(tabs[0]);
-  $("rotate").onclick = () => confirm("Make new links? This one, and the Vault's or the Library page's, stop working.") && post("rotate");
+  for (const b of document.querySelectorAll("nav button")) {
+    b.onclick = () => {
+      for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
+      for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
+    };
+  }
+  $("rotate").onclick = () => confirm("Make a new link? This one stops working.") && post("rotate");
   load();
   setInterval(load, 5000);
 })();

@@ -1,6 +1,6 @@
 // What the library's tests share: AnythingLLM's storage, public folder and server modules standing
-// in, the built handler.js called as AnythingLLM's agent calls it, and what the Library page posts,
-// written as AnythingLLM's collector writes it.
+// in, the built handler.js called as AnythingLLM's agent calls it, and what the Library page and the
+// Vault post, written as AnythingLLM's collector writes it.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -78,10 +78,10 @@ export function installed(t: TestContext, extra: Record<string, unknown> = {}): 
   return { description: () => config().description, config };
 }
 
-/** Asks for the key `label` for `site`, and gives it on the page, as the user does. */
+/** Asks for the key `label` for `site`, and gives it on the Vault, as the user does. */
 export async function giveKey(label: string, site: string, value: string): Promise<string> {
   const asked = await call({ action: "secret", site, label });
-  post({ secret: pageConfig().secret, ev: "key-save", label, site, sealed: seal(value) });
+  postVault({ ev: "key-save", label, site, sealed: seal(value) });
   await call({ action: "library" });
   return asked;
 }
@@ -105,6 +105,28 @@ export function post(event: Record<string, unknown>): void {
   fs.utimesSync(file, at, at);
 }
 
+/** What the Vault posts in its keys section, written as AnythingLLM's collector writes it, with the
+ *  Vault's secret unless the event names another; each after the one before. */
+export function postVault(event: Record<string, unknown>): void {
+  const dir = path.join(storage, "documents", "custom-documents");
+  fs.mkdirSync(dir, { recursive: true });
+  const id = crypto.randomUUID();
+  const file = path.join(dir, `raw-vault-lean-keys-${id}.json`);
+  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, secret: vaultConfig().secret, ...event }) }));
+  const at = new Date(Date.now() + ++posts * 10);
+  fs.utimesSync(file, at, at);
+}
+
+/** The Vault's settings: its token and secret, and the key and public key it was written with. */
+export function vaultConfig(): { token: string; secret: string; key: string; pub: string; version: number } {
+  const { token } = JSON.parse(fs.readFileSync(path.join(storage, "vault-lean", "vault-page.json"), "utf8"));
+  const html = fs.readFileSync(path.join(publicDir, "vault-lean", `${token}.html`), "utf8");
+  return JSON.parse(html.match(/const cfg = (\{.*?\});/)![1]);
+}
+
+/** What the Vault's keys section shows, as the Vault reads it. */
+export const vaultState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultConfig().token}-keys.json`), "utf8"));
+
 /** The page's own settings: its token and secret, and the key and public key it was written with. */
 export function pageConfig(): { token: string; secret: string; key: string; pub: string } {
   const { token } = JSON.parse(fs.readFileSync(path.join(library, "page.json"), "utf8"));
@@ -115,8 +137,8 @@ export function pageConfig(): { token: string; secret: string; key: string; pub:
 /** What the page shows, as it reads it. */
 export const pageState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "library-lean", `${pageConfig().token}.json`), "utf8"));
 
-/** `text` sealed as the page seals it, with the vault's public key. */
+/** `text` sealed as the Vault seals it, with the vault's public key. */
 export function seal(text: string): string {
-  const key = crypto.createPublicKey({ key: Buffer.from(pageConfig().pub, "base64"), format: "der", type: "spki" });
+  const key = crypto.createPublicKey({ key: Buffer.from(vaultConfig().pub, "base64"), format: "der", type: "spki" });
   return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
 }

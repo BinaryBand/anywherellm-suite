@@ -22,7 +22,6 @@ import { BrowserError } from "./errors";
 import type { HandlerContext } from "./host";
 import { importLean } from "./logins";
 import { card, caughtUp } from "./page";
-import { reconcile } from "./passkey";
 import * as research from "./research";
 import { type Scope, scopeOf } from "./scope";
 import { type Read, type Snap, asksCode, asksPassword, fieldAt, readPage } from "./snapshot";
@@ -210,7 +209,6 @@ async function onTab(scope: Scope, run: () => Promise<string> | string): Promise
   if (entry) free(entry, key);
   entry?.busy.add(key);
   try {
-    await reconcile(); // a passkey deleted on the Vault page signs in nowhere from here on
     return await run();
   } finally {
     entry?.busy.delete(key);

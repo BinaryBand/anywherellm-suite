@@ -8,8 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import * as logins from "#shared/logins";
-import * as vault from "#shared/vault";
-import { call as called, post, publicDir, seal, site, skillDir, storage, tabConfig, tabState, world } from "./harness.mts";
+import { call as called, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultLogins, vaultNames, world } from "./harness.mts";
 
 const LOGIN = "https://login.example/";
 site(LOGIN, {
@@ -145,13 +144,24 @@ test("a saved login is set whole into the page's own fields, never typed key by 
   assert.equal(lastPage().fields.e1.value, undefined);
 });
 
-test("the tab's page links to the Vault once the library has shown it", async () => {
+test("the tab's page links to the Vault, whose logins section lists the saved logins by site and user and deletes one", async () => {
   const call = inWorkspace("vaultlink");
+  await logins.save("vault.example", "ada", "pw-vault-1");
   await call({ action: "open", url: "https://shop.example/" });
-  assert.equal(tabState("vaultlink").vault, null, "no Vault yet");
-  vault.setPagePath("/library-lean/tok-vault.html");
+  const { token } = vaultNames();
+  assert.equal(tabState("vaultlink").vault, `/vault-lean/${token}.html`);
+  const html = fs.readFileSync(path.join(publicDir, "vault-lean", `${token}.html`), "utf8");
+  assert.ok(!html.includes("pw-vault-1") && !fs.readFileSync(path.join(publicDir, "vault-lean", `${token}-logins.json`), "utf8").includes("pw-vault-1"), "no password");
+  assert.ok(!fs.existsSync(path.join(publicDir, "vault-lean", `${token}-keys.json`)), "no keys section without the library");
+  const login = vaultLogins().find((l) => l.site === "vault.example")!;
+  assert.deepEqual([login.user, login.kind], ["ada", "password"]);
+  postVault({ ev: "login-delete", id: login.id, secret: "not-the-vault's" });
   await call({ action: "read" });
-  assert.equal(tabState("vaultlink").vault, "/library-lean/tok-vault.html");
+  assert.ok(vaultLogins().some((l) => l.site === "vault.example"), "a forged event does nothing");
+  postVault({ ev: "login-delete", id: login.id });
+  await call({ action: "read" });
+  assert.ok(!vaultLogins().some((l) => l.site === "vault.example"));
+  assert.ok(!logins.list().some((l) => l.site === "vault.example"));
 });
 
 test("the lean browser's vaults are imported once: logins, passkeys and keys, not OAuth, none twice", async () => {

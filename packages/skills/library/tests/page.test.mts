@@ -1,131 +1,159 @@
-// The Library page: written where AnythingLLM serves it, showing nothing secret, and what the user
-// does on it (posted as AnythingLLM's collector writes it) applied and told to the agent.
+// The library's pages: the Vault's keys section and the Library page, written where AnythingLLM
+// serves them, showing nothing secret, and what the user does on them (posted as AnythingLLM's
+// collector writes it) applied and told to the agent.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import * as logins from "#shared/logins";
-import * as vault from "#shared/vault";
-import { call, giveKey, library, pageConfig, pageState, post, publicDir, reset, seal, skillDir } from "./harness.mts";
+import { call, giveKey, library, pageConfig, pageState, post, postVault, publicDir, reset, seal, skillDir, storage, vaultConfig, vaultState } from "./harness.mts";
 
 const KEY = "page-key-0123456789";
 test.beforeEach(reset);
 
+const vaultFile = (name: string) => path.join(publicDir, "vault-lean", name);
+
 test("library ends with the Vault's link and the Library page's: relative, or absolute with ANYTHINGLLM_URL", async () => {
-  assert.match(await call({ action: "library" }), /The Vault, the user's own view of every key, sign-in and browser login, by name: \/library-lean\/[\w-]+-vault\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html$/);
+  assert.match(await call({ action: "library" }), /The Vault, the user's own view of every key, sign-in and browser login, by name: \/vault-lean\/[\w-]+\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html$/);
   const said = await call({ action: "library" }, { base: "https://llm.example.com/" });
   const { token, key, secret } = pageConfig();
   assert.ok(said.endsWith(`https://llm.example.com/library-lean/${token}.html`));
+  assert.ok(said.includes(`https://llm.example.com/vault-lean/${vaultConfig().token}.html\n`));
   assert.equal(key, "brx-test", "the page posts with the browser-extension key install keeps");
+  assert.equal(vaultConfig().key, "brx-test");
   assert.ok(secret.length >= 20);
+  assert.notEqual(vaultConfig().secret, secret, "the Vault has a secret of its own");
+  assert.equal(pageState().vault, `https://llm.example.com/vault-lean/${vaultConfig().token}.html`, "the Library page links to the Vault");
 });
 
-test("the page shows a saved key by name only, never its value", async () => {
+test("the Vault shows a saved key by name only, never its value, and only the library's section", async () => {
   await giveKey("ex", "api.example.com", KEY);
   await call({ action: "library" });
-  const state = pageState();
+  const state = vaultState();
   assert.deepEqual(state.secrets, [{ label: "ex", site: "api.example.com", kind: "key", status: "saved" }]);
   assert.ok(!JSON.stringify(state).includes(KEY));
-  assert.ok(!fs.readFileSync(path.join(publicDir, "library-lean", `${pageConfig().token}.html`), "utf8").includes(KEY));
+  assert.ok(!fs.readFileSync(vaultFile(`${vaultConfig().token}.html`), "utf8").includes(KEY));
+  assert.ok(!fs.existsSync(vaultFile(`${vaultConfig().token}-logins.json`)), "no logins section without the browser");
 });
 
-test("a key is asked for on the page, given there, and the agent is told", async () => {
+test("a key is asked for on the Vault, given there, and the agent is told", async () => {
   const asked = await call({ action: "secret", site: "api.example.com", label: "ex" });
-  assert.match(asked, /^The user gives the key on the Vault: \/library-lean\/[\w-]+-vault\.html\n/);
-  assert.deepEqual(pageState().needs, [{ label: "ex", site: "api.example.com", kind: "key" }]);
-  post({ secret: pageConfig().secret, ev: "key-save", label: "ex", site: "api.example.com", sealed: seal(KEY) });
+  assert.match(asked, /^The user gives the key on the Vault: \/vault-lean\/[\w-]+\.html\n/);
+  assert.deepEqual(vaultState().needs, [{ label: "ex", site: "api.example.com", kind: "key" }]);
+  postVault({ ev: "key-save", label: "ex", site: "api.example.com", sealed: seal(KEY) });
   await call({ action: "library" });
-  assert.deepEqual(pageState().needs, [], "the need is met");
-  assert.equal(pageState().secrets[0].status, "saved");
-});
-
-test("the Vault lists the browser's logins and passkeys by site and user, never a password or a key, and deletes one; its path is kept for the tab pages", async () => {
-  await logins.save("shop.example", "ada", "pw-shop-1");
-  await logins.savePasskey("keys.example", "ada", { credentialId: "c-1", rpId: "keys.example", privateKey: "private-key-1", signCount: 0, isResidentCredential: true });
-  await call({ action: "library" });
-  const { token, secret } = pageConfig();
-  const html = fs.readFileSync(path.join(publicDir, "library-lean", `${token}-vault.html`), "utf8");
-  assert.match(html, /"view":"vault"/, "the template, drawn as the Vault");
-  assert.equal(vault.pagePath(), `/library-lean/${token}-vault.html`);
-  const state = pageState();
-  assert.deepEqual(state.logins.map(({ site, user, kind }: Record<string, string>) => [site, user, kind]).sort(), [["keys.example", "ada", "passkey"], ["shop.example", "ada", "password"]]);
-  assert.ok(!/pw-shop-1|private-key-1/.test(JSON.stringify(state)), "no password, no key");
-  post({ secret, ev: "login-delete", id: state.logins.find((l: { kind: string }) => l.kind === "password").id });
-  await call({ action: "library" });
-  assert.deepEqual(pageState().logins.map((l: { kind: string }) => l.kind), ["passkey"]);
-  assert.deepEqual(logins.list().map((l) => l.site), ["keys.example"]);
+  assert.deepEqual(vaultState().needs, [], "the need is met");
+  assert.equal(vaultState().secrets[0].status, "saved");
 });
 
 test("an event without the page's secret (an old link's, or a forgery) is dropped", async () => {
   await call({ action: "library" });
-  post({ secret: "not-the-secret", ev: "key-save", label: "x", site: "api.example.com", sealed: seal(KEY) });
+  postVault({ secret: "not-the-secret", ev: "key-save", label: "x", site: "api.example.com", sealed: seal(KEY) });
+  postVault({ secret: pageConfig().secret, ev: "key-save", label: "y", site: "api.example.com", sealed: seal(KEY) }); // the Library page's, not the Vault's
   post({ ev: "toolkit-delete", service: "x" });
   await call({ action: "library" });
-  assert.deepEqual(pageState().secrets, []);
+  assert.deepEqual(vaultState().secrets, []);
 });
 
-test("the user deletes a key, a function or a toolkit on the page", async () => {
+test("the user deletes a key on the Vault, and a function or a toolkit on the Library page", async () => {
   await giveKey("ex", "api.example.com", KEY);
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" } });
   await call({ action: "save", service: "ex", function: { name: "two", description: "Two.", source: "async function main() { return 2; }" } });
   await call({ action: "library" });
-  const { secret } = pageConfig();
-  post({ secret, ev: "fn-delete", fn: "ex.one" });
-  post({ secret, ev: "key-delete", label: "ex" });
+  post({ secret: pageConfig().secret, ev: "fn-delete", fn: "ex.one" });
+  postVault({ ev: "key-delete", label: "ex" });
   const said = await call({ action: "library", service: "ex" });
   assert.match(said, /Functions:\n- ex\.two\(\)/);
-  assert.deepEqual(pageState().secrets, []);
-  post({ secret, ev: "toolkit-delete", service: "ex" });
+  assert.deepEqual(vaultState().secrets, []);
+  post({ secret: pageConfig().secret, ev: "toolkit-delete", service: "ex" });
   assert.match(await call({ action: "library" }), /^The library is empty/);
 });
 
-test("a new link replaces the old one, whose files are removed and whose secret no longer works", async () => {
+test("a new Library page link replaces the old one, whose files are removed and whose secret no longer works", async () => {
+  await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" } });
   await call({ action: "library" });
   const old = pageConfig();
   post({ secret: old.secret, ev: "rotate" });
   await call({ action: "library" });
   const now = pageConfig();
   assert.notEqual(now.token, old.token);
-  for (const ending of [".html", "-vault.html", ".json"]) assert.ok(!fs.existsSync(path.join(publicDir, "library-lean", `${old.token}${ending}`)), ending);
-  assert.equal(vault.pagePath(), `/library-lean/${now.token}-vault.html`, "the tab pages link to the new Vault");
-  post({ secret: old.secret, ev: "key-save", label: "x", site: "api.example.com", sealed: seal(KEY) });
-  await call({ action: "library" });
-  assert.deepEqual(pageState().secrets, []);
+  for (const ending of [".html", ".json"]) assert.ok(!fs.existsSync(path.join(publicDir, "library-lean", `${old.token}${ending}`)), ending);
+  post({ secret: old.secret, ev: "fn-delete", fn: "ex.one" });
+  assert.match(await call({ action: "library", service: "ex" }), /Functions:\n- ex\.one\(\)/, "the old secret deletes nothing");
 });
 
-test("while the page is open, what the user does is applied without waiting for the agent", async () => {
+test("a new Vault link moves every section's state to the new name, and the old secret no longer works", async () => {
   await call({ action: "library" });
-  post({ secret: pageConfig().secret, ev: "key-save", label: "live", site: "api.example.com", sealed: seal(KEY) });
-  let state = pageState();
+  const old = vaultConfig();
+  fs.writeFileSync(vaultFile(`${old.token}-logins.json`), JSON.stringify({ logins: [] })); // the browser's section, as it writes it
+  postVault({ ev: "rotate" });
+  await call({ action: "library" });
+  const now = vaultConfig();
+  assert.notEqual(now.token, old.token);
+  assert.ok(!fs.existsSync(vaultFile(`${old.token}.html`)));
+  for (const section of ["keys", "logins"]) {
+    assert.ok(fs.existsSync(vaultFile(`${now.token}-${section}.json`)), section);
+    assert.ok(!fs.existsSync(vaultFile(`${old.token}-${section}.json`)), section);
+  }
+  postVault({ secret: old.secret, ev: "key-save", label: "x", site: "api.example.com", sealed: seal(KEY) });
+  await call({ action: "library" });
+  assert.deepEqual(vaultState().secrets, []);
+});
+
+test("a newer Vault page another skill wrote isn't written over", async () => {
+  await call({ action: "library" });
+  const file = vaultFile(`${vaultConfig().token}.html`);
+  fs.writeFileSync(file, fs.readFileSync(file, "utf8").replace(/"version":\d+/, '"version":999'));
+  await call({ action: "library" });
+  assert.match(fs.readFileSync(file, "utf8"), /"version":999/);
+});
+
+test("while the Vault is open, what the user does is applied without waiting for the agent", async () => {
+  await call({ action: "library" });
+  postVault({ ev: "key-save", label: "live", site: "api.example.com", sealed: seal(KEY) });
+  let state = vaultState();
   for (let i = 0; i < 100 && !state.secrets.length; i++) {
     await new Promise((r) => setTimeout(r, 50));
-    state = pageState();
+    state = vaultState();
   }
-  assert.deepEqual(state.secrets.map((s: { label: string }) => s.label), ["live"], "the page's state was written again by the watch");
-
+  assert.deepEqual(state.secrets.map((s: { label: string }) => s.label), ["live"], "the section's state was written again by the watch");
 });
 
 // Drift: what the pages post and read must be what the skill applies and writes.
 
 const pageSource = (name: string) => fs.readFileSync(path.join(skillDir, "static", "pages", name), "utf8");
-const handled = [...fs.readFileSync(path.join(skillDir, "src", "page.ts"), "utf8").matchAll(/case "([a-z-]+)":|e\.ev === "([a-z-]+)"/g)].map((m) => m[1] || m[2]);
+const vaultSource = () => fs.readFileSync(path.join(skillDir, "..", "..", "shared", "vault.html"), "utf8");
+const source = fs.readFileSync(path.join(skillDir, "src", "page.ts"), "utf8");
+const handled = (fn: string) => [...source.slice(source.indexOf(`function ${fn}(`)).split("\n}\n")[0].matchAll(/case "([a-z-]+)":|e\.ev === "([a-z-]+)"/g)].map((m) => m[1] || m[2]);
 
 test("every event the pages post is one the skill applies", () => {
   const posted = [...pageSource("library.html").matchAll(/post\("([a-z-]+)"|remove\("[^"]*", "([a-z-]+)"/g), ...pageSource("oauth.html").matchAll(/ev: "([a-z-]+)"/g)].map((m) => m[1] || m[2]);
-  assert.ok(posted.length >= 7);
-  for (const ev of posted) assert.ok(handled.includes(ev), ev);
+  assert.ok(posted.length >= 3);
+  for (const ev of posted) assert.ok(handled("apply").includes(ev), ev);
+  const keys = [...vaultSource().matchAll(/post\("keys", "([a-z-]+)"/g)].map((m) => m[1]);
+  assert.ok(keys.length >= 4);
+  for (const ev of [...keys, "rotate"]) assert.ok(handled("applyKeys").includes(ev), `keys: ${ev}`);
 });
 
-test("every field the page reads from its state is one the skill writes", async () => {
+test("every field the pages read from their state is one the skill writes", async () => {
   await giveKey("ex", "api.example.com", KEY);
-  await logins.save("drift.example", "ada", "pw-drift-1");
+  await call({ action: "secret", site: "api.other.example", label: "other" });
+  await call({ action: "secret", kind: "oauth", label: "demo", definition: { site: "api.example.com", authorize_url: "https://auth.example.com/authorize", token_url: "https://auth.example.com/token", scopes: "read" } });
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" }, test: {} });
   await call({ action: "library" });
   const state = pageState();
   const html = pageSource("library.html");
   for (const [, field] of html.matchAll(/\bs\.([a-z_]+)/g)) assert.ok(field in state, `s.${field}`);
-  const items = { k: state.secrets[0], t: state.toolkits[0], f: state.toolkits[0].functions[0], r: state.runs[0], l: state.logins[0] };
+  const items = { t: state.toolkits[0], f: state.toolkits[0].functions[0], r: state.runs[0] };
   for (const [name, item] of Object.entries(items)) for (const [, field] of html.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);
+  const keys = vaultState();
+  const vault = vaultSource();
+  for (const [, field] of vault.matchAll(/\bks\.([a-z_]+)/g)) assert.ok(field in keys, `ks.${field}`);
+  const vaultItems = { k: keys.secrets.find((x: { kind: string }) => x.kind === "key"), o: keys.secrets.find((x: { kind: string }) => x.kind === "oauth"), n: keys.needs[0] };
+  for (const [name, item] of Object.entries(vaultItems)) {
+    assert.ok(item, name);
+    for (const [, field] of vault.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);
+  }
   assert.ok(fs.existsSync(path.join(library, "page.json")));
+  assert.ok(fs.existsSync(path.join(storage, "vault-lean", "vault-page.json")));
 });

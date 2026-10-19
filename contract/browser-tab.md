@@ -43,7 +43,7 @@ Read `<token>.json` with a query that changes (`?t=<now>`) or no cache: it's rew
 | `need` | object or null | what the agent asked the user to enter (below) |
 | `offer` | object or null | a login or passkey the page offers to save: `{kind, site, user}` |
 | `msg` | `{text, id}` or null | a line for the page to show once ("Saved for example.com"; a login the site seems to have refused). It stays in the state for up to a minute, so show each `id` once |
-| `vault` | string or null | the path of the Vault page on this host (`/library-lean/<token>-vault.html`), where the saved logins and passkeys are listed and deleted; null until the library skill has shown it |
+| `vault` | string or null | the path of the Vault on this host (`/vault-lean/<token>.html`), where the saved logins and passkeys are listed and deleted; null where it couldn't be written |
 
 A closed tab's state is `{"closed": true}`, and its other files are gone.
 

@@ -19,7 +19,8 @@ Functions run in QuickJS, compiled to WebAssembly, inside AnythingLLM's process:
 | --- | --- |
 | Toolkits, functions (and their last 5 versions), what each keeps between runs, runs, the runs not shown yet (`unseen/`) | `library-lean/` in AnythingLLM's storage |
 | Keys and sign-ins (OAuth clients and tokens) | `vault-lean/vault.json`, encrypted, shared with the browser skill |
-| The Vault and the Library page | `public/library-lean/` beside AnythingLLM's server: `<token>-vault.html`, `<token>.html`, their state (nothing secret), `oauth.html`; `library-lean/page.json` holds their token and secret, and `vault-lean/page.json` the Vault's path, for the browser's tab pages |
+| The Library page | `public/library-lean/` beside AnythingLLM's server: the page, its state (nothing secret), `oauth.html`; `library-lean/page.json` holds its token and secret, and the agent's requests for a key or a client |
+| The Vault | `public/vault-lean/`: the page every skill that keeps secrets serves, and its keys section (`<token>-keys.json`, nothing secret); `vault-lean/vault-page.json` holds its token and secret |
 | Your own versions of the guide, snippets and prelude | `library-lean/static/`, at the same paths as `static/`: they win over the shipped ones |
 
 ## Using it

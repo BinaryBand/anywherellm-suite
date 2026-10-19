@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { call, post, site, skillDir, tabState } from "./harness.mts";
+import * as logins from "#shared/logins";
+import { call, post, site, skillDir, tabState, vaultLogins } from "./harness.mts";
 
 const pageSource = () => fs.readFileSync(path.join(skillDir, "static", "pages", "tab.html"), "utf8");
 const handled = fs.readFileSync(path.join(skillDir, "src", "page.ts"), "utf8");
@@ -39,4 +40,17 @@ test("every field the page reads from its state is one the skill writes", async 
   };
   assert.deepEqual(listed("## The state, `<token>.json`"), Object.keys(state).sort(), "the state's fields in the contract");
   assert.deepEqual(listed("### `need`"), Object.keys(state.need).sort(), "the need's fields in the contract");
+});
+
+test("the Vault's logins section: every event it posts is one the skill applies, every field it reads one the skill writes", async () => {
+  const vault = fs.readFileSync(path.join(skillDir, "..", "..", "shared", "vault.html"), "utf8");
+  const drain = handled.slice(handled.indexOf("async function drainLogins"));
+  const posted = [...vault.matchAll(/post\("logins", "([a-z-]+)"/g)].map((m) => m[1]);
+  assert.ok(posted.length >= 1);
+  for (const ev of [...posted, "rotate"]) assert.ok(drain.includes(`e.ev === "${ev}"`), ev);
+  await logins.save("drift.example", "ada", "pw-drift-1");
+  await call({ action: "open", url: "https://form.example/" }, { workspace: "drift" });
+  const state = { logins: vaultLogins() };
+  for (const [, field] of vault.matchAll(/\bls\.([a-z_]+)/g)) assert.ok(field in state, `ls.${field}`);
+  for (const [, field] of vault.matchAll(/\bl\.([a-z_]+)/g)) assert.ok(field in state.logins[0], `l.${field}`);
 });

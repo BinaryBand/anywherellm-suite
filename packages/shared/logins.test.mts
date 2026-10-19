@@ -4,7 +4,6 @@ import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { counted, forHost, list, passkeys, remove, save, savePasskey } from "./logins.mts";
-import { pagePath, setPagePath, vaultDir } from "./vault.mts";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "logins-"));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -40,12 +39,4 @@ test("a passkey keeps its count going up only, and its deletion names its creden
   assert.deepEqual(await remove(kept.id), { kind: "passkey", credentialId: "c-1" });
   assert.equal(await remove(kept.id), null, "gone");
   assert.deepEqual(passkeys(), []);
-});
-
-test("the Vault page's path is kept beside the vault, and only a page path is read back", () => {
-  assert.equal(pagePath(), null, "none until the library shows it");
-  setPagePath("/library-lean/tok-vault.html");
-  assert.equal(pagePath(), "/library-lean/tok-vault.html");
-  fs.writeFileSync(path.join(vaultDir(), "page.json"), JSON.stringify({ path: "https://elsewhere.example/x.html" }));
-  assert.equal(pagePath(), null, "not a path on this host");
 });

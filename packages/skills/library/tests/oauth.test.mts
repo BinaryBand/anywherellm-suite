@@ -10,7 +10,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, cardsShown, pageConfig, pageState, post, publicDir, reset, seal, skillDir, storage } from "./harness.mts";
+import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, storage, vaultState } from "./harness.mts";
 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
@@ -74,7 +74,7 @@ test.beforeEach(() => {
 /** Gives the client of the sign-in `label` on the page, as the user does: its ID, and its secret
  *  sealed (or none), from a page opened at `origin`. */
 function giveClient(label: string, { secret = "", origin }: { secret?: string; origin?: string } = {}): void {
-  post({ secret: pageConfig().secret, ev: "oauth-client", label, client_id: "client-1", sealed: secret ? seal(secret) : "", ...(origin ? { origin } : {}) });
+  postVault({ ev: "oauth-client", label, client_id: "client-1", sealed: secret ? seal(secret) : "", ...(origin ? { origin } : {}) });
 }
 
 /** Defines the sign-in "demo" (as `def`), gives its client on the page, and answers the sign-in link;
@@ -83,7 +83,7 @@ async function link(base: string = LLM, def: Record<string, unknown> = definitio
   const first = await call({ action: "secret", kind: "oauth", label: "demo", definition: def }, { base });
   assert.match(first, /"demo" needs the user's own OAuth client at the provider \(127\.0\.0\.1:\d+\)/);
   assert.ok(first.includes(base.startsWith("https://") ? `${LLM}/library-lean/oauth.html` : "http://127.0.0.1/library-lean/oauth"), "the redirect address to register");
-  assert.deepEqual(pageState().needs, [{ label: "demo", site: "127.0.0.1", kind: "client" }], "asked for on the page");
+  assert.deepEqual(vaultState().needs, [{ label: "demo", site: "127.0.0.1", kind: "client" }], "asked for on the page");
   giveClient("demo", { secret: "shh-secret" });
   const second = await call({ action: "secret", kind: "oauth", label: "demo" }, { base });
   assert.equal(cardsShown.length, 0, "never on a card");
@@ -154,25 +154,25 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   const q = Object.fromEntries((await link()).searchParams);
   post({ ev: "oauth-code", state: "not-a-state-anyone-made", code: "good-code" });
   await call({ action: "library" });
-  assert.match(JSON.stringify(pageState().secrets), /"status":"ready to sign in"/, "a code for no waiting sign-in is ignored");
+  assert.match(JSON.stringify(vaultState().secrets), /"status":"ready to sign in"/, "a code for no waiting sign-in is ignored");
   post({ ev: "oauth-code", state: q.state, error: "access_denied" });
   await call({ action: "library" });
-  assert.match(JSON.stringify(pageState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
+  assert.match(JSON.stringify(vaultState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
 });
 
 test("with ANYTHINGLLM_URL unset, the address the Vault was opened at is learned with the client", async () => {
   const said = await call({ action: "secret", kind: "oauth", label: "demo", definition });
   assert.match(said, /with the redirect address the Vault shows registered/);
   assert.ok(!said.includes("/library-lean/oauth"), "no redirect address the skill can't know");
-  assert.equal(pageState().redirect, null, "nor on the page, which shows its own");
+  assert.equal(vaultState().redirect, null, "nor on the page, which shows its own");
   giveClient("demo", { secret: "shh-secret", origin: "http://phone.example.com" });
   giveClient("demo", { origin: "https://phone.example.com/a/path" });
   assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }), /AnythingLLM's address isn't known/, "only an https origin counts");
   giveClient("demo", { origin: "https://phone.example.com" });
   const link = new URL((await call({ action: "secret", kind: "oauth", label: "demo" })).match(/^(http\S+)$/m)![1]);
   assert.equal(link.searchParams.get("redirect_uri"), "https://phone.example.com/library-lean/oauth.html");
-  assert.equal(pageState().redirect, "https://phone.example.com/library-lean/oauth.html");
-  assert.match(await call({ action: "library" }), /: https:\/\/phone\.example\.com\/library-lean\/[\w-]+\.html$/, "and the page's link is absolute");
+  assert.equal(vaultState().redirect, "https://phone.example.com/library-lean/oauth.html");
+  assert.match(await call({ action: "library" }), /: https:\/\/phone\.example\.com\/vault-lean\/[\w-]+\.html\n.*: https:\/\/phone\.example\.com\/library-lean\/[\w-]+\.html$/, "and the pages' links are absolute");
   assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }, { base: "https://llm.example.com" }), /redirect_uri=https%3A%2F%2Fllm\.example\.com%2F/, "ANYTHINGLLM_URL still wins");
 });
 
@@ -180,13 +180,13 @@ test("one sign-in per provider: a definition under another name points to the on
   await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM });
   const said = await call({ action: "secret", kind: "oauth", label: "demo-2", definition }, { base: LLM });
   assert.match(said, /^Library: there's a sign-in at 127\.0\.0\.1:\d+ already: "demo"/);
-  assert.deepEqual(pageState().secrets.map((s: { label: string }) => s.label), ["demo"]);
+  assert.deepEqual(vaultState().secrets.map((s: { label: string }) => s.label), ["demo"]);
 });
 
 test("without an https address, the sign-in ends on 127.0.0.1, and the user pastes that address into the page", async () => {
   const q = Object.fromEntries((await link("http://192.168.1.5:3001")).searchParams);
   assert.equal(q.redirect_uri, "http://127.0.0.1/library-lean/oauth");
-  post({ ev: "oauth-code", state: q.state, code: "good-code" }); // as the page's paste form posts it
+  postVault({ ev: "oauth-code", state: q.state, code: "good-code" }); // as the Vault's paste form posts it
   await call({ action: "library" });
   await toolkit();
   assert.match(await call({ action: "run", name: "demo.me" }), /"Ada"/);
@@ -212,7 +212,7 @@ async function code(): Promise<string> {
   return call({ action: "secret", kind: "oauth", label: "dev" });
 }
 
-const devStatus = () => pageState().secrets.find((s: { label: string }) => s.label === "dev").status;
+const devStatus = () => vaultState().secrets.find((s: { label: string }) => s.label === "dev").status;
 
 test("a device sign-in: the code to show, the user agrees, and library finds it signed in", async () => {
   const said = await code();
