@@ -31,7 +31,7 @@ process.env.SIG_SALT = "test-sig-salt";
 export interface Site {
   title?: string;
   text?: string;
-  fields?: Record<string, { kind?: string; type?: string; name?: string; value?: string; box?: { x: number; y: number; w: number; h: number }; attrs?: Record<string, string>; blockedBy?: string[]; disabled?: boolean; behind?: { title: string; buttons: { ref: string; label: string }[] } }>;
+  fields?: Record<string, { kind?: string; type?: string; name?: string; value?: string; box?: { x: number; y: number; w: number; h: number }; attrs?: Record<string, string>; blockedBy?: string[]; disabled?: boolean; behind?: { title: string; buttons: { ref: string; label: string }[] }; framed?: string; movedTo?: string }>;
   onclick?: Record<string, string>;
   onenter?: string;
   links?: { title: string; href: string; near: string }[];
@@ -49,6 +49,8 @@ export interface StandInPage {
   taps: [number, number][];
   wheels: number[];
   navs: string[];
+  /** The refs typed into with keystrokes. */
+  typed: string[];
   fields: Record<string, { value?: string }>;
   session: Session | null;
   url(): string;

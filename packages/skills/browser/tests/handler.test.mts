@@ -7,6 +7,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import * as logins from "#shared/logins";
+import * as vault from "#shared/vault";
 import { call as called, post, publicDir, seal, site, skillDir, storage, tabConfig, tabState, world } from "./harness.mts";
 
 const LOGIN = "https://login.example/";
@@ -80,7 +82,7 @@ test("a login with none saved is asked for on the tab's page, sealed, typed in, 
   assert.match(after, /the user entered the login you asked for on the tab's page and it was typed into the page and e3 clicked/);
   assert.match(after, /the login the user entered was saved for login\.example, for next time/, "saved once the page no longer asks for a password");
   assert.equal(tabState().need, null);
-  assert.deepEqual(tabState().logins.map((l: { site: string; user: string }) => [l.site, l.user]), [["login.example", "ada@example.com"]]);
+  assert.deepEqual(logins.list().map((l) => [l.site, l.user]), [["login.example", "ada@example.com"]]);
   assert.ok(!fs.readFileSync(path.join(storage, "vault-lean", "vault.json"), "utf8").includes("pw-s3cret-1"), "kept encrypted");
 
   const again = (args: Record<string, unknown>) => called(args, { workspace: "home", thread: 2 });
@@ -123,13 +125,33 @@ test("call goes from the tab with its session only; the library calls APIs with 
   assert.match(await call({ action: "call", url: "https://shop.example/api/me", auth: "session", headers: { Cookie: "x" } }), /can't set Cookie/);
 });
 
-test("a login is deleted from the tab's page", async () => {
-  const call = (args: Record<string, unknown>) => called(args, { workspace: "home", thread: 2 });
+test("a saved login is set whole into the page's own fields, never typed key by key; a frame, or a page that moved, gets nothing", async () => {
+  const call = inWorkspace("fills");
+  site("https://fills.example/", { title: "Sign in", fields: { e1: { type: "text", name: "User" }, e2: { type: "password", name: "Password" } } });
+  site("https://fills.example/framed", { title: "Sign in", fields: { e1: { type: "password", name: "Password", framed: "ads.example" } } });
+  site("https://fills.example/moved", { title: "Sign in", fields: { e1: { type: "password", name: "Password", movedTo: "evil.example" } } });
+  await logins.save("fills.example", "bo", "pw-fills-1");
+  await call({ action: "open", url: "https://fills.example/" });
+  assert.match(await call({ action: "login", user_ref: "e1", pass_ref: "e2" }), /^Typed the login the user saved for fills\.example into the page, but nothing was submitted/);
+  const page = lastPage();
+  assert.deepEqual([page.fields.e1.value, page.fields.e2.value], ["bo", "pw-fills-1"]);
+  assert.deepEqual(page.typed, [], "no keystrokes, which a page moving the focus could send elsewhere");
+
+  await call({ action: "open", url: "https://fills.example/framed" });
+  assert.match(await call({ action: "login", pass_ref: "e1" }), /that field is in a frame inside the page, not on fills\.example's page itself; nothing was typed/);
+  assert.equal(lastPage().fields.e1.value, undefined);
+  await call({ action: "open", url: "https://fills.example/moved" });
+  assert.match(await call({ action: "login", pass_ref: "e1" }), /the page moved off fills\.example meanwhile; nothing was typed/);
+  assert.equal(lastPage().fields.e1.value, undefined);
+});
+
+test("the tab's page links to the Vault once the library has shown it", async () => {
+  const call = inWorkspace("vaultlink");
+  await call({ action: "open", url: "https://shop.example/" });
+  assert.equal(tabState("vaultlink").vault, null, "no Vault yet");
+  vault.setPagePath("/library-lean/tok-vault.html");
   await call({ action: "read" });
-  const [login] = tabState("home", "2").logins;
-  post({ ev: "login-delete", id: login.id }, { tab: "2" });
-  await call({ action: "read" });
-  assert.deepEqual(tabState("home", "2").logins, []);
+  assert.equal(tabState("vaultlink").vault, "/library-lean/tok-vault.html");
 });
 
 test("the lean browser's vaults are imported once: logins, passkeys and keys, not OAuth, none twice", async () => {
@@ -140,22 +162,22 @@ test("the lean browser's vaults are imported once: logins, passkeys and keys, no
   const key = Buffer.from(crypto.hkdfSync("sha256", "test-sig-key", "test-sig-salt", "browser-lean vault", 32));
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-  const logins = [
+  const leanLogins = [
     { id: "a", kind: "password", site: "old.example", user: "ada", pass: "old-pass" },
     { id: "b", kind: "key", site: "api.old.example", user: "old-api", value: "k-123", writes: false },
     { id: "c", kind: "oauth", site: "mail.example", user: "mail", oauth: {} },
     { id: "d", site: "older.example", user: "bob", pass: "p" },
     { id: "e", kind: "passkey", site: "keys.old.example", user: "ada", credential: { credentialId: "old-cred", rpId: "keys.old.example", privateKey: "old-private-key", signCount: 3, isResidentCredential: true } },
   ];
-  const data = Buffer.concat([cipher.update(JSON.stringify({ priv: null, logins }), "utf8"), cipher.final()]);
+  const data = Buffer.concat([cipher.update(JSON.stringify({ priv: null, logins: leanLogins }), "utf8"), cipher.final()]);
   fs.writeFileSync(path.join(lean, "vault.json"), JSON.stringify({ pub: null, box: { iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") } }));
   await called({ action: "guide" }, { workspace: "imports" });
   await called({ action: "guide" }, { workspace: "imports" });
   await called({ action: "open", url: "https://shop.example/" }, { workspace: "imports" });
-  const sites = tabState("imports").logins.map((l: { site: string }) => l.site).sort();
+  const sites = logins.list().map((l) => l.site).sort();
   assert.ok(sites.includes("old.example") && sites.includes("older.example"), "passwords, and a login saved before kinds");
   assert.equal(sites.filter((s: string) => s === "old.example").length, 1, "once");
-  assert.ok(tabState("imports").logins.some((l: { kind: string; site: string }) => l.kind === "passkey" && l.site === "keys.old.example"), "a passkey");
+  assert.ok(logins.list().some((l) => l.kind === "passkey" && l.site === "keys.old.example"), "a passkey");
   assert.equal(world.pages.at(-1)!.session!.credentials.get("old-cred")?.signCount, 3, "and it's in the tab's authenticator");
   const vault = fs.readFileSync(path.join(storage, "vault-lean", "vault.json"), "utf8");
   assert.ok(!vault.includes("old-pass") && !vault.includes("old-private-key"), "kept encrypted");
@@ -217,7 +239,7 @@ test("a login the site seems to refuse is said on the tab's page and asked again
   assert.ok(need.until >= first);
   site("https://strict.example/about", { title: "About", text: "About us" });
   await call({ action: "open", url: "https://strict.example/about" }); // on its site, no password asked: where an agreed login is kept
-  assert.ok(!tabState("strict").logins.some((l: { site: string }) => l.site === "strict.example"), "the refused login isn't saved");
+  assert.ok(!logins.list().some((l) => l.site === "strict.example"), "the refused login isn't saved");
 
   // A sign-in page that comes back as a new page, its fields new: said, but not asked again by itself.
   site("https://retry.example/", { title: "Sign in", fields: SIGN_IN, onclick: { e3: "https://retry.example/again" } });

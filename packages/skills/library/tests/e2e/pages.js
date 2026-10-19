@@ -1,5 +1,5 @@
 // Run inside a stock AnythingLLM container whose server is running (podman exec; see the skill's
-// notes): the Library page as AnythingLLM really serves it and really takes what it posts. The
+// notes): the Vault as AnythingLLM really serves it and really takes what it posts. The
 // pages' key is the one install was given (--page-key); the page and its state are fetched from the
 // server; a key is given through the real browser-extension upload (the collector writes the event)
 // and lands in the vault; then an OAuth sign-in against a stand-in provider, its client given on the
@@ -56,7 +56,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const html = await (await fetch(SERVER + pagePath)).text();
   const cfg = JSON.parse(html.match(/const cfg = (\{.*?\});/)[1]);
   assert.match(cfg.key, /^brx-/, "the browser-extension key install was given");
-  const state = await (await fetch(SERVER + pagePath.replace(/\.html$/, ".json"))).json();
+  const state = await (await fetch(SERVER + pagePath.replace(/(-vault)?\.html$/, ".json"))).json();
   assert.deepEqual(state.needs, [{ label: "ex", site: "api.example.com", kind: "key" }], "the server serves the page's state");
 
   const pub = crypto.createPublicKey({ key: Buffer.from(cfg.pub, "base64"), format: "der", type: "spki" });
@@ -71,7 +71,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     });
   const posted = await postEvent(cfg.key, { secret: cfg.secret, ev: "key-save", label: "ex", site: "api.example.com", sealed });
   assert.equal(posted.status, 200, "AnythingLLM took the event");
-  const stateOf = async () => (await fetch(SERVER + pagePath.replace(/\.html$/, ".json"))).json();
+  const stateOf = async () => (await fetch(SERVER + pagePath.replace(/(-vault)?\.html$/, ".json"))).json();
   let secrets = [];
   for (let i = 0; i < 40 && !secrets.length; i++) {
     await sleep(250);

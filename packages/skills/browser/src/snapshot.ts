@@ -78,10 +78,14 @@ function snapshot({ snapshot: maxElements, notTyped, dialog }: { snapshot: numbe
     return !!over && !over.contains(el);
   };
   // A password field (or one that says it takes a password) is marked, and stays one once read,
-  // even after "Show password" makes it a text field: act.ts's isPassword reads the mark.
+  // even after "Show password" makes it a text field: act.ts's isPassword reads the mark. Its text
+  // is drawn as dots for good, so the tab's picture, which anyone with its link sees, never shows it.
   const secret = (el: any) => el.getAttribute("data-bw-secret") === "1";
   const mark = (el: any) => {
-    if (el.tagName === "INPUT" && !secret(el) && (el.type === "password" || /^(current|new)-password$/.test(el.getAttribute("autocomplete") || ""))) el.setAttribute("data-bw-secret", "1");
+    if (el.tagName === "INPUT" && !secret(el) && (el.type === "password" || /^(current|new)-password$/.test(el.getAttribute("autocomplete") || ""))) {
+      el.setAttribute("data-bw-secret", "1");
+      el.style.setProperty("-webkit-text-security", "disc", "important");
+    }
   };
   const describe = (el: any) => {
     const tag = el.tagName.toLowerCase();

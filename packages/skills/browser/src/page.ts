@@ -1,26 +1,25 @@
 // A tab's card and its page. After each step the tab's picture is taken and written into
 // AnythingLLM's public folder (public/browser-lean/, served to any browser), with a small state file
-// beside it (its title and address, what the agent asks the user for, the saved logins without
-// their passwords) and the tab's page (static/pages/tab.html), all under a random name kept for the
-// chat's tab. The card the agent puts in its reply is a crop of the picture that opens the page.
+// beside it (its title and address, what the agent asks the user for, where the Vault page is) and
+// the tab's page (static/pages/tab.html), all under a random name kept for the chat's tab. The card
+// the agent puts in its reply is a crop of the picture that opens the page.
 //
 // The page is where the user gives what only they may know: a login or a code the agent asked for,
 // sealed on their device with the vault's public key, posted through AnythingLLM's browser-extension
 // upload (#shared/pages), checked against the tab's secret and typed into the tab here; never on
 // AnythingLLM's question card, which shows its answers in the chat. There they also take the tab
-// over to use it themselves (takeover.ts), save what it offers, and delete a saved login or passkey.
+// over to use it themselves (takeover.ts) and save what it offers. The saved logins are listed and
+// deleted on the Vault page (library-lean's), which the tab's page links to.
 // Events are applied as they come while a page was shown lately, and at the start of each call.
 
 import fs from "node:fs";
 import path from "node:path";
 import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
-import { hostOf, onSite } from "#shared/fence";
+import { hostOf } from "#shared/fence";
 import { inTurn, newSecret, pageHtml, publicDir, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
 import { isUnsent, submitted, typeIn } from "./act";
-import * as logins from "./logins";
-import * as passkey from "./passkey";
 import { type Snap, asksPassword, fieldOf, isPasswordLine, lineOf, readPage } from "./snapshot";
 import { type Entry, NEED_MS, type Need, OFFER_MS, type Tab, VIEWPORT, clip, holder, live, note, say, state, statics, workspaceDir } from "./state";
 import * as takeover from "./takeover";
@@ -104,7 +103,7 @@ function tabState(at: Tab, title: string, url: string, snap: Snap) {
     need: need ? { kind: need.kind, host: need.host, text: need.text, label: need.label ?? null, hasUser: !!need.userRef, confirm: !!need.confirmRef, until: need.until } : null,
     offer: takeover.shownOffer(at.entry, at.key),
     msg: msg && { text: msg.text, id: msg.id },
-    logins: logins.list().map((l) => ({ ...l, here: onSite(host, l.site) })),
+    vault: vault.pagePath(),
   };
 }
 
@@ -112,7 +111,7 @@ function tabState(at: Tab, title: string, url: string, snap: Snap) {
  *  just read, and its page (with the card, or when it has none); answers the page's token, or null
  *  where AnythingLLM's public folder can't be written (AnythingLLM Desktop) or no page key is set. */
 async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<string | null> {
-  await takeover.keepOffer(at, asksPassword(snap)); // before the state shows the logins
+  await takeover.keepOffer(at, asksPassword(snap)); // before the state shows the offer
   const names = namesOf(at.workspace, at.key)!;
   try {
     const shot = path.join(publicDir(), pub(names.token, ""));
@@ -168,14 +167,7 @@ export const redraw = (workspace: string, entry: Entry, key: string): Promise<vo
 const text = (v: unknown, n = MAX_TEXT) => clip(v, n);
 
 /** Applies one event the page of `at` posted; answers whether the tab changed. */
-async function apply(e: Record<string, unknown>, at: Tab | null): Promise<boolean> {
-  if (e.ev === "login-delete") {
-    const gone = await logins.remove(text(e.id, 100));
-    if (gone?.kind === "passkey") await passkey.forget(gone.credentialId); // out of every tab
-    if (at && gone) say(at.entry, at.key, gone.kind === "passkey" ? "Passkey deleted: remove it in the site's own settings too" : "Login deleted");
-    return !!at;
-  }
-  if (!at) return false; // the tab closed meanwhile
+async function apply(e: Record<string, unknown>, at: Tab): Promise<boolean> {
   if (takeover.EVENTS.has(String(e.ev))) return takeover.apply(e, at);
   const need = pendingNeed(at.entry, at.key);
   if (e.ev === "need-cancel") {
@@ -190,7 +182,7 @@ async function apply(e: Record<string, unknown>, at: Tab | null): Promise<boolea
   const user = login ? text(e.user).trim() : "";
   if (!secret || (need.userRef && !user)) return false;
   at.entry.needs.delete(at.key);
-  const left = await typeIn(at, need.host, { userRef: need.userRef, user, secretRef: need.secretRef, confirmRef: need.confirmRef, secret }, need.submitRef);
+  const left = await typeIn(at, need.host, { userRef: need.userRef, user, secretRef: need.secretRef, confirmRef: need.confirmRef, secret, keys: !login }, need.submitRef);
   if (login && need.userRef && e.save === true) at.entry.offers.set(at.key, { kind: "password", site: need.host, user, pass: secret, agreed: true, until: Date.now() + OFFER_MS });
   const sent = `the user entered ${login ? "the login" : "the code"} you asked for on the tab's page and it was typed into the page${submitted(need.submitRef, left)}`;
   const hidden = "it stays hidden from you. Read the page to see whether it worked";
@@ -251,13 +243,15 @@ async function drain(): Promise<void> {
     if (!names || !sameSecret(e.secret, names.secret)) continue; // not this tab's: an old link's, or a forgery
     const entry = state().browsers.get(workspace);
     const page = entry?.tabs.get(key);
-    const at = entry && page && !page.isClosed() ? ([...changed].find((t) => t.page === page) ?? { workspace, entry, page, key }) : null;
-    at?.entry.touch(); // the browser isn't closed under the user
+    if (!entry || !page || page.isClosed()) continue; // the tab closed meanwhile
+    const at = [...changed].find((t) => t.page === page) ?? { workspace, entry, page, key };
+    entry.touch(); // the browser isn't closed under the user
     try {
-      if ((await apply(e, at)) && at) changed.add(at);
+      if (await apply(e, at)) changed.add(at);
     } catch (err) {
       if (!(err instanceof Told)) throw err;
-      if (at) (note(at.entry, at.key, `what the user entered on the tab's page couldn't be used: ${err.message}`), changed.add(at));
+      note(at.entry, at.key, `what the user entered on the tab's page couldn't be used: ${err.message}`);
+      changed.add(at);
     }
   }
   for (const at of changed) at.entry.changed(); // a login typed, a takeover's step: its cookies may have changed

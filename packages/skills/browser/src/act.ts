@@ -109,21 +109,33 @@ async function notHumanCheck(target: ElementHandle, ref: string): Promise<void> 
  *  them by segments, in the user's locale's order. Each with the format its value takes. */
 const SET_WHOLE: Record<string, string> = { date: "YYYY-MM-DD", time: "HH:MM", month: "YYYY-MM", week: "YYYY-Www", "datetime-local": "YYYY-MM-DDTHH:MM" };
 
+/** In the page: sets `value` into the field `el` whole, through the input's own setter, as a picker
+ *  sets it, so the page's framework sees the change. With `host`, only when the field is in the
+ *  tab's own window (not a frame inside it) and that window is on `host`: "frame" or "moved" when
+ *  it isn't. A null `value` only checks. Answers where the field is, and what it holds after. */
+const setWhole = (el: any, value: string | null, host: string | null): { where: "" | "frame" | "moved"; now: string } => {
+  if (host !== null) {
+    const view = el.ownerDocument?.defaultView;
+    if (!view || view !== view.top) return { where: "frame", now: "" };
+    if (view.location.hostname !== host) return { where: "moved", now: "" };
+  }
+  if (value === null) return { where: "", now: "" };
+  el.focus?.();
+  const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+  if (set) set.call(el, value);
+  else el.value = value;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+  return { where: "", now: el.value };
+};
+
 /** Replaces what's in a field with `text`, typed as a person would, so the page sees it; never
  *  anything else (filling a link would click it). A date or time field is set whole (SET_WHOLE). */
 export async function fill(target: ElementHandle, text: string): Promise<void> {
   const { what, type: kind } = await fieldKind(target);
   if (what) throw new BrowserError(`a ${what} isn't a field one types into`);
   if (SET_WHOLE[kind]) {
-    const took = await target.evaluate((el, value: string) => {
-      // Through the input's own setter, as a picker sets it, so the page's framework sees the change.
-      const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
-      if (set) set.call(el, value);
-      else el.value = value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return el.value;
-    }, text);
+    const { now: took } = await target.evaluate(setWhole, text, null);
     if (!took) throw new BrowserError(`a ${kind} field takes its value as ${SET_WHOLE[kind]}; "${text.slice(0, 40)}" isn't that`);
     return;
   }
@@ -200,18 +212,32 @@ export function submitted(submitRef: string | undefined, { missing, disabled }: 
   return `, but ${submitRef} wasn't clicked: the page still needs ${needs} first. Fill it with act, or for a check only a person passes (a CAPTCHA), have the user take the tab over and send it`;
 }
 
+/** Puts `text` into the field `target` of a page on `host`, in one call into the page that first
+ *  checks the field is in the tab's own document (not a frame inside it) and that document is still
+ *  on `host`, then sets the value whole through the input's own setter, as a picker does. So a login
+ *  never reaches a frame from another site or a page the tab moved to meanwhile, and no keystroke
+ *  carries it, which a page moving the focus could send elsewhere. With `keys` it's typed as a person
+ *  would instead, after the same check: a code's one-digit boxes may need the keystrokes. */
+export async function fillOn(target: ElementHandle, text: string, host: string, keys = false): Promise<void> {
+  const { where, now } = await target.evaluate(setWhole, keys ? null : text, host);
+  if (where === "frame") throw new BrowserError(`that field is in a frame inside the page, not on ${host}'s page itself; nothing was typed`);
+  if (where === "moved") throw new BrowserError(`the page moved off ${host} meanwhile; nothing was typed`);
+  if (keys) return fill(target, text);
+  if (now !== text) throw new BrowserError(`${host}'s page didn't take the value set into the field. Have the user take the tab over and sign in there`);
+}
+
 /** Types a login or a code into the tab `at`: `secret` (the password or the code, hidden from every
  *  read after) into `secretRef`, and into `confirmRef` too (a new account's "Confirm password"), and a
- *  username first, if given; only while its page is still on `host`. Then clicks `submitRef`, unless
- *  the form still has fields keeping it from being sent (a CAPTCHA, say), or the page keeps it
- *  disabled: answers why it's unsent. */
-export async function typeIn(at: Tab, host: string, { userRef, user, secretRef, confirmRef, secret }: { userRef?: string; user?: string; secretRef: string; confirmRef?: string; secret: string }, submitRef?: string): Promise<Unsent> {
+ *  username first, if given; each only into a field on `host`'s own page (fillOn), a code with
+ *  keystrokes (`keys`). Then clicks `submitRef`, unless the form still has fields keeping it from
+ *  being sent (a CAPTCHA, say), or the page keeps it disabled: answers why it's unsent. */
+export async function typeIn(at: Tab, host: string, { userRef, user, secretRef, confirmRef, secret, keys = false }: { userRef?: string; user?: string; secretRef: string; confirmRef?: string; secret: string; keys?: boolean }, submitRef?: string): Promise<Unsent> {
   const now = hostOf(at.page.url());
   if (now !== host) throw new BrowserError(`the page moved to ${now || "another page"} meanwhile; nothing was typed`);
   const into = async (ref: string, text: string) => {
     const target = await element(at.page, ref);
     await reachable(target, ref);
-    await fill(target, text);
+    await fillOn(target, text, host, keys);
   };
   if (userRef && user) await into(userRef, user);
   at.entry.secrets.add(secret);

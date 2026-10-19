@@ -13,7 +13,7 @@ const takeover = fs.readFileSync(path.join(skillDir, "src", "takeover.ts"), "utf
 
 test("every event the page posts is one the skill applies", () => {
   const posted = [...pageSource().matchAll(/post\("([a-z-]+)"/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(posted)].sort(), ["give", "login-delete", "nav", "need-answer", "need-cancel", "offer", "scroll", "size", "take", "tap", "type"]);
+  assert.deepEqual([...new Set(posted)].sort(), ["give", "nav", "need-answer", "need-cancel", "offer", "scroll", "size", "take", "tap", "type"]);
   for (const ev of posted) assert.ok(handled.includes(`"${ev}"`) || takeover.includes(`"${ev}"`), ev);
 });
 

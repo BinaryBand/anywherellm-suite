@@ -1,7 +1,9 @@
 // The secrets the skills use and the model never reads, for the whole AnythingLLM instance: the
 // browser's passwords and passkeys, the library's API keys and OAuth sign-ins. Each is an entry
 // { id, kind, site, user, ... } whose other fields are its kind's own; the skills give them meaning,
-// this file only keeps them. They're kept in one file, <storage>/vault-lean/vault.json, encrypted
+// this file only keeps them. library-lean manages them all: its Vault page lists them by name and
+// deletes them. browser-lean uses the logins (#shared/logins) and saves the ones the user keeps as
+// they sign in on a tab's page. They're kept in one file, <storage>/vault-lean/vault.json, encrypted
 // with AES-256-GCM under the key in VAULT_KEY_FILE, a file outside the storage (32 random bytes in
 // base64), so a copy of the storage, or a backup of it, can't open the vault. Without it, the key
 // is derived from AnythingLLM's own secret (SIG_KEY and SIG_SALT, in its .env in the storage), or,
@@ -53,6 +55,21 @@ const generateKeyPair = promisify(crypto.generateKeyPair);
 /** The vault's folder in AnythingLLM's storage. */
 export const vaultDir = (): string => path.join(storageDir(), "vault-lean");
 const fileOf = (dir: string) => path.join(dir, "vault.json");
+const pageOf = (dir: string) => path.join(dir, "page.json");
+
+/** The Vault page's path on AnythingLLM's host (`/library-lean/<token>-vault.html`), where the user
+ *  sees and deletes what the vault holds: library-lean keeps it as it shows the page, and
+ *  browser-lean's tab pages link to it. Null until library-lean has shown the page. */
+export function pagePath(dir: string = vaultDir()): string | null {
+  const kept = readJson<{ path?: unknown } | null>(pageOf(dir), () => null);
+  return typeof kept?.path === "string" && /^\/[\w-]+\/[\w-]+\.html$/.test(kept.path) ? kept.path : null;
+}
+
+/** Keeps the Vault page's path. */
+export function setPagePath(value: string, dir: string = vaultDir()): void {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeAtomic(pageOf(dir), JSON.stringify({ path: value }) + "\n", 0o600);
+}
 
 /** A key derived from AnythingLLM's own secret for `info`; null where SIG_KEY and SIG_SALT aren't set. */
 function derivedKey(info: string): Buffer | null {

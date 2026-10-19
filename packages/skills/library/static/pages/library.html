@@ -33,21 +33,25 @@
 </style>
 </head>
 <body>
+<!-- One template, two pages: the Vault (cfg.view "vault": keys, sign-ins, the browser's logins)
+     and the Library page (cfg.view "library": toolkits, runs), under one token and one secret. -->
 <header>
-  <h1>Library</h1>
+  <h1 id="heading">Library</h1>
   <nav role="tablist">
-    <button role="tab" data-tab="keys" aria-selected="true">Keys</button>
-    <button role="tab" data-tab="signins">Sign-ins</button>
-    <button role="tab" data-tab="toolkits">Toolkits</button>
-    <button role="tab" data-tab="runs">Runs</button>
+    <button role="tab" data-tab="keys" data-view="vault">Keys</button>
+    <button role="tab" data-tab="signins" data-view="vault">Sign-ins</button>
+    <button role="tab" data-tab="logins" data-view="vault">Logins</button>
+    <button role="tab" data-tab="toolkits" data-view="library">Toolkits</button>
+    <button role="tab" data-tab="runs" data-view="library">Runs</button>
   </nav>
 </header>
 <main>
-  <section id="keys"></section>
+  <section id="keys" hidden></section>
   <section id="signins" hidden></section>
+  <section id="logins" hidden></section>
   <section id="toolkits" hidden></section>
   <section id="runs" hidden></section>
-  <p class="cap">What you type for a key or a client is sealed on this device; the agent never sees it. Anyone with this page's link can see what it shows and act on it.
+  <p class="cap"><span id="sealed">What you type for a key or a client is sealed on this device; the agent never sees it. </span>Anyone with this page's link can see what it shows and act on it.
     <button class="act quiet" id="rotate">New link</button></p>
 </main>
 <div id="toast" hidden></div>
@@ -176,10 +180,15 @@
       },
     );
 
-  const remove = (text, ev, fields) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(`${text}?`) && post(ev, fields) });
+  // A delete button: asks `asked` first, and is heard as `label` when its text alone says too little.
+  const remove = (text, ev, fields, asked = `${text}?`, label = null) => {
+    const b = el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
+    if (label) b.setAttribute("aria-label", label);
+    return b;
+  };
 
   function draw(s) {
-    const keys = $("keys"), signins = $("signins"), toolkits = $("toolkits"), runs = $("runs");
+    const keys = $("keys"), signins = $("signins"), logins = $("logins"), toolkits = $("toolkits"), runs = $("runs");
     keys.replaceChildren(...s.needs.filter((n) => n.kind === "key").map((n) => keyForm(n)));
     for (const k of s.secrets.filter((x) => x.kind === "key")) keys.append(el("div", { className: "card row" }, el("span", {}, el("strong", { textContent: k.label }), " ", el("span", { className: "cap", textContent: k.site })), remove("Delete", "key-delete", { label: k.label })));
     keys.append(keyForm(null));
@@ -194,6 +203,16 @@
         ...(o.shared ? [] : [clientForm(o, s.redirect)]), remove("Delete", "key-delete", { label: o.label })));
     }
     if (s.redirect && !s.redirect.startsWith("https://") && oauth.length) signins.append(pasteForm());
+
+    // The browser's logins and passkeys: saved as the user signs in on a tab's page, deleted here.
+    const saved = s.logins || [];
+    logins.replaceChildren(el("p", { className: "cap", textContent: saved.length ? "Saved as you sign in on the agent's browser, and typed in there on their own site only." : "No logins yet. The browser offers to save one when you sign in on its tab's page." }));
+    for (const l of saved) {
+      const passkey = l.kind === "passkey";
+      const asked = passkey ? `Delete the passkey for ${l.site}? The agent can't sign in with it after. Remove it in the site's own settings too.` : `Delete the login for ${l.site}?`;
+      const del = remove("Delete", "login-delete", { id: l.id }, asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`);
+      logins.append(el("div", { className: "card row" }, el("span", {}, el("strong", { textContent: l.site }), " ", el("span", { className: "cap", textContent: [l.user, passkey ? "passkey" : "password"].filter(Boolean).join(" · ") })), del));
+    }
 
     toolkits.replaceChildren(...(s.toolkits.length ? [] : [el("p", { className: "cap", textContent: "No toolkits yet." })]));
     for (const t of s.toolkits) {
@@ -217,7 +236,7 @@
   async function load() {
     try {
       const res = await fetch(cfg.token + ".json", { cache: "no-cache" });
-      if (res.status === 404) return toast("This link was replaced: ask the agent for the Library page again");
+      if (res.status === 404) return toast("This link was replaced: ask the agent for the link again");
       const text = await res.text();
       if (text !== last) (last = text), draw(JSON.parse(text));
     } catch (e) {
@@ -225,13 +244,19 @@
     }
   }
 
-  for (const b of document.querySelectorAll("nav button")) {
-    b.onclick = () => {
-      for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
-      for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
-    };
-  }
-  $("rotate").onclick = () => confirm("Make a new link? This one stops working.") && post("rotate");
+  // The page's tabs, its view's alone; the first shows.
+  const vault = cfg.view === "vault";
+  document.title = $("heading").textContent = vault ? "Vault" : "Library";
+  $("sealed").hidden = !vault;
+  const tabs = [...document.querySelectorAll("nav button")].filter((b) => (b.dataset.view === "vault") === vault);
+  const select = (b) => {
+    for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
+    for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
+  };
+  for (const b of document.querySelectorAll("nav button")) b.hidden = (b.dataset.view === "vault") !== vault;
+  for (const b of tabs) b.onclick = () => select(b);
+  select(tabs[0]);
+  $("rotate").onclick = () => confirm("Make new links? This one, and the Vault's or the Library page's, stop working.") && post("rotate");
   load();
   setInterval(load, 5000);
 })();

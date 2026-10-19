@@ -9,11 +9,11 @@ Tasks on the web, as one AnythingLLM agent skill: research (search the web, look
 | `look` | reads a page in a page of its own, without moving the tab |
 | `open` | an address in this chat's tab |
 | `read` | the tab as text, with refs (`find`, `from` for long pages) |
-| `act` | click, fill, type, press, select… by ref; or several `steps` |
+| `act` | click, fill, type, press, select... by ref; or several `steps` |
 | `login` | types the saved login; with none, the user enters it on the tab's page; `confirm_ref` asks them to choose a new account's password; `what` asks them for a code the same way |
 | `call` | one request from the tab, with its signed-in session (`auth` "session") |
 
-Each answer about the tab ends with its card, a picture of the tab that opens its page. There the user sees the tab, enters what the agent asks for (sealed on their device; the model never sees it) and deletes a saved login. Every request Chrome makes goes through the fence: the public web only, and the hosts in `FENCE_ALLOW`.
+Each answer about the tab ends with its card, a picture of the tab that opens its page. There the user sees the tab, enters what the agent asks for (sealed on their device; the model never sees it) and saves the login they typed. The saved logins and passkeys are listed and deleted on the library skill's Vault page, which the tab's page links to once the library has shown it. A saved password is put into the page only in one call that first checks the field is in the page's own document on the login's site, never in a frame and never as keystrokes; a code is typed after the same check. Every request Chrome makes goes through the fence: the public web only, and the hosts in `FENCE_ALLOW`.
 
 ## Where it keeps things
 

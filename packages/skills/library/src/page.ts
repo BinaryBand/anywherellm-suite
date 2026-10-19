@@ -1,15 +1,19 @@
-// The Library page: the user's own view of the library, on any device, served by AnythingLLM from
-// its public folder (#shared/pages). It shows the secrets by name (never their values) and lets the
-// user add a key or an OAuth client, sealed on their device with the vault's public key; it shows
-// the toolkits, their functions' sources and the recent runs, and lets the user delete a function or
-// a toolkit. It's where the user gives a key or an OAuth client, from any chat (AnywhereLLM Lite
-// too): the agent asks, the need shows at the top of the page, and the user enters it there. What the user does is
-// applied at once while the page is open, and at the start of the agent's next call; library then
-// shows it (a key saved, a sign-in signed in).
+// The library's two pages, the user's own view of it on any device, served by AnythingLLM from its
+// public folder (#shared/pages) from one template (static/pages/library.html) under one token:
+// - The Vault (`<token>-vault.html`) shows every secret in the instance's vault by name, never its
+//   value: the API keys and OAuth sign-ins, and the browser's logins and passkeys (#shared/logins).
+//   The user adds a key or an OAuth client there, sealed on their device with the vault's public
+//   key, and deletes any of them. It's where the user gives a key or an OAuth client, from any chat
+//   (AnywhereLLM Lite too): the agent asks, the need shows at the top of it, and the user enters it
+//   there. Its path is kept beside the vault (#shared/vault pagePath) for the browser's tab pages.
+// - The Library page (`<token>.html`) shows the toolkits, their functions' sources and the recent
+//   runs, and lets the user delete a function or a toolkit.
+// What the user does is applied at once while a page is open, and at the start of the agent's next
+// call; library then shows it (a key saved, a sign-in signed in).
 //
-// The page's address holds a random token, and each event it posts carries a secret: anyone with
-// the link can read what it shows and act on it, so it's shared as a signed-in session would be,
-// and rotated (a new token and secret) from the page. An OAuth provider sends the user back to
+// The pages' addresses hold a random token, and each event they post carries a secret: anyone with
+// a link can read what it shows and act on it, so it's shared as a signed-in session would be,
+// and rotated (a new token and secret, for both) from either page. An OAuth provider sends the user back to
 // oauth.html, a fixed address; its event is taken only for a sign-in waiting with that state.
 //
 // The page also tells the skill AnythingLLM's address when ANYTHINGLLM_URL is unset: the https
@@ -20,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
+import * as logins from "#shared/logins";
 import { listPublic, newSecret, pageHtml, pageKey, removePublic, sameSecret, takeEvents, watch, inTurn, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
@@ -55,6 +60,11 @@ const pageFile = () => path.join(store.libraryDir(), "page.json");
 const fresh = (): PageFile => ({ token: newSecret(), secret: newSecret(), needs: [], watchUntil: 0 });
 /** A file of the skill's in AnythingLLM's public folder. */
 const pub = (name: string) => `library-lean/${name}`;
+/** The two pages' files, by `view`, the template's: the Library page and the Vault. */
+const PAGES = { library: "", vault: "-vault" } as const;
+type View = keyof typeof PAGES;
+const VIEWS = Object.keys(PAGES) as View[];
+const pageName = (token: string, view: View) => `${token}${PAGES[view]}.html`;
 
 /** page.json as it is now, to read; changes go through `change`, under its lock. */
 function read(): PageFile | null {
@@ -101,6 +111,7 @@ function state(p: PageFile, base: string | null) {
     redirect: redirectFor(resolved(base, p)),
     needs: p.needs.filter((n) => n.until > now).map(({ label, site, kind }) => ({ label, site, kind })),
     secrets: secrets.secrets(),
+    logins: logins.list(),
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
       return { service, title: kit.title, base_urls: kit.base_urls, secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
@@ -111,16 +122,24 @@ function state(p: PageFile, base: string | null) {
 
 const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.json`, JSON.stringify(state(p, base)));
 
-/** Writes the page and its state into AnythingLLM's public folder, watches for its events for a
- *  while, and answers its address (absolute when AnythingLLM's address, `base`, is known). */
-export async function show(base: string | null): Promise<string> {
+/** Writes both pages and their state into AnythingLLM's public folder, keeps the Vault's path beside
+ *  the vault, watches for their events for a while, and answers each page's address (absolute when
+ *  AnythingLLM's address, `base`, is known). */
+export async function links(base: string | null): Promise<Record<View, string>> {
   const kept = read();
   const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
-  putPublic(`${p.token}.html`, await pageHtml(template("library"), { token: p.token, secret: p.secret, title: TITLE }));
+  const pages = await Promise.all(VIEWS.map((view) => pageHtml(template("library"), { token: p.token, secret: p.secret, title: TITLE, view })));
+  VIEWS.forEach((view, i) => putPublic(pageName(p.token, view), pages[i]));
+  const at = `/${pub(pageName(p.token, "vault"))}`;
+  if (vault.pagePath() !== at) vault.setPagePath(at);
   writeState(p, base);
   watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
-  return `${resolved(base, p) ?? ""}/${pub(`${p.token}.html`)}`;
+  const origin = resolved(base, p) ?? "";
+  return Object.fromEntries(VIEWS.map((view) => [view, `${origin}/${pub(pageName(p.token, view))}`])) as Record<View, string>;
 }
+
+/** links, for the page `view` alone. */
+export const show = async (base: string | null, view: View = "library"): Promise<string> => (await links(base))[view];
 
 /** Writes the page's state again, when there's a page, as a run ends. */
 export function refresh(base: string | null): void {
@@ -176,6 +195,10 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
     case "key-delete":
       await secrets.removeSecret(label);
       return null;
+    case "login-delete":
+      // A passkey leaves the browser's open tabs at their next step (browser-lean's reconcile).
+      await logins.remove(text(e.id, 100));
+      return null;
     case "fn-delete": {
       const { service, name } = store.qualified(e.fn);
       store.removeFn(service, name);
@@ -217,7 +240,7 @@ async function drain(base: string | null): Promise<void> {
     return p;
   });
   if (rotate) {
-    removePublic(pub(`${page.token}.html`));
+    for (const view of VIEWS) removePublic(pub(pageName(page.token, view)));
     removePublic(pub(`${page.token}.json`));
     await show(base);
   } else writeState(now, base);

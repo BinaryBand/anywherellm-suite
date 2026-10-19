@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as logins from "#shared/logins";
 import { call as called, post, seal, site, tabConfig, tabState, world } from "./harness.mts";
 
 const HERE = "https://take.example/";
@@ -17,8 +18,8 @@ const KEYS = "https://keys.example/";
 site(KEYS, { title: "Keys", text: "Sign in with a passkey", fields: { e1: { type: "email", name: "Email" }, e2: { type: "password", name: "Password" }, e3: { kind: "button", name: "Sign in with a passkey" } } });
 
 const lastPage = () => world.pages[world.pages.length - 1];
-/** The tab's saved passkeys, as its page lists them (the vault is the instance's: other tests' logins are there too). */
-const passkeys = (thread = "1") => tabState("pk", thread).logins.filter((l: { kind: string }) => l.kind === "passkey");
+/** The saved passkeys, as the Vault lists them (the vault is the instance's: other tests' logins are there too). */
+const passkeys = () => logins.list().filter((l) => l.kind === "passkey");
 const browserState = () => (globalThis as unknown as Record<symbol, { browsers: Map<string, { holds: Map<string, { last: number }> }> }>)[Symbol.for("anythingllm-suite.browser-lean.state")];
 
 test("the user takes the tab over, types a login sealed, is offered to save it, and hands it back; the agent waits meanwhile", async () => {
@@ -50,7 +51,7 @@ test("the user takes the tab over, types a login sealed, is offered to save it, 
   await call({ action: "guide" });
   assert.equal(tabState("take").msg.text, "Saved for take.example");
   assert.equal(tabState("take").offer, null);
-  assert.ok(tabState("take").logins.some((l: { site: string; user: string }) => l.site === "take.example" && l.user === "ada"));
+  assert.ok(logins.list().some((l) => l.site === "take.example" && l.user === "ada"));
 
   post({ ev: "give" }, opts);
   const back = await call({ action: "read" });
@@ -122,11 +123,12 @@ test("a passkey the site makes is taken out unless the user holds the tab; saved
   assert.match(await call({ action: "read" }, 2), /the page signed in with the passkey saved for keys\.example/);
   assert.match(await call({ action: "login", user_ref: "e1", pass_ref: "e2" }, 2), /^Browser: no password is saved for keys\.example, but a passkey is: click the site's passkey sign-in with act/);
 
-  const [saved] = passkeys("2");
-  post({ ev: "login-delete", id: saved.id }, { workspace: "pk", tab: "2" });
-  await call({ action: "guide" }, 2);
-  assert.match(tabState("pk", "2").msg.text, /^Passkey deleted: remove it in the site's own settings too/);
-  assert.deepEqual(passkeys("2"), []);
+  // Deleted on the Vault (library-lean's page), it leaves every tab at the next step.
+  const [kept] = passkeys();
+  assert.deepEqual(await logins.remove(kept.id), { kind: "passkey", credentialId: "by-user" });
+  assert.deepEqual(passkeys(), []);
+  assert.ok(world.authenticators.some((a) => a.credentials.has("by-user")), "still in the tabs until a step");
+  await call({ action: "act", do: "scroll_down" }, 2);
   assert.equal(world.authenticators.some((a) => a.credentials.has("by-user")), false, "taken out of every tab");
 
   post({ ev: "take" }, opts);

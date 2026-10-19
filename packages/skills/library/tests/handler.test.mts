@@ -50,9 +50,9 @@ async function demo(): Promise<void> {
 
 test.beforeEach(reset);
 
-test("the user's key is given on the Library page, never on the card, kept unseen, and goes with a function's requests", async () => {
+test("the user's key is given on the Vault, never on the card, kept unseen, and goes with a function's requests", async () => {
   const said = await giveKey("demo", "https://127.0.0.1/", KEY);
-  assert.match(said, /^The user gives the key on the Library page: \/library-lean\/[\w-]+\.html\n/);
+  assert.match(said, /^The user gives the key on the Vault: \/library-lean\/[\w-]+-vault\.html\n/);
   assert.ok(!said.includes(KEY));
   assert.equal(cardsShown.length, 0, "a question card would show the key in the chat once answered");
   assert.ok(!fs.readFileSync(path.join(storage, "vault-lean", "vault.json"), "utf8").includes(KEY), "the vault holds it encrypted");
@@ -178,7 +178,7 @@ test("a toolkit saved again keeps what isn't given; a function or a toolkit is r
   assert.match(shown, /Notes:\nNew notes\./);
   assert.match(await call({ action: "save", service: "demo", remove: "list_issues" }), /^Removed demo\.list_issues\.$/);
   assert.match(await call({ action: "save", service: "demo", remove: "demo" }), /^Removed the toolkit demo and its functions\. Its keys stay saved\.$/);
-  assert.match(await call({ action: "library" }), /^The library is empty: no toolkit yet\. guide says how to build one \(topic toolkits\)\.\n\nThe Library page/);
+  assert.match(await call({ action: "library" }), /^The library is empty: no toolkit yet\. guide says how to build one \(topic toolkits\)\.\n\nThe Vault/);
 });
 
 // The guide, and the static files it's made of.

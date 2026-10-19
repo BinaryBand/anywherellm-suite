@@ -5,6 +5,7 @@
 import path from "node:path";
 import { perProcess, storageDir } from "#shared/anythingllm";
 import type { makeFence } from "#shared/fence";
+import type { Credential } from "#shared/logins";
 import { staticFiles, type StaticFiles } from "#shared/static";
 import { BrowserError } from "./errors";
 import type { Browser, CDPSession, Page, Viewport } from "./host";
@@ -37,16 +38,6 @@ export function screenFor(w: unknown, h: unknown, dpr: unknown): Viewport {
 export interface Hold {
   last: number;
   typed: { host: string; user: string; pass: string } | null;
-}
-
-/** A passkey as Chrome's virtual authenticator gives and takes it. */
-export interface Credential {
-  credentialId: string;
-  rpId: string;
-  privateKey: string;
-  userHandle?: string;
-  signCount: number;
-  isResidentCredential: boolean;
 }
 
 /** A login to keep: one the user agreed to save when they entered it for the agent (saved once the

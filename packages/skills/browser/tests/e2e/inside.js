@@ -183,7 +183,7 @@ const server = http.createServer((req, res) => {
   assert.equal(offered.title, "Home", "Enter sent the form");
   assert.deepEqual(offered.offer, { kind: "password", site: "127.0.0.1", user: "bea" });
   await tab8.post({ ev: "offer", save: true });
-  assert.ok(tab8.state().logins.some((l) => l.user === "bea"), "saved");
+  assert.match(tab8.state().msg?.text || "", /^Saved for 127\.0\.0\.1/, "saved");
   const handedBack = await tab8.post({ ev: "give" });
   assert.match(handedBack, /handed it back to you/);
   assert.match(handedBack, /Welcome, •••\./, "what the user typed is hidden from the agent");
@@ -191,7 +191,7 @@ const server = http.createServer((req, res) => {
 
   // ---- Passkeys: one the page makes while the agent has the tab is taken out again; one made
   // while the user holds it is offered and saved, and signs in from another tab, the site checking
-  // its signature and count; deleted, it signs in no more.
+  // its signature and count.
   const said = (reply) => reply.match(/Not signed in|Passkey added|Signed in with a passkey, count \d+|Passkey refused: \w+|Refused/)?.[0];
   const nine = await call({ action: "open", url: PASSKEYS }, 9);
   const add = nine.match(/\[(e\d+)\] button "Add a passkey"/)[1];
@@ -202,7 +202,6 @@ const server = http.createServer((req, res) => {
   for (let i = 0; !tab9.state().offer && i < 20; i++) await new Promise((r) => setTimeout(r, 100));
   assert.deepEqual(tab9.state().offer, { kind: "passkey", site: "localhost", user: "" });
   await tab9.post({ ev: "offer", save: true }, { ev: "give" });
-  assert.ok(tab9.state().logins.some((l) => l.kind === "passkey" && l.site === "localhost"));
 
   const ten = await call({ action: "open", url: PASSKEYS }, 10);
   const signIn = ten.match(/\[(e\d+)\] button "Sign in with a passkey"/)[1];
@@ -211,9 +210,8 @@ const server = http.createServer((req, res) => {
   assert.match(first, /Signed in with a passkey, count \d+/, first);
   assert.match(first, /the page signed in with the passkey saved for localhost/);
   assert.match(await read10(), /Signed in with a passkey, count \d+/, "the count went forward, so the site takes it again");
-  const tab10 = tabPage(10);
-  await tab10.post({ ev: "login-delete", id: tab10.state().logins.find((l) => l.kind === "passkey").id });
-  assert.match(await read10(), /Passkey refused: NotAllowedError/, "deleted, it signs in no more");
+  // Deleting it is the library's Vault page's, outside this skill: the browser's tests delete it
+  // through #shared/logins and check every tab's authenticator lets it go at the next step.
   assert.deepEqual(passkeys.log, ["registered", "registered", "signed in", "signed in"]);
 
   // ---- Fields in a shadow root, "Show password", a form that needs more than the login, and a new

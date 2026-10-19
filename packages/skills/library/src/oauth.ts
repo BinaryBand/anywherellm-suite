@@ -22,7 +22,7 @@ import { LibraryError } from "./errors";
 
 /** Where the provider sends the user back: the Library's oauth page on AnythingLLM's address, or,
  *  when that isn't https (a provider refuses plain http but on this machine), an address on this
- *  machine where nothing answers, whose address the user pastes into the Library page. */
+ *  machine where nothing answers, whose address the user pastes into the Vault. */
 export const OAUTH_PAGE = "library-lean/oauth.html";
 export const LOOPBACK = "http://127.0.0.1/library-lean/oauth";
 /** How long a sign-in waits for the provider to send the user back. */

@@ -42,8 +42,8 @@ Read `<token>.json` with a query that changes (`?t=<now>`) or no cache: it's rew
 | `fields` | array | the fields in view, only while the user holds the tab |
 | `need` | object or null | what the agent asked the user to enter (below) |
 | `offer` | object or null | a login or passkey the page offers to save: `{kind, site, user}` |
-| `msg` | `{text, id}` or null | a line for the page to show once ("Login deleted"; a login the site seems to have refused). It stays in the state for up to a minute, so show each `id` once |
-| `logins` | array | the saved logins and passkeys: `{id, site, user, kind, here}`, no secret |
+| `msg` | `{text, id}` or null | a line for the page to show once ("Saved for example.com"; a login the site seems to have refused). It stays in the state for up to a minute, so show each `id` once |
+| `vault` | string or null | the path of the Vault page on this host (`/library-lean/<token>-vault.html`), where the saved logins and passkeys are listed and deleted; null until the library skill has shown it |
 
 A closed tab's state is `{"closed": true}`, and its other files are gone.
 
@@ -84,7 +84,7 @@ Every event carries `{"browser_lean_event": 1, "workspace": cfg.workspace, "tab"
 
 **Sealing a password:** RSA-OAEP with SHA-256 under `cfg.pub`, base64. A value longer than 190 bytes is sealed as `h1.<key>.<iv>.<value>`: the value with a new AES-256-GCM key (its 16-byte tag last), and that key with RSA-OAEP, each part base64. The skill opens it with the vault's private key; AnythingLLM's documents hold only the sealed text. A code is sent as it is.
 
-The page's other events (`take`, `give`, `tap`, `scroll`, `type`, `nav`, `size`, `offer`, `login-delete`) are its takeover and its logins list, not part of this contract yet.
+The page's other events (`take`, `give`, `tap`, `scroll`, `type`, `nav`, `size`, `offer`) are its takeover and its offer to save a login, not part of this contract yet.
 
 ## When an answer lands
 

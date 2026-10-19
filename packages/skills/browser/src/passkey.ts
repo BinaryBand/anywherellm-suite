@@ -9,10 +9,12 @@
 // After a sign-in the passkey's signature count is kept, and given to the other tabs, so it never
 // goes back. Ported from the lean browser's passkey.js.
 
+import { perProcess } from "#shared/anythingllm";
 import { onSite } from "#shared/fence";
+import * as logins from "#shared/logins";
+import type { Credential } from "#shared/logins";
 import type { Page } from "./host";
-import * as logins from "./logins";
-import { type Authenticator, type Credential, type Entry, OFFER_MS, firstLine, holder, note, state } from "./state";
+import { type Authenticator, type Entry, OFFER_MS, firstLine, holder, note, state } from "./state";
 
 const OPTIONS = { protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true };
 const send = (a: Authenticator, method: string, params: Record<string, unknown>) => a.cdp.send(method, { authenticatorId: a.id, ...params }).catch(() => {});
@@ -80,3 +82,29 @@ export async function spread(credential: Credential, except?: Page): Promise<voi
 
 /** Takes a passkey out of every tab's authenticator. */
 export const forget = async (credentialId: string): Promise<void> => void (await Promise.all(everyAuthenticator().map((a) => send(a, "WebAuthn.removeCredential", { credentialId }))));
+
+/** Takes out of every tab's authenticator the passkeys no longer in the vault, deleted on the Vault
+ *  page (library-lean's), but not one a page offers the user to save. Run before each step that
+ *  changes a tab and when the user takes one over, it asks the tabs only when the passkeys to keep
+ *  changed since it last did (a tab opened since got the vault's own); a vault that can't be opened
+ *  changes nothing. */
+export async function reconcile(): Promise<void> {
+  let kept: Set<string>;
+  try {
+    kept = new Set(logins.passkeys().map((c) => c.credentialId));
+  } catch {
+    return;
+  }
+  for (const entry of state().browsers.values()) for (const offer of entry.offers.values()) if (offer.kind === "passkey") kept.add(offer.credential.credentialId);
+  const last = perProcess("browser-lean.reconciled", () => ({ kept: null as string | null }));
+  const now = [...kept].sort().join("\n");
+  if (last.kept === now) return;
+  last.kept = now;
+  await Promise.all(
+    everyAuthenticator().map(async (a) => {
+      const held = (await send(a, "WebAuthn.getCredentials", {})) as { credentials?: Partial<Credential>[] } | undefined;
+      const gone = (held?.credentials ?? []).map((c) => c.credentialId).filter((id): id is string => !!id && !kept.has(id));
+      await Promise.all(gone.map((credentialId) => send(a, "WebAuthn.removeCredential", { credentialId })));
+    }),
+  );
+}

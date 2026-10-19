@@ -4,7 +4,7 @@
 // those refs; call sends a request from the tab, with its signed-in session, for a site's own JSON.
 // Each answer about the tab ends with its card, which opens the tab's page (page.ts), where the user
 // can also take the tab over (takeover.ts): the agent then reads but doesn't act until it's handed
-// back. A login comes from the saved logins (logins.ts, in the instance's vault) or from the user on
+// back. A login comes from the saved logins (#shared/logins, in the instance's vault) or from the user on
 // the tab's page, straight to this skill, which types it into the page: the model never sees it. A
 // saved passkey signs in by itself (passkey.ts). An API with a key is the library skill's.
 //
@@ -14,13 +14,15 @@ import { BINARY, answerText, bodyOf, headersOf, keepOf, methodOf, withParams } f
 import { baseUrlOf, workspaceOf } from "#shared/anythingllm";
 import { Told } from "#shared/errors";
 import { FENCED, checkUrl, hostOf, onSite } from "#shared/fence";
+import * as logins from "#shared/logins";
 import { entryOf } from "#shared/static";
 import { act, checkAct, element, isPassword, notTyped, reachable, settle, settled, submitted, typeIn } from "./act";
 import { existing, load, tab } from "./browser";
 import { BrowserError } from "./errors";
 import type { HandlerContext } from "./host";
-import * as logins from "./logins";
+import { importLean } from "./logins";
 import { card, caughtUp } from "./page";
+import { reconcile } from "./passkey";
 import * as research from "./research";
 import { type Scope, scopeOf } from "./scope";
 import { type Read, type Snap, asksCode, asksPassword, fieldAt, readPage } from "./snapshot";
@@ -208,6 +210,7 @@ async function onTab(scope: Scope, run: () => Promise<string> | string): Promise
   if (entry) free(entry, key);
   entry?.busy.add(key);
   try {
+    await reconcile(); // a passkey deleted on the Vault page signs in nowhere from here on
     return await run();
   } finally {
     entry?.busy.delete(key);
@@ -251,7 +254,7 @@ export const runtime = {
       if (workspaceOf(this)) {
         // What the user did on a tab's page since the last call, and the lean browser's logins, once.
         await caughtUp().catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
-        await logins.importLean(this.logger).catch((e) => this.logger?.(`browser-lean couldn't import the lean logins: ${firstLine(e)}`));
+        await importLean(this.logger).catch((e) => this.logger?.(`browser-lean couldn't import the lean logins: ${firstLine(e)}`));
       }
       const scope = scopeOf(this);
       return await (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args));

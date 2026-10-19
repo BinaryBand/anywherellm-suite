@@ -16,7 +16,7 @@
         "type": "text",
         "default": "",
         "placeholder": "https://anythingllm.example.com",
-        "hint": "Optional: the address you open AnythingLLM at. With it, the Library page's link works anywhere; without it, the skill learns the https address you open the Library page at. OAuth sign-ins come straight back only over https."
+        "hint": "Optional: the address you open AnythingLLM at. With it, the Vault's and the Library page's links work anywhere; without it, the skill learns the https address you open the Vault at. OAuth sign-ins come straight back only over https."
       }
     }
   },

@@ -1,7 +1,7 @@
 // OAuth sign-ins, against a stand-in provider on 127.0.0.1: the definition, the user's client on the
-// Library page, the sign-in link (PKCE), the code coming back through oauth.html's event, the tokens sent by
+// Vault, the sign-in link (PKCE), the code coming back through oauth.html's event, the tokens sent by
 // a function and renewed once as they run out, and the paste fallback; a device-flow sign-in (a code the
-// user enters, no redirect), the presets, and AnythingLLM's address learned from the Library page.
+// user enters, no redirect), the presets, and AnythingLLM's address learned from the Vault.
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -160,9 +160,9 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   assert.match(JSON.stringify(pageState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
 });
 
-test("with ANYTHINGLLM_URL unset, the address the Library page was opened at is learned with the client", async () => {
+test("with ANYTHINGLLM_URL unset, the address the Vault was opened at is learned with the client", async () => {
   const said = await call({ action: "secret", kind: "oauth", label: "demo", definition });
-  assert.match(said, /with the redirect address the Library page shows registered/);
+  assert.match(said, /with the redirect address the Vault shows registered/);
   assert.ok(!said.includes("/library-lean/oauth"), "no redirect address the skill can't know");
   assert.equal(pageState().redirect, null, "nor on the page, which shows its own");
   giveClient("demo", { secret: "shh-secret", origin: "http://phone.example.com" });

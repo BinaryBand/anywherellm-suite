@@ -1,7 +1,7 @@
 // What the library calls with, kept in the instance's vault (#shared/vault), whose values the model
 // never reads: an API key (kind "key": the site it may go to, a name, its value) or an OAuth sign-in
 // (kind "oauth", oauth.ts: how to sign in, the user's client and the tokens it got). The user gives a
-// key or a client on the Library page (page.ts), sealed on their device; not on AnythingLLM's question
+// key or a client on the Vault (page.ts), sealed on their device; not on AnythingLLM's question
 // card, which shows its answers in the chat. A secret goes with a request only to its own site (or a site under
 // it), only over https (or plain http to a host the user lets through), put where the API wants it
 // (as a bearer token, by HTTP Basic, in a header or in the query), and at most PER_MINUTE times a
@@ -123,7 +123,7 @@ export async function saveSignIn(site: string, label: string, oauth: Definition,
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;
     const other = v.entries.find((e) => isSignIn(e) && !named(label)(e) && new URL(e.oauth.authorize_url).host === host) as SignIn | undefined;
-    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${status(other)}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, give the definition again with that label. For another account, the user deletes it on the Library page first`);
+    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${status(other)}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, give the definition again with that label. For another account, the user deletes it on the Vault first`);
     const same = v.entries.find(named(label));
     const kept = same && isSignIn(same) ? same : null;
     const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };

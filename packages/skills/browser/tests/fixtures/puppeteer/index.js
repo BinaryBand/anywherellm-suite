@@ -31,6 +31,7 @@ class Session {
     }
     if (method === "WebAuthn.addCredential") return void this.credentials.set(params.credential.credentialId, { ...params.credential });
     if (method === "WebAuthn.removeCredential") return void this.credentials.delete(params.credentialId);
+    if (method === "WebAuthn.getCredentials") return { credentials: [...this.credentials.values()].map((c) => ({ ...c })) };
     if (method === "Storage.getCookies") return { cookies: structuredClone(this.browser.cookies) };
     if (method === "Storage.setCookies") return void this.browser.cookies.push(...structuredClone(params.cookies));
     throw new Error(`the stand-in has no ${method}`);
@@ -56,6 +57,7 @@ class Handle {
     if (then) await this.page.goto(then);
   }
   async type(text) {
+    this.page.typed.push(this.ref);
     this.el.value = (this.el.value || "") + text;
   }
   async focus() {}
@@ -72,6 +74,7 @@ class Page {
   constructor() {
     this.closed = false;
     this.clicks = [];
+    this.typed = [];
     this.pressed = [];
     this.address = "about:blank";
     this.load({ title: "", text: "", fields: {}, onclick: {} });
@@ -101,7 +104,18 @@ class Page {
     // its attributes (`attrs`), and for a button whose form may not be sent while the fields
     // `blockedBy` (refs) are unmet, that form. A field `behind` a dialog ({ title, buttons: [{ ref,
     // label }] }) is inert under it, as a cookie dialog leaves the page; a date field takes only an
-    // ISO date, as Chrome's does.
+    // ISO date, as Chrome's does. A field's window is the tab's own, whose host is the page's
+    // address's; a field `framed` on another host is in a frame of that host inside the page, and
+    // one `movedTo` a host is in a top document there, as after a navigation the tab didn't see.
+    const page = this;
+    const view = { location: { get hostname() { try { return new URL(page.address).hostname; } catch { return ""; } } } };
+    view.top = view;
+    const windowOf = (f) => {
+      if (f.framed) return { location: { hostname: f.framed }, top: view };
+      if (!f.movedTo) return view;
+      const moved = { location: { hostname: f.movedTo } };
+      return (moved.top = moved);
+    };
     for (const f of Object.values(this.fields)) {
       f.tagName = f.type ? "INPUT" : f.kind === "link" ? "A" : "BUTTON";
       f.getAttribute = (name) => f.attrs?.[name] ?? null;
@@ -119,7 +133,7 @@ class Page {
           querySelectorAll: () => buttons.map((b) => ({ innerText: b.label, getAttribute: (name) => (name === "data-bw-ref" ? b.ref : null) })),
         });
       }
-      f.ownerDocument = { querySelectorAll: () => dialogs, elementFromPoint: () => null };
+      f.ownerDocument = { querySelectorAll: () => dialogs, elementFromPoint: () => null, defaultView: windowOf(f) };
       if (f.type === "date") {
         let value = f.value || "";
         Object.defineProperty(f, "value", { get: () => value, set: (v) => (value = /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ""), enumerable: true });

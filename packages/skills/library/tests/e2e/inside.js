@@ -1,7 +1,7 @@
 // Run inside a stock AnythingLLM container (tools/check, or by hand: see the skill's notes): loads the
 // skill through AnythingLLM's own loader (ImportedPlugin), sets it up on a stand-in agent as
 // AnythingLLM's agent would, and builds a toolkit for a stand-in API this script serves on
-// 127.0.0.1 (FENCE_ALLOW lets it through): the key is asked for on the Library page and given there
+// 127.0.0.1 (FENCE_ALLOW lets it through): the key is asked for on the Vault and given there
 // (posted as AnythingLLM's collector writes it), never on a question card; a function is saved and
 // tested in QuickJS on the image's own Node, a flow runs another, and a run with no workspace (as a
 // scheduled job's) is recorded as one; a job's run in a forked child, as AnythingLLM forks one, and
@@ -61,7 +61,7 @@ const server = http.createServer((req, res) => {
   };
 
   assert.match(await call({ action: "guide" }), /The library is the user's own set of API toolkits/);
-  assert.match(await call({ action: "secret", site: "127.0.0.1", label: "tasks" }), /^The user gives the key on the Library page: \/library-lean\/[\w-]+\.html\n/);
+  assert.match(await call({ action: "secret", site: "127.0.0.1", label: "tasks" }), /^The user gives the key on the Vault: \/library-lean\/[\w-]+-vault\.html\n/);
   assert.equal(cards.length, 0, "never on a question card, which shows its answers in the chat");
   const storage = process.env.STORAGE_DIR || `${APP}/storage`;
   const { token, secret } = JSON.parse(fs.readFileSync(`${storage}/library-lean/page.json`, "utf8"));

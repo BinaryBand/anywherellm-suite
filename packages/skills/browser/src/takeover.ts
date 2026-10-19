@@ -10,10 +10,10 @@
 
 import { Told } from "#shared/errors";
 import { hostOf, onSite } from "#shared/fence";
+import * as logins from "#shared/logins";
 import * as vault from "#shared/vault";
-import { act, element, fill, isPassword, settle, settled } from "./act";
+import { act, element, fill, fillOn, isPassword, settle, settled } from "./act";
 import { BrowserError, StaleRef } from "./errors";
-import * as logins from "./logins";
 import * as passkey from "./passkey";
 import { type Entry, type Hold, OFFER_MS, type Tab, clamp, clip, holder, note, say, screenFor } from "./state";
 
@@ -51,6 +51,7 @@ async function step(e: Record<string, unknown>, at: Tab): Promise<boolean> {
       if (hold) return false;
       if (entry.busy.has(key)) throw new BrowserError("The agent is in the middle of a step: take over again in a moment");
       entry.holds.set(key, { last: Date.now(), typed: null });
+      await passkey.reconcile();
       return true;
     case "give":
       if (!hold) return false;
@@ -103,7 +104,7 @@ async function typed(at: Tab, hold: Hold, e: Record<string, unknown>): Promise<v
   if (hold.typed?.host !== host) hold.typed = { host, user: "", pass: "" };
   hold.typed[password ? "pass" : "user"] = value;
   at.entry.secrets.add(value);
-  await fill(target, value);
+  await (password ? fillOn(target, value, host) : fill(target, value)); // a password only into the page's own document, never as keystrokes
   if (e.then === "Tab" || e.then === "Enter") await at.page.keyboard.press(e.then);
 }
 

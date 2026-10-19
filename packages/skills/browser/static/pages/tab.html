@@ -11,9 +11,9 @@
    it changes. Tap it to take it over; tap a field to type with this device's keyboard. The tab's
    screen follows the room between the controls, so it fills a phone or a desktop alike. Inside
    AnywhereLLM Lite, which draws its own bar for handing the tab back, the bottom row is left out. */
-:root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--onaccent:oklch(1 0 0);--badfg:oklch(0.47 0.16 20);--okdot:oklch(0.62 0.14 160);--page:oklch(0.99 0 0);
+:root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--onaccent:oklch(1 0 0);--okdot:oklch(0.62 0.14 160);--page:oklch(0.99 0 0);
 --float:0 12px 32px -8px oklch(0.3 0.04 280 / 0.28),0 2px 6px oklch(0.3 0.03 280 / 0.16);--sans:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:ui-monospace,Menlo,monospace;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.72 0.018 280);--accent:oklch(0.78 0.1 272);--onaccent:oklch(0.2 0.03 280);--badfg:oklch(0.83 0.085 20);--okdot:oklch(0.72 0.14 160);--page:oklch(0.18 0.01 280);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
+@media (prefers-color-scheme:dark){:root{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.72 0.018 280);--accent:oklch(0.78 0.1 272);--onaccent:oklch(0.2 0.03 280);--okdot:oklch(0.72 0.14 160);--page:oklch(0.18 0.01 280);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--page);color:var(--ink);font:15px/1.4 var(--sans);overflow:hidden;-webkit-tap-highlight-color:transparent}
@@ -32,7 +32,6 @@ input{font:inherit;color:var(--ink)}
 .top{position:fixed;left:0;right:0;top:0;z-index:3;padding:calc(12px + env(safe-area-inset-top,0px)) 12px 0;display:flex;align-items:center;gap:8px;pointer-events:none}.top>*{pointer-events:auto}
 .fb{flex:none;width:48px;height:48px;border-radius:50%;background:var(--panel);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:var(--float)}
 .where{flex:1;min-width:0;margin:0;min-height:40px;padding:0 14px;border-radius:99px;background:var(--panel);box-shadow:var(--float);display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
-.vt{flex:1;min-width:0;margin:0;font-size:19px;font-weight:600}
 .where .u{min-width:0;font:12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bdot{width:8px;height:8px;flex:none;border-radius:50%;background:var(--okdot)}.mine .bdot{background:var(--ink)}
 .tk{flex:none;min-height:44px;padding:0 16px;border-radius:99px;background:var(--accent);color:var(--onaccent);font-size:15px;font-weight:600;box-shadow:var(--float)}
@@ -48,11 +47,7 @@ input{font:inherit;color:var(--ink)}
 .wait{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .full{position:fixed;inset:0;z-index:2;background:var(--bg);overflow:auto;padding:76px 16px 24px;display:flex;flex-direction:column;gap:16px}
 .cap{margin:0;padding:0 8px;font-size:13px;line-height:1.45;color:var(--muted)}
-.lab{padding:0 20px;margin-bottom:-8px;font-size:12px;font-weight:500;letter-spacing:.48px;text-transform:uppercase;color:var(--muted)}
 .card{background:var(--panel);border:1px solid var(--line2);border-radius:24px;padding:0 20px;display:flex;flex-direction:column}
-.lg{display:flex;align-items:center;gap:12px;min-height:68px;border-top:1px solid var(--line2)}.lg:first-child{border-top:0}
-.lg>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.lg b{font-size:16px;font-weight:500}.lg small{font:12.5px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.del{flex:none;min-height:40px;padding:0 14px;border-radius:99px;color:var(--badfg)}
 .form{padding:20px;gap:12px}.form>b{margin-bottom:-8px;font-size:17px;line-height:1.3}.form>.cap{padding:0}.thumb{display:flex;flex-direction:column;gap:6px;margin:0}.thumb img{display:block;width:100%;height:96px;object-fit:cover;object-position:top;border-radius:14px;border:1px solid var(--line2);background:#fff}.ff{display:flex;flex-direction:column;gap:6px}.ff span{padding:0 8px;font-size:13px;color:var(--muted)}
 .fld{min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--line);background:var(--bg);font-size:16px;width:100%}.fld.ro{font:13.5px var(--mono);color:var(--muted);border-color:transparent}
 .tgl{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;font-size:15px}
@@ -66,12 +61,11 @@ input{font:inherit;color:var(--ink)}
 <body>
 <main id="stage" aria-label="The browser tab"><img id="shot" alt=""><button id="take" aria-label="Take the tab over"></button></main>
 <header class="top" id="top">
-  <button class="fb" id="back" aria-label="Close"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="backicon" d="M4 4l8 8M12 4l-8 8"/></svg></button>
-  <h1 class="vt" id="vt" hidden>Saved logins</h1><h1 class="where" id="where"><span class="bdot" aria-hidden="true"></span><span id="who">Agent</span><span class="u" id="addr"></span></h1>
-  <button class="tk" id="tk">Logins</button>
+  <button class="fb" id="back" aria-label="Close"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+  <h1 class="where" id="where"><span class="bdot" aria-hidden="true"></span><span id="who">Agent</span><span class="u" id="addr"></span></h1>
+  <button class="tk" id="tk" aria-label="Vault: saved logins, keys and sign-ins" hidden>Vault</button>
 </header>
 <div class="upd" id="upd" role="status" hidden><span class="live" aria-hidden="true"></span>Updating the page…</div>
-<section class="full" id="logins" hidden></section>
 <section class="full" id="needform" hidden></section>
 <footer class="dock">
   <div class="sheet" id="offer" hidden><div><b id="offerwhat">Save this login?</b><small id="offerwho"></small></div><div class="row"><button class="btn" id="offerno">Not now</button><button class="btn pri" id="offeryes">Save</button></div></div>
@@ -90,7 +84,7 @@ input{font:inherit;color:var(--ink)}
   // handed back; it draws the bar under the page that hands the tab back.
   const host = window.AnywhereLLMBrowser || null;
   if (host) document.body.classList.add("hosted");
-  let st = null, size = { w: 430, h: 932 }, scale = 1, left = 0, top = 68, bottom = 0, view = "page", over = null, shot = 0, swiped = false;
+  let st = null, size = { w: 430, h: 932 }, scale = 1, left = 0, top = 68, bottom = 0, over = null, shot = 0, swiped = false;
   let formFor = 0, dismissed = 0, skew = 0, lastText = "", shown = 0;
   // A step posted from here: "Updating" until a newer picture than `from` comes (or a few seconds,
   // for a step that changed nothing), showing `who` as this page set it until then.
@@ -307,8 +301,9 @@ input{font:inherit;color:var(--ink)}
   window.browserLean = { give: () => give().then(() => host && host.postMessage('{"gave":true}')) };
   let told = null;
   const tell = (who) => host && who !== told && host.postMessage(JSON.stringify({ who: (told = who) }));
-  $("back").addEventListener("click", () => (view === "logins" ? setView("page") : history.length > 1 ? history.back() : window.close()));
-  $("tk").addEventListener("click", () => setView("logins"));
+  $("back").addEventListener("click", () => (history.length > 1 ? history.back() : window.close()));
+  // The saved logins are listed and deleted on the Vault page (library-lean's), on this same host.
+  $("tk").addEventListener("click", () => st && st.vault && (closeField(true), location.assign(st.vault)));
 
   // ---- What the agent asked for: a login or a code, entered here and typed into the page for it.
   // While it's asked, the page opens on its form; `formFor` is the request the form was made for
@@ -372,41 +367,17 @@ input{font:inherit;color:var(--ink)}
   $("offerno").addEventListener("click", () => (($("offer").hidden = true), post("offer", { save: false })));
   $("offeryes").addEventListener("click", () => (($("offer").hidden = true), post("offer", { save: true })));
 
-  // ---- Saved logins and passkeys, by site and username; never their passwords.
-  function setView(v) {
-    view = v;
-    closeField(true);
-    paint();
-  }
-  function loginsView() {
-    const list = [...(st.logins || [])].sort((a, b) => b.here - a.here);
-    const card = el("div", { className: "card" }, ...list.map((l) => {
-      const passkey = l.kind === "passkey";
-      const del = el("button", { className: "del", textContent: "Delete" });
-      del.setAttribute("aria-label", "Delete the " + (passkey ? "passkey" : "login") + " for " + l.site);
-      del.onclick = () => {
-        const said = passkey ? "Delete the passkey for " + l.site + "? The agent can't sign in with it after. Remove it in the site's own settings too." : "Delete the login for " + l.site + "?";
-        if (confirm(said)) post("login-delete", { id: l.id });
-      };
-      return el("div", { className: "lg" }, el("div", {}, el("b", { textContent: l.site }), el("small", { textContent: passkey ? (l.user ? l.user + " · " : "") + "Passkey" : l.user + (l.here ? " · this site" : "") })), del);
-    }));
-    $("logins").replaceChildren(
-      el("p", { className: "cap", textContent: "Saved on your AnythingLLM server, encrypted. The agent signs in with them, on their own site only, but never reads them. A passkey is added by taking the tab over and making one on the site." }),
-      el("div", { className: "lab", textContent: "Saved logins" }),
-      list.length ? card : el("p", { className: "cap", textContent: "None saved yet." }));
-  }
-
   // ---- Drawing what the state file says.
   function paint() {
     if (!st) return;
     const held = mine();
     document.body.classList.toggle("mine", held);
-    // The request's form, over the page view; Logins come first.
+    // The request's form, over the page view.
     if (formFor && !asking()) {
       if (formFor !== dismissed) toast("That request is over");
       formFor = 0;
     }
-    const ask = asking() && view === "page";
+    const ask = asking();
     $("needform").hidden = !ask;
     if (ask) {
       const first = formFor !== st.need.until && needForm();
@@ -415,27 +386,21 @@ input{font:inherit;color:var(--ink)}
       if (first) first.focus();
     }
     if (ask !== !!ticker) ticker = ask ? setInterval(tick, 1000) : (clearInterval(ticker), 0);
-    document.body.classList.toggle("side", view !== "page" || ask);
+    document.body.classList.toggle("side", ask);
     $("who").textContent = held ? "You" : "Agent";
     $("addr").textContent = (st.url || "").replace(/^https?:\/\//, "");
     $("where").setAttribute("aria-label", (held ? "You have the tab" : "The agent has the tab") + ": " + (st.title || st.url));
     $("take").hidden = held;
-    $("mine").hidden = !held || view !== "page";
-    $("hint").hidden = held || view !== "page";
+    $("mine").hidden = !held;
+    $("hint").hidden = held;
     tell(st.who);
-    $("offer").hidden = !st.offer || view !== "page" || ask;
+    $("offer").hidden = !st.offer || ask;
     if (st.offer) {
       const passkey = st.offer.kind === "passkey";
       $("offerwhat").textContent = passkey ? "Save this passkey?" : "Save this login?";
       $("offerwho").textContent = st.offer.site + (st.offer.user ? " · " + st.offer.user : passkey ? " · passkey" : "");
     }
-    $("logins").hidden = view !== "logins";
-    $("tk").hidden = view === "logins";
-    $("where").hidden = view === "logins";
-    $("vt").hidden = view !== "logins";
-    $("backicon").setAttribute("d", view === "logins" ? "M10 3.5 5.5 8l4.5 4.5" : "M4 4l8 8M12 4l-8 8");
-    $("back").setAttribute("aria-label", view === "logins" ? "Back to the tab" : "Close");
-    if (view === "logins") loginsView();
+    $("tk").hidden = !st.vault;
     reserve();
     layout();
   }
