@@ -77,8 +77,11 @@ const [BASE, OTHER] = await Promise.all(
 const definition = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, token_url: `${BASE}/token`, scopes: ["me.read"], params: { access_type: "offline" } };
 const LLM = "https://llm.example.com";
 
+/** The secret `label` as the Vault shows it now; undefined when there's none. */
+const secretIn = (label: string): { status: string; tag?: { text: string; ok: boolean } } | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label);
+
 /** The sign-in `label`'s status as the Vault shows it now; undefined when there's none. */
-const statusIn = (label: string): string | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label)?.status;
+const statusIn = (label: string): string | undefined => secretIn(label)?.status;
 
 /** The sign-in link an answer gives. */
 const linkIn = (said: string): URL => new URL(said.match(/^(http\S+)$/m)![1]);
@@ -171,7 +174,7 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   const q = Object.fromEntries((await link()).searchParams);
   post({ ev: "oauth-code", state: "not-a-state-anyone-made", code: "good-code" });
   await call({ action: "library" });
-  assert.match(JSON.stringify(vaultState().secrets), /"status":"waiting for the user to sign in at its link","state":"link waits"/, "a code for no waiting sign-in is ignored");
+  assert.match(JSON.stringify(vaultState().secrets), /"status":"waiting for the user to sign in at its link","tag":\{"text":"Open the link","ok":false\}/, "a code for no waiting sign-in is ignored");
   post({ ev: "oauth-code", state: q.state, error: "access_denied" });
   await call({ action: "library" });
   assert.match(JSON.stringify(vaultState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
@@ -567,12 +570,11 @@ test("secret says why a new code is made: the last one declined", async () => {
   assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /^Its last sign-in didn't finish \(the user didn't agree at the provider\), so this is a new one\. Show the user this code/);
 });
 
-test("the Vault reads where a sign-in is from its state, not its words", async () => {
+test("the Vault shows each sign-in's tag as the library gives it", async () => {
   await code();
-  const state = () => vaultState().secrets.find((s: { label: string }) => s.label === "dev").state;
   await call({ action: "library" });
-  assert.equal(state(), "code waits");
+  assert.deepEqual(secretIn("dev")?.tag, { text: "Enter the code", ok: false });
   provider.agreed = true;
   await call({ action: "library" });
-  assert.equal(state(), "signed in");
+  assert.deepEqual(secretIn("dev")?.tag, { text: "Signed in", ok: true });
 });

@@ -28,8 +28,8 @@ export interface Secret {
   kind: "key" | "oauth";
   /** "saved" (a key), or where a sign-in is, in words (statusText). */
   status: string;
-  /** Where a sign-in is (oauth.ts stateOf), for a page to read rather than the words. */
-  state?: SignInState["at"];
+  /** A sign-in's tag on the Vault, and whether it's signed in: the page shows it as given. */
+  tag?: { text: string; ok: boolean };
   /** A sign-in's scopes, and the host it signs in at. */
   scopes?: string;
   authorize?: string;
@@ -91,12 +91,14 @@ function statusText(state: SignInState): string {
   }
 }
 
-const status = (e: Readonly<SignIn>): string => statusText(stateOf(e));
+/** A sign-in's tag on the Vault, by where it is. */
+const TAGS: Record<SignInState["at"], string> = { "signed in": "Signed in", "code waits": "Enter the code", "link waits": "Open the link", "no client": "Needs a client", "ran out": "Not signed in", failed: "Not signed in", ready: "Not signed in" };
 
 /** A sign-in as the agent and the pages see it. */
 function signInSecret(e: Readonly<SignIn>): Secret {
   const state = stateOf(e);
-  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), state: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
+  const tag = { text: TAGS[state.at], ok: state.at === "signed in" };
+  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), tag, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
 }
 
 /** The saved secrets, without their values. */
@@ -141,7 +143,7 @@ export async function saveSignIn(site: string, label: string, oauth: Definition,
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;
     const other = v.entries.find((e) => isSignIn(e) && !named(label)(e) && new URL(e.oauth.authorize_url).host === host) as SignIn | undefined;
-    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${status(other)}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, ${other.shared ? "give its preset again with the scopes" : "give the definition again with that label"}. For another account, the user deletes it on the Vault first`);
+    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${statusText(stateOf(other))}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, ${other.shared ? "give its preset again with the scopes" : "give the definition again with that label"}. For another account, the user deletes it on the Vault first`);
     const same = v.entries.find(named(label));
     const kept = same && isSignIn(same) ? same : null;
     if (kept?.shared && !sharedClient) throw new LibraryError(`"${label}" signs in with a preset, the suite's own client: don't give it a definition. To change its scopes, call secret with kind "oauth", its preset and the scopes; to see whether it signed in, call library`);

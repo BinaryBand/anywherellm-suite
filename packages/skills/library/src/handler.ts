@@ -19,7 +19,7 @@ import { LibraryError } from "./errors";
 import { askDevices, askNow, startDevice } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { LOOPBACK, define, redirectFor, start as startSignIn, stateOf, type DeviceCode, type SignIn, type SignInLink } from "./oauth";
+import { LOOPBACK, define, givenLink, redirectFor, start as startSignIn, stateOf, type DeviceCode, type SignIn, type SignInLink } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
 import { presetOf } from "./presets";
@@ -152,41 +152,41 @@ async function signIn(args: Args, label: string, base: string | null): Promise<s
   }
   const saved = secrets.signIn(label);
   if (!saved) throw new LibraryError(`there's no sign-in "${label}": give its definition { site, authorize_url, token_url, scopes, params }, or a preset (guide topic secrets)`);
-  if (saved.oauth.device_url) await askNow(saved.id); // the user may have agreed since the last ask
-  const found = secrets.signIn(label) ?? saved;
-  const device = !!found.oauth.device_url;
-  const said = { label, base, redirect };
-  const state = stateOf(found, device ? undefined : redirect);
+  const device = !!saved.oauth.device_url;
+  if (device) await askNow(saved.id); // the user may have agreed since the last ask
+  const found = device ? (secrets.signIn(label) ?? saved) : saved;
+  const state = stateOf(found);
+  let lead = ""; // what's said before the code or link: that it's the one before, or why there's a new one
   switch (state.at) {
     case "no client":
-      return needsClient(found, said);
+      return needsClient(found, label, base, redirect);
     case "signed in":
       return `"${label}" is signed in already: start no new sign-in. Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }. If the provider refuses calls with it, the user deletes it on the Vault, and then you call secret again.`;
     case "code waits":
-      return codeText(state.code, said, true);
-    case "link waits":
-      await page.oauthPage(state.link.state, label); // again, for a new container that lacks its page
-      return linkText(state.link, said, true);
+      return "The code shown before still waits, and no new one was made: show it again. " + codeText(state.code, label);
+    case "link waits": {
+      if (state.redirect !== redirect) break; // it goes back to another address: a new one
+      const link = givenLink(found, state.minutes);
+      await page.oauthPage(link.state, label); // again, for a new container that lacks its page
+      return "The link given before still waits, and no new one was made: give it again. " + (await linkText(link, label, base, redirect));
+    }
+    case "failed":
+      lead = `Its last sign-in didn't finish (${state.why}), so this is a new one. `;
+      break;
+    case "ran out":
+      lead = "Its sign-in ran out and can't be renewed, so this is a new one. ";
+      break;
   }
-  const ended = state.at === "failed" ? `Its last sign-in didn't finish (${state.why}), so this is a new one. ` : state.at === "ran out" ? "Its sign-in ran out and can't be renewed, so this is a new one. " : "";
-  if (device) return ended + codeText(await startDevice(found), said, false);
+  if (device) return lead + codeText(await startDevice(found), label);
   if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   const link = await startSignIn(found, redirect);
   await page.oauthPage(link.state, label);
-  return ended + (await linkText(link, said, false));
-}
-
-/** What a sign-in answer needs of the call: the sign-in's label, AnythingLLM's address, and the
- *  redirect address that follows from it. */
-interface Said {
-  label: string;
-  base: string | null;
-  redirect: string | null;
+  return lead + (await linkText(link, label, base, redirect));
 }
 
 /** For a sign-in with no client yet: what OAuth client the user makes at the provider, and that
  *  they give it on the Vault. */
-async function needsClient(found: Readonly<SignIn>, { label, base, redirect }: Said): Promise<string> {
+async function needsClient(found: Readonly<SignIn>, label: string, base: string | null, redirect: string | null): Promise<string> {
   await page.need(label, found.site, "client");
   const host = new URL(found.oauth.authorize_url).host;
   const kind = found.oauth.device_url ? "a client with the device flow switched on (it needs no redirect address)" : redirect ? `a web application client, with this redirect address registered: ${redirect}` : "a web application client, with the redirect address the Vault shows registered";
@@ -196,14 +196,14 @@ async function needsClient(found: Readonly<SignIn>, { label, base, redirect }: S
 /** What the agent does once the user has the code or link: call library to see it signed in. */
 const done = (label: string): string => `When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
 
-/** The code to show the user; `again` when it's the one shown before. */
-const codeText = (code: DeviceCode, { label }: Said, again: boolean): string =>
-  `${again ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${minutesText(code.minutes)}. ${done(label)}`;
+/** The code to show the user for the sign-in `label`. */
+const codeText = (code: DeviceCode, label: string): string =>
+  `Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${minutesText(code.minutes)}. ${done(label)}`;
 
-/** The sign-in link to give the user; `again` when it's the one given before. */
-async function linkText(link: SignInLink, { label, base, redirect }: Said, again: boolean): Promise<string> {
+/** The sign-in link to give the user for the sign-in `label`, coming back to `redirect`. */
+async function linkText(link: SignInLink, label: string, base: string | null, redirect: string): Promise<string> {
   const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent (on a phone, with a button back to the AnywhereLLM app)." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Vault's Sign-ins tab (Finish a sign-in): ${await page.showVault(base)}`;
-  return `${again ? "The link given before still waits, and no new one was made: give it again. " : ""}Give the user this sign-in link, to open in their browser; it's good for ${minutesText(link.minutes)}:\n${link.url}\n${back} ${done(label)}`;
+  return `Give the user this sign-in link, to open in their browser; it's good for ${minutesText(link.minutes)}:\n${link.url}\n${back} ${done(label)}`;
 }
 
 const minutesText = (n: number): string => `${n} minute${n === 1 ? "" : "s"}`;

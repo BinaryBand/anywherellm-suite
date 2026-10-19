@@ -187,15 +187,11 @@ export interface SignInLink {
   minutes: number;
 }
 
-/** The link `signIn` gave the user that still waits for them to come back, made again from what
- *  the vault keeps, with its state and the minutes it has left; null when none waits, it (nearly)
- *  ran out, or it goes back to another address than `redirect` (any, when undefined; none, when
- *  null). */
-function waitingLink(signIn: Readonly<SignIn>, redirect: string | null | undefined): SignInLink | null {
-  const p = signIn.pending;
-  if (!p || (redirect !== undefined && p.redirect !== redirect)) return null;
-  const minutes = minutesLeft(p.until);
-  return minutes ? { url: signInLink(signIn, p.redirect, p.state, p.verifier), state: p.state, minutes } : null;
+/** The link `signIn` gave the user, made again from what the vault keeps (stateOf says whether one
+ *  waits, and its minutes). */
+export function givenLink(signIn: Readonly<SignIn>, minutes: number): SignInLink {
+  const p = signIn.pending!;
+  return { url: signInLink(signIn, p.redirect, p.state, p.verifier), state: p.state, minutes };
 }
 
 /** Where a sign-in is, as every part of the library reads it: signed in (with a token it can call
@@ -204,21 +200,22 @@ function waitingLink(signIn: Readonly<SignIn>, redirect: string | null | undefin
 export type SignInState =
   | { at: "signed in" }
   | { at: "code waits"; code: DeviceCode }
-  | { at: "link waits"; link: SignInLink }
+  | { at: "link waits"; redirect: string; minutes: number }
   | { at: "no client" }
   | { at: "ran out" }
   | { at: "failed"; why: string }
   | { at: "ready" };
 
-/** Where `signIn` is. `redirect` is the address a link must go back to to count as waiting: any
- *  when undefined (what the pages show), none when null (AnythingLLM's address isn't known). */
-export function stateOf(signIn: Readonly<SignIn>, redirect?: string | null): SignInState {
+/** Where `signIn` is. A link that waits says the address it goes back to, for a caller that needs
+ *  that one (signIn makes a new link for another). */
+export function stateOf(signIn: Readonly<SignIn>): SignInState {
   const t = signIn.tokens;
   if (t?.access_token && (fresh(t) || t.refresh_token)) return { at: "signed in" };
   const code = waitingCode(signIn);
   if (code) return { at: "code waits", code };
-  const link = waitingLink(signIn, redirect);
-  if (link) return { at: "link waits", link };
+  const p = signIn.pending;
+  const minutes = p ? minutesLeft(p.until) : null;
+  if (p && minutes) return { at: "link waits", redirect: p.redirect, minutes };
   if (!signIn.client_id) return { at: "no client" };
   if (t?.access_token) return { at: "ran out" };
   return signIn.error ? { at: "failed", why: signIn.error } : { at: "ready" };

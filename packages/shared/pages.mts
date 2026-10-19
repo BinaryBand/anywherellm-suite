@@ -12,7 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { pageKeyFile, perProcess, readPageKey, serverDir, storageDir } from "./anythingllm.mts";
+import { pageKeyFile, perProcess, readPageKey, serial, serverDir, storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
 import { writeAtomic, writeAtomicIfChanged } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
@@ -141,12 +141,7 @@ type Watch = { pass: () => Promise<void>; until: () => number; queued: boolean; 
 /** Runs `pass` for `title` after the one before it, whoever asked for it (the watch, or a call): one
  *  pass at a time, so two never split a page's events between them, and a call reads the page after
  *  what was posted for it was applied, not halfway through. A pass that fails doesn't stop the next. */
-export function inTurn(title: string, pass: () => Promise<void>): Promise<void> {
-  const turns = perProcess("pages.turns", () => new Map<string, Promise<void>>());
-  const mine = (turns.get(title) ?? Promise.resolve()).then(pass);
-  turns.set(title, mine.catch(() => {}));
-  return mine;
-}
+export const inTurn = (title: string, pass: () => Promise<void>): Promise<void> => serial(`pages.turn.${title}`, pass);
 
 /** The events folder's inode: a new one is a folder made again, which an old fs.watch doesn't see. */
 const folderId = (): number => {
