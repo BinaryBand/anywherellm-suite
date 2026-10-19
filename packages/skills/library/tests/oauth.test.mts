@@ -422,3 +422,82 @@ test("a link that waits for another redirect address, or with a changed definiti
   assert.ok(!changed.includes("still waits"), "the scopes changed");
   assert.notEqual(new URL(changed.match(/^(http\S+)$/m)![1]).searchParams.get("state"), first.searchParams.get("state"));
 });
+
+/** The sign-in `label`'s status, as the Vault shows it once a library call has written it again;
+ *  undefined when there's none. */
+async function statusOf(label: string): Promise<string | undefined> {
+  await call({ action: "library" });
+  return vaultState().secrets.find((x: { label: string }) => x.label === label)?.status;
+}
+
+/** The link in a secret answer. */
+const linkIn = (said: string): URL => new URL(said.match(/^(http\S+)$/m)![1]);
+
+test("a changed definition makes a new link, and the old link's code is ignored", async () => {
+  const first = await link();
+  const changed = linkIn(await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, scopes: ["me.read", "me.write"] } }, { base: LLM }));
+  provider.challenge = changed.searchParams.get("code_challenge") ?? "";
+  post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
+  assert.equal(await statusOf("demo"), "ready to sign in", "the old link's state waits no more");
+  assert.equal(provider.access, "", "and no token was asked for with it");
+  post({ ev: "oauth-code", state: changed.searchParams.get("state"), code: "good-code" });
+  assert.equal(await statusOf("demo"), "signed in");
+});
+
+test("a restart between the link and the user coming back: the same link, its page written again, and it finishes", async () => {
+  const first = await link();
+  const sFile = path.join(publicDir, "library-lean", `s-${first.searchParams.get("state")}.json`);
+  fs.rmSync(path.join(publicDir, "library-lean"), { recursive: true, force: true }); // a container made again starts without its pages
+  const again = await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM });
+  assert.match(again, /still waits/);
+  assert.equal(linkIn(again).href, first.href);
+  assert.ok(fs.existsSync(sFile), "what oauth.html posts with is there again");
+  post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
+  assert.equal(await statusOf("demo"), "signed in");
+});
+
+test("two chats asking for the link at once get one link", async () => {
+  await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM });
+  giveClient("demo", { secret: "shh-secret" });
+  const [a, b] = await Promise.all([call({ action: "secret", kind: "oauth", label: "demo" }, { slug: "work", base: LLM }), call({ action: "secret", kind: "oauth", label: "demo" }, { slug: "other", base: LLM })]);
+  assert.equal(linkIn(a).href, linkIn(b).href);
+});
+
+test("a link past its 10 minutes is made again", async () => {
+  const first = await link();
+  const now = Date.now;
+  Date.now = () => now() + 10 * 60 * 1000 + 1000;
+  try {
+    const again = await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM });
+    assert.ok(!again.includes("still waits"), again);
+    assert.notEqual(linkIn(again).searchParams.get("state"), first.searchParams.get("state"));
+  } finally {
+    Date.now = now;
+  }
+});
+
+test("a code back after the user deleted the sign-in on the Vault is ignored", async () => {
+  const first = await link();
+  postVault({ ev: "key-delete", label: "demo" });
+  assert.equal(await statusOf("demo"), undefined, "deleted");
+  post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
+  assert.equal(await statusOf("demo"), undefined, "nothing comes back");
+  assert.equal(provider.access, "", "and no token was asked for");
+});
+
+test("a hand-written Google-style definition given again and again keeps one link; a refusal says why, and the next call makes a new one", async () => {
+  const google = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, token_url: `${BASE}/token`, scopes: ["https://www.googleapis.com/auth/calendar", "https://www.googleapis.com/auth/gmail.modify"], client_auth: "body", params: { access_type: "offline", prompt: "consent" } };
+  const ask = () => call({ action: "secret", kind: "oauth", label: "google", definition: google }, { base: LLM });
+  assert.match(await ask(), /"google" needs the user's own OAuth client/);
+  giveClient("google", { secret: "shh-secret" });
+  const first = linkIn(await ask());
+  assert.equal(first.searchParams.get("scope"), "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.modify");
+  const again = await ask();
+  assert.match(again, /^The link given before still waits/);
+  assert.equal(linkIn(again).href, first.href);
+  post({ ev: "oauth-code", state: first.searchParams.get("state"), error: "access_denied" });
+  assert.equal(await statusOf("google"), "its last sign-in didn't finish: the provider didn't give a code: access_denied");
+  const fresh = await ask();
+  assert.ok(!fresh.includes("still waits"));
+  assert.notEqual(linkIn(fresh).searchParams.get("state"), first.searchParams.get("state"));
+});
