@@ -2,8 +2,9 @@
 {"name":"counter","line":"a number stepped toward a target","schema":{"type":"object","required":["count","target"],"properties":{"count":{"type":"integer","minimum":0,"maximum":100000},"target":{"type":"integer","minimum":1,"maximum":100000}}},"data":{"count":3,"target":8},"events":["step"]}
 -->
 <div class="card stack center" data-part="counter">
-<div class="row"><button type="button" data-ref="less" aria-label="One less">−</button><output class="big" data-ref="count"></output><button type="button" class="primary" data-ref="more" aria-label="One more">+</button></div>
-<progress data-ref="meter" aria-label="Toward the target"></progress><small data-ref="of"></small>
+<div class="dial" data-ref="meter" role="progressbar" aria-label="Toward the target" aria-valuemin="0"><output class="big" data-ref="count"></output></div>
+<small data-ref="of"></small>
+<div class="row"><button type="button" data-ref="less" aria-label="One less">−</button><button type="button" class="primary halo" data-ref="more" aria-label="One more">+</button></div>
 </div>
 <script>
 App.mount("counter", ({ at, q }) => {
@@ -17,7 +18,10 @@ App.mount("counter", ({ at, q }) => {
   return () => {
     const { count, target } = App.get(at);
     q("count").textContent = count;
-    Object.assign(q("meter"), { max: target, value: Math.min(count, target) });
+    const m = q("meter"), done = Math.min(count, target);
+    m.style.setProperty("--p", (done / target) * 100);
+    m.setAttribute("aria-valuemax", target);
+    m.setAttribute("aria-valuenow", done);
     q("of").textContent = `${count} of ${target}`;
   };
 });

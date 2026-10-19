@@ -2,8 +2,8 @@
 {"name":"timer","line":"counts down from a stored start","single":true,"schema":{"type":"object","required":["minutes","started"],"properties":{"minutes":{"type":"integer","minimum":1,"maximum":240},"started":{"type":["string","null"],"maxLength":40}}},"data":{"minutes":25,"started":null},"events":["start","stop"]}
 -->
 <div class="stack center wide" data-part="timer">
-<div class="dial"><span class="big" data-ref="left"></span></div>
-<div class="row"><button type="button" class="primary" data-ref="go">Start</button><button type="button" data-ref="stop">Reset</button></div>
+<div class="dial" data-ref="dial"><span class="big" data-ref="left"></span></div>
+<div class="row"><button type="button" class="primary halo" data-ref="go">Start</button><button type="button" class="quiet" data-ref="stop">Reset</button></div>
 </div>
 <script>
 App.mount("timer", ({ at, q }) => {
@@ -14,6 +14,7 @@ App.mount("timer", ({ at, q }) => {
     const { minutes, started: from } = App.get(at);
     const ms = from ? Math.max(0, Date.parse(from) + minutes * 6e4 - Date.now()) : minutes * 6e4;
     const s = Math.ceil(ms / 1000) || 0;
+    q("dial").style.setProperty("--p", (ms / (minutes * 6e4)) * 100);
     q("left").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
     q("go").hidden = !!from;
     q("stop").hidden = !from;
