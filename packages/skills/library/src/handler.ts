@@ -16,10 +16,10 @@ import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
 import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
-import { askDevices, startDevice, waitingCode } from "./device";
+import { askDevices, askNow, startDevice } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { LOOPBACK, PENDING_MS, define, redirectFor, signedIn, start as startSignIn, waitingLink } from "./oauth";
+import { LOOPBACK, define, redirectFor, signedIn, start as startSignIn, waitingCode, waitingLink } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
 import { presetOf } from "./presets";
@@ -117,20 +117,22 @@ function listingLines(saved: Saved): string[] {
 async function secret(args: Args, self: HandlerContext): Promise<string> {
   const named = clean(args.label);
   const kind = clean(args.kind).toLowerCase() || (named && !clean(args.site) && secrets.signIn(named) ? "oauth" : "key"); // the label of a sign-in, alone, means it
-  if (kind === "oauth") return serial(`library-lean.sign-in.${(named || clean(args.preset)).toLowerCase()}`, () => signIn(args, self)); // two chats at once share one code; other sign-ins go on
+  if (kind === "oauth") {
+    const label = secrets.labelOf(named || clean(args.preset));
+    return serial(`library-lean.sign-in.${label.toLowerCase()}`, () => signIn(args, label, baseOf(self))); // two chats at once share one code; other sign-ins go on
+  }
   if (kind !== "key") throw new LibraryError('secret\'s kind is "key" (an API key or token) or "oauth" (a sign-in)');
   const site = secrets.siteChecked(args.site);
-  const label = secrets.labelOf(clean(args.label) || site);
+  const label = secrets.labelOf(named || site);
   await page.need(label, site, "key");
   return `The user gives the key on the Vault: ${await page.showVault(baseOf(self))}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
 }
 
-/** An OAuth sign-in, one step at a time. A call that gives the definition (or a preset) saves it and,
- *  for the user's own client, says what client they make at the provider and give on the Vault; a
- *  later one, once there's a client, answers the sign-in link, or the code the user enters. */
-async function signIn(args: Args, self: HandlerContext): Promise<string> {
-  const label = secrets.labelOf(clean(args.label) || clean(args.preset));
-  const base = baseOf(self);
+/** The OAuth sign-in `label`, one step at a time. A call that gives the definition (or a preset)
+ *  saves it and, for the user's own client, says what client they make at the provider and give on
+ *  the Vault; a later one, once there's a client, answers the sign-in link, or the code the user
+ *  enters. `base` is AnythingLLM's address as the call gave it. */
+async function signIn(args: Args, label: string, base: string | null): Promise<string> {
   const redirect = redirectFor(page.baseFor(base));
   if (args.preset !== undefined) {
     const p = presetOf(args.preset, args.scopes);
@@ -150,22 +152,23 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
     return `"${label}" needs the user's own OAuth client at the provider (${host}). Tell them to make one in its developer console: ${kind}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID (and its secret, if it has one) on the Vault, under Sign-ins: ${await page.showVault(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
   }
   if (found.oauth.device_url) {
-    if (waitingCode(found)) await askDevices(true, base, found.id); // the user may have agreed since the last ask
+    await askNow(found.id); // the user may have agreed since the last ask
     const now = secrets.signIn(label) ?? found;
     if (signedIn(now)) return already;
     const waits = waitingCode(now);
-    const code = waits ?? (await startDevice(now, base));
-    return `${waits ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
+    const code = waits ?? (await startDevice(now));
+    return `${waits ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${minutesText(code.minutes)}. ${done}`;
   }
   if (signedIn(found)) return already;
   if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   const waits = waitingLink(found, redirect);
-  const { url, state } = waits ?? (await startSignIn(found, redirect));
+  const { url, state, minutes } = waits ?? (await startSignIn(found, redirect));
   await page.oauthPage(state, label); // again for a link that waits, whose page a new container lacks
-  const minutes = waits?.minutes ?? PENDING_MS / 60_000;
   const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent (on a phone, with a button back to the AnywhereLLM app)." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Vault's Sign-ins tab (Finish a sign-in): ${await page.showVault(base)}`;
-  return `${waits ? "The link given before still waits, and no new one was made: give it again. " : ""}Give the user this sign-in link, to open in their browser; it's good for ${minutes} minute${minutes === 1 ? "" : "s"}:\n${url}\n${back} ${done}`;
+  return `${waits ? "The link given before still waits, and no new one was made: give it again. " : ""}Give the user this sign-in link, to open in their browser; it's good for ${minutesText(minutes)}:\n${url}\n${back} ${done}`;
 }
+
+const minutesText = (n: number): string => `${n} minute${n === 1 ? "" : "s"}`;
 
 /** auth as call takes it: none, how the key saved for the address's site goes ("bearer"), or
  *  { key, as }. */
@@ -239,24 +242,15 @@ async function runNow(name: string, inputs: unknown, self: HandlerContext): Prom
   // Only what the end needs, so a background run doesn't hold on to the agent that started it.
   const base = baseOf(self);
   const to = pushTo(self);
-  void done.then(() => refreshPage(base));
+  void done.then(() => page.refresh(base));
   const record = trigger === "job" ? await done : await within(done, waitMs());
   if (record) {
     if (trigger === "chat" || record.status === "ok") store.markSeen(record.id);
     return runs.runText(record);
   }
-  refreshPage(base);
+  page.refresh(base);
   void done.then((r) => (listing.refresh(console.error), pushed(r, to)));
   return `Still running ${running.fn} in the background (${running.id}): carry on. When it ends, the user gets a push (if they switched AnythingLLM's notifications on), the Library page shows it, and it's at the top of the next library or run answer. run with run_id "${running.id}" shows it now; add stop: true to stop it.`;
-}
-
-/** Shows the page's state as it is now, when there's a page; a hint, so a failure is only logged. */
-function refreshPage(base: string | null): void {
-  try {
-    page.refresh(base);
-  } catch (e) {
-    console.error(`library-lean couldn't refresh the Library page: ${(e as Error).message}`);
-  }
 }
 
 /** Pushes the end of a run the chat stopped waiting for to the user. */

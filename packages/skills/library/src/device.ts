@@ -11,7 +11,7 @@ import { perProcess } from "#shared/anythingllm";
 import { secureFor } from "#shared/fence";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { isSignIn, minutesLeft, postForm, refusal, tokenAnswer, tokensOf, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
+import { isSignIn, postForm, refusal, tokenAnswer, tokensOf, type DeviceCode, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
 import * as page from "./page";
 
 const GRANT = "urn:ietf:params:oauth:grant-type:device_code";
@@ -25,24 +25,17 @@ const SLOWER_S = 5;
 const PAUSE_MS = 500;
 const RAN_OUT = { error: "the code ran out before the user entered it: start the sign-in again" };
 
-/** What the user is shown: the code to enter, where, and for how many minutes. */
-export interface DeviceCode {
-  user_code: string;
-  link: string;
-  minutes: number;
-}
-
 /** When this process asks next for each waiting code, and how many seconds apart, by device code. */
 const schedule = () => perProcess("library-lean.device.schedule", () => new Map<string, { next: number; interval: number }>());
 
 /** This process's asking: whether its loop runs, and AnythingLLM's address as the latest call gave
- *  it, which the pages' state is written with when a sign-in ends; nothing else of a call, since
- *  the loop outlives it. */
+ *  it (askDevices), which the pages' state is written with when a sign-in ends; nothing else of a
+ *  call, since the loop outlives it. */
 const loop = () => perProcess("library-lean.device.loop", () => ({ on: false, base: null as string | null }));
 
 /** Starts the device-flow sign-in `given`: asks the provider for a code, keeps its device code in
  *  the vault, starts asking for the tokens, and answers what the user is shown. */
-export async function startDevice(given: Readonly<SignIn>, base: string | null): Promise<DeviceCode> {
+export async function startDevice(given: Readonly<SignIn>): Promise<DeviceCode> {
   const o = given.oauth;
   if (!o.device_url) throw new LibraryError(`"${given.user}" signs in with a redirect, not a code`);
   if (!given.client_id) throw new LibraryError(`"${given.user}" is waiting for the user's OAuth client: its ID`);
@@ -59,16 +52,8 @@ export async function startDevice(given: Readonly<SignIn>, base: string | null):
     Object.assign(found, { device: { code: String(device_code), interval: every, until: Date.now() + seconds * 1000, user_code: String(user_code), link }, error: null });
   });
   schedule().set(String(device_code), { next: Date.now() + every * 1000, interval: every });
-  keepAsking(base);
+  keepAsking();
   return { user_code: String(user_code), link, minutes: Math.max(1, Math.round(seconds / 60)) };
-}
-
-/** The code `signIn` showed the user that still waits, with the minutes it has left; null when
- *  none waits or it (nearly) ran out. */
-export function waitingCode(signIn: Readonly<SignIn>): DeviceCode | null {
-  const d = signIn.device;
-  const minutes = d ? minutesLeft(d.until) : null;
-  return d && minutes ? { user_code: d.user_code, link: d.link, minutes } : null;
 }
 
 /** What the token address said: tokens, wait (asking `interval` seconds apart), or stop with why. */
@@ -132,26 +117,29 @@ function askOnce(id: string, wait: boolean): Promise<void> {
     });
     if (!wrote) return;
     console.log(`library-lean: the sign-in "${signIn.user}" ${"tokens" in ended ? "signed in" : `ended: ${ended.error}`}`);
-    try {
-      page.refresh(loop().base);
-    } catch (e) {
-      console.error(`library-lean couldn't refresh the pages: ${(e as Error).message}`);
-    }
+    page.refresh(loop().base);
   })().finally(() => asking.delete(id));
   asking.set(id, ask);
   return ask;
 }
 
-/** Asks once for every sign-in whose code waits (or only the sign-in `only`): those due now, or,
- *  with `wait`, each once it's due, so a chat's call after the user agreed finds it signed in.
- *  `base` is AnythingLLM's address as the call gave it. Makes sure this process goes on asking
- *  while one waits, as after a restart. A failure is only logged. */
-export async function askDevices(wait: boolean, base: string | null, only?: string): Promise<void> {
-  const ids = waiting()
-    .map((e) => e.id)
-    .filter((id) => !only || id === only);
+/** Asks once for every sign-in whose code waits: those due now, or, with `wait`, each once it's
+ *  due, so a chat's call after the user agreed finds it signed in. Keeps `base`, AnythingLLM's
+ *  address as the call gave it, for the loop, and makes sure this process goes on asking while one
+ *  waits, as after a restart. */
+export function askDevices(wait: boolean, base: string | null): Promise<void> {
+  loop().base = base;
+  return asked(waiting().map((e) => e.id), wait);
+}
+
+/** Asks for the sign-in `id` once its next ask is due, when its code waits: the user may have
+ *  agreed since the last ask. */
+export const askNow = (id: string): Promise<void> => asked([id], true);
+
+/** Asks once for each of `ids` (askOnce), keeping the loop on; a failure is only logged. */
+async function asked(ids: string[], wait: boolean): Promise<void> {
   if (!ids.length) return;
-  keepAsking(base);
+  keepAsking();
   try {
     await Promise.all(ids.map((id) => askOnce(id, wait)));
   } catch (e) {
@@ -159,15 +147,14 @@ export async function askDevices(wait: boolean, base: string | null, only?: stri
   }
 }
 
-/** Asks in this process while a code waits, each when it's due, and keeps `base`, the latest
- *  call's; timers that never hold the process open. */
-function keepAsking(base: string | null): void {
+/** Asks in this process while a code waits, each when it's due; timers that never hold the process
+ *  open. */
+function keepAsking(): void {
   const state = loop();
-  state.base = base;
   if (state.on) return;
   state.on = true;
   const tick = async () => {
-    await askDevices(true, loop().base);
+    await asked(waiting().map((e) => e.id), true);
     if (waiting().length) setTimeout(tick, PAUSE_MS).unref();
     else loop().on = false;
   };

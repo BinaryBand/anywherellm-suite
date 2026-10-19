@@ -13,7 +13,7 @@ import { allowedHosts, bareHost, onSite, secureFor, siteOf } from "#shared/fence
 import type { Headers } from "#shared/net";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { accessToken, isSignIn, minutesLeft, signedIn, type Definition, type SignIn } from "./oauth";
+import { accessToken, isSignIn, signedIn, waitingCode, type Definition, type SignIn } from "./oauth";
 
 /** How a secret goes with a request: as a bearer token, by HTTP Basic (the key the password, with a
  *  user name or none), as Authorization with another scheme, in a header, or in the query. */
@@ -74,7 +74,7 @@ const named = (label?: string) => (e: Readonly<vault.Entry>) => (e.kind === "key
 /** Where a sign-in is, as secret finds it: signed in only with a token it can call with or renew. */
 function status(e: Readonly<SignIn>): string {
   if (signedIn(e)) return "signed in";
-  if (e.device && minutesLeft(e.device.until)) return "waiting for the user to enter its code";
+  if (waitingCode(e)) return "waiting for the user to enter its code";
   if (e.tokens?.access_token) return "its sign-in ran out and can't be renewed: start it again with secret";
   if (e.error) return `its last sign-in didn't finish: ${e.error}`;
   return e.client_id ? "ready to sign in" : "waiting for its client";
@@ -132,7 +132,8 @@ export async function saveSignIn(site: string, label: string, oauth: Definition,
     if (kept?.shared && !sharedClient) throw new LibraryError(`"${label}" signs in with a preset, the suite's own client: don't give it a definition. To change its scopes, call secret with kind "oauth", its preset and the scopes; to see whether it signed in, call library`);
     const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };
     const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth) && kept.client_id === client.client_id;
-    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, tokens: unchanged ? kept.tokens : null, pending: unchanged ? (kept.pending ?? null) : null, device: unchanged ? (kept.device ?? null) : null, error: null });
+    const flow = unchanged ? { tokens: kept.tokens, pending: kept.pending ?? null, device: kept.device ?? null } : { tokens: null, pending: null, device: null };
+    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, ...flow, error: null });
   });
 }
 

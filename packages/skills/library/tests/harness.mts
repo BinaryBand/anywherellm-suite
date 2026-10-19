@@ -2,6 +2,7 @@
 // in, the built handler.js called as AnythingLLM's agent calls it, and what the Library page and the
 // Vault post, written as AnythingLLM's collector writes it.
 
+import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -38,6 +39,12 @@ const handler = (): ((this: unknown, args: Record<string, unknown>) => Promise<s
   delete require.cache[bundle];
   return require(bundle).runtime.handler;
 };
+
+/** Waits until `ok` holds, as what runs in the background gets there, for at most `ms`. */
+export async function until(ok: () => boolean, ms = 4000): Promise<void> {
+  for (const end = Date.now() + ms; !ok() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
+  assert.ok(ok(), `not within ${ms} ms`);
+}
 
 /** The question cards the skill showed: none, ever (a card shows its answers in the chat). */
 export const cardsShown: unknown[] = [];

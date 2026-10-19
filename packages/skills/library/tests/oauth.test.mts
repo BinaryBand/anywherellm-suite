@@ -10,7 +10,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, storage, vaultState } from "./harness.mts";
+import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, storage, until, vaultState } from "./harness.mts";
 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
@@ -77,6 +77,12 @@ const [BASE, OTHER] = await Promise.all(
 const definition = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, token_url: `${BASE}/token`, scopes: ["me.read"], params: { access_type: "offline" } };
 const LLM = "https://llm.example.com";
 
+/** The sign-in `label`'s status as the Vault shows it now; undefined when there's none. */
+const statusIn = (label: string): string | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label)?.status;
+
+/** The sign-in link an answer gives. */
+const linkIn = (said: string): URL => new URL(said.match(/^(http\S+)$/m)![1]);
+
 test.beforeEach(() => {
   reset();
   Object.assign(provider, fresh());
@@ -99,7 +105,7 @@ async function link(base: string = LLM, def: Record<string, unknown> = definitio
   const second = await call({ action: "secret", kind: "oauth", label: "demo" }, { base });
   assert.equal(cardsShown.length, 0, "never on a card");
   assert.ok(!second.includes("shh-secret"));
-  const url = new URL(second.match(/^(http\S+)$/m)![1]);
+  const url = linkIn(second);
   provider.challenge = url.searchParams.get("code_challenge") ?? "";
   return url;
 }
@@ -180,7 +186,7 @@ test("with ANYTHINGLLM_URL unset, the address the Vault was opened at is learned
   giveClient("demo", { origin: "https://phone.example.com/a/path" });
   assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }), /AnythingLLM's address isn't known/, "only an https origin counts");
   giveClient("demo", { origin: "https://phone.example.com" });
-  const link = new URL((await call({ action: "secret", kind: "oauth", label: "demo" })).match(/^(http\S+)$/m)![1]);
+  const link = linkIn(await call({ action: "secret", kind: "oauth", label: "demo" }));
   assert.equal(link.searchParams.get("redirect_uri"), "https://phone.example.com/library-lean/oauth.html");
   assert.equal(vaultState().redirect, "https://phone.example.com/library-lean/oauth.html");
   assert.match(await call({ action: "library" }), /: https:\/\/phone\.example\.com\/vault-lean\/[\w-]+\.html\n.*: https:\/\/phone\.example\.com\/library-lean\/[\w-]+\.html$/, "and the pages' links are absolute");
@@ -223,13 +229,7 @@ async function code(): Promise<string> {
   return call({ action: "secret", kind: "oauth", label: "dev" });
 }
 
-const devStatus = () => vaultState().secrets.find((s: { label: string }) => s.label === "dev").status;
-
-/** Waits until `done` holds, as the loop gets there with no call, for at most `ms`. */
-async function until(done: () => boolean, ms = 3000): Promise<void> {
-  for (const end = Date.now() + ms; !done() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 50));
-  assert.ok(done(), `not within ${ms} ms`);
-}
+const devStatus = () => statusIn("dev");
 
 test("a device sign-in: the code to show, the user agrees, and library finds it signed in", async () => {
   const said = await code();
@@ -418,10 +418,10 @@ test("a preset's sign-in takes no definition: the code waiting stays, and so do 
   assert.equal(provider.codes, 1);
   provider.agreed = true;
   await call({ action: "library" });
-  const gh = () => vaultState().secrets.find((s: { label: string }) => s.label === "gh");
-  assert.equal(gh().status, "signed in");
+  const gh = () => statusIn("gh");
+  assert.equal(gh(), "signed in");
   assert.match(await call({ action: "secret", kind: "oauth", label: "gh", definition: deviceDef }), /signs in with a preset/);
-  assert.equal(gh().status, "signed in", "a refused definition drops no tokens");
+  assert.equal(gh(), "signed in", "a refused definition drops no tokens");
 });
 
 test("a device sign-in whose token ran out with nothing to renew it signs in again with a new code", async () => {
@@ -444,11 +444,11 @@ test("asked for the link again while it waits, secret gives the same one, and th
   const first = await link();
   const again = await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM });
   assert.match(again, /^The link given before still waits, and no new one was made: give it again\. Give the user this sign-in link, to open in their browser; it's good for 10 minutes:\n/);
-  assert.equal(again.match(/^(http\S+)$/m)![1], first.href);
+  assert.equal(linkIn(again).href, first.href);
   assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM }), /still waits/, "the same definition again changes nothing");
   post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
   await call({ action: "library" });
-  assert.equal(vaultState().secrets.find((x: { label: string }) => x.label === "demo").status, "signed in");
+  assert.equal(statusIn("demo"), "signed in");
   assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }, { base: LLM }), /^"demo" is signed in already: start no new sign-in\./);
 });
 
@@ -458,18 +458,15 @@ test("a link that waits for another redirect address, or with a changed definiti
   assert.ok(!elsewhere.includes("still waits"), "the redirect address changed");
   const changed = await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, scopes: ["me.read", "me.write"] } }, { base: LLM });
   assert.ok(!changed.includes("still waits"), "the scopes changed");
-  assert.notEqual(new URL(changed.match(/^(http\S+)$/m)![1]).searchParams.get("state"), first.searchParams.get("state"));
+  assert.notEqual(linkIn(changed).searchParams.get("state"), first.searchParams.get("state"));
 });
 
 /** The sign-in `label`'s status, as the Vault shows it once a library call has written it again;
  *  undefined when there's none. */
 async function statusOf(label: string): Promise<string | undefined> {
   await call({ action: "library" });
-  return vaultState().secrets.find((x: { label: string }) => x.label === label)?.status;
+  return statusIn(label);
 }
-
-/** The link in a secret answer. */
-const linkIn = (said: string): URL => new URL(said.match(/^(http\S+)$/m)![1]);
 
 test("a changed definition makes a new link, and the old link's code is ignored", async () => {
   const first = await link();

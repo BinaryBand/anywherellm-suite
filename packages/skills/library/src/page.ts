@@ -141,11 +141,16 @@ export function showVault(base: string | null): Promise<string> {
   return vaultPage.show("keys", keysState(p, base), () => drainKeys(base), resolved(base, p));
 }
 
-/** Writes both pages' state again, where there are pages, as a run or a sign-in ends. */
+/** Writes both pages' state again, where there are pages, as a run or a sign-in ends; a hint, so a
+ *  failure is only logged. */
 export function refresh(base: string | null): void {
-  const p = read();
-  if (p) writeState(p, base);
-  vaultPage.refresh("keys", keysState(p, base));
+  try {
+    const p = read();
+    if (p) writeState(p, base);
+    vaultPage.refresh("keys", keysState(p, base));
+  } catch (e) {
+    console.error(`library-lean couldn't refresh the pages: ${(e as Error).message}`);
+  }
 }
 
 /** Writes the oauth page, where a provider sends the user back, and the file it posts with for

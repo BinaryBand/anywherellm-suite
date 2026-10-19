@@ -128,7 +128,7 @@ export const waiting = (): string[] =>
 
 /** Starts the sign-in `given`: answers the provider's sign-in address and the state it comes back
  *  with, which the vault keeps (with the PKCE verifier) until the code comes back or it runs out. */
-export async function start(given: Readonly<SignIn>, redirect: string): Promise<{ url: string; state: string }> {
+export async function start(given: Readonly<SignIn>, redirect: string): Promise<SignInLink> {
   const state = newSecret(24);
   const verifier = newSecret(32);
   const signIn = await vault.update((v) => {
@@ -138,7 +138,7 @@ export async function start(given: Readonly<SignIn>, redirect: string): Promise<
     found.pending = { state, verifier, redirect, until: Date.now() + PENDING_MS };
     return structuredClone(found);
   });
-  return { url: signInLink(signIn, redirect, state, verifier), state };
+  return { url: signInLink(signIn, redirect, state, verifier), state, minutes: PENDING_MS / 60_000 };
 }
 
 /** The provider's sign-in address for `signIn`, coming back to `redirect` with `state`. */
@@ -164,10 +164,33 @@ export function minutesLeft(until: number): number | null {
   return left >= 60_000 ? Math.round(left / 60_000) : null;
 }
 
+/** What the user is shown for a device-flow sign-in: the code to enter, where, and for how many
+ *  minutes. */
+export interface DeviceCode {
+  user_code: string;
+  link: string;
+  minutes: number;
+}
+
+/** The code `signIn` showed the user that still waits, with the minutes it has left; null when
+ *  none waits or it (nearly) ran out. */
+export function waitingCode(signIn: Readonly<SignIn>): DeviceCode | null {
+  const d = signIn.device;
+  const minutes = d ? minutesLeft(d.until) : null;
+  return d && minutes ? { user_code: d.user_code, link: d.link, minutes } : null;
+}
+
+/** A sign-in link the user is given: where it goes, its state, and the minutes it's good for. */
+export interface SignInLink {
+  url: string;
+  state: string;
+  minutes: number;
+}
+
 /** The link `signIn` gave the user that still waits for them to come back to `redirect`, made again
  *  from what the vault keeps, with its state and the minutes it has left; null when none waits, it
  *  (nearly) ran out, or the redirect address changed. */
-export function waitingLink(signIn: Readonly<SignIn>, redirect: string): { url: string; state: string; minutes: number } | null {
+export function waitingLink(signIn: Readonly<SignIn>, redirect: string): SignInLink | null {
   const p = signIn.pending;
   if (!p || p.redirect !== redirect) return null;
   const minutes = minutesLeft(p.until);
@@ -178,8 +201,11 @@ export function waitingLink(signIn: Readonly<SignIn>, redirect: string): { url: 
  *  or one that can be renewed. One that ran out with nothing to renew it is signed in no longer. */
 export const signedIn = (signIn: Readonly<SignIn>): boolean => {
   const t = signIn.tokens;
-  return !!t?.access_token && (!t.expires_at || t.expires_at - RENEW_MS > Date.now() || !!t.refresh_token);
+  return !!t?.access_token && (fresh(t) || !!t.refresh_token);
 };
+
+/** Whether `tokens`' access token can be sent as it is: it doesn't run out, or not soon. */
+const fresh = (tokens: Readonly<Tokens>): boolean => !tokens.expires_at || tokens.expires_at - RENEW_MS > Date.now();
 
 /** A provider's answer: JSON, or a form as some token addresses answer. */
 export interface ProviderAnswer {
@@ -254,7 +280,7 @@ export async function finish(state: string, code: string | null, error: string |
 export async function accessToken(signIn: Readonly<SignIn>): Promise<string> {
   const t = signIn.tokens;
   if (!t?.access_token) throw new LibraryError(`"${signIn.user}" isn't signed in yet: start its sign-in with secret, kind "oauth", label "${signIn.user}"`);
-  if (!t.expires_at || t.expires_at - RENEW_MS > Date.now()) return t.access_token;
+  if (fresh(t)) return t.access_token;
   if (!t.refresh_token) throw new LibraryError(`the sign-in "${signIn.user}" has run out and can't be renewed: start it again with secret`);
   const renewing = perProcess("library-lean.oauth.renewing", () => new Map<string, Promise<string>>());
   const flight = renewing.get(signIn.id);

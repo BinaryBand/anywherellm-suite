@@ -8,8 +8,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { setTimeout as sleep } from "node:timers/promises";
-import { call, idOf, installed, library, reset, runRecord as recordOf } from "./harness.mts";
+import { call, idOf, installed, library, reset, runRecord as recordOf, until } from "./harness.mts";
 
 process.env.LIBRARY_WAIT_MS = "300";
 
@@ -18,11 +17,6 @@ const pushes: { to: unknown; payload: { title: string; body: string; data: { onC
 const SLOW = "async function main(i, kit) { for (let n = 0; n < (i.n || 1); n++) await kit.sleep(i.ms || 400); if (i.fail) throw new Error('it failed'); return { slept: i.n || 1 }; }";
 const inputs = { n: { type: "number" }, ms: { type: "number" }, fail: { type: "boolean" } };
 const runsDir = () => path.join(library, "runs");
-
-async function until(ok: () => boolean): Promise<void> {
-  for (let i = 0; i < 200 && !ok(); i++) await sleep(20);
-  assert.ok(ok(), "waited too long");
-}
 
 test.beforeEach(async () => {
   reset();
