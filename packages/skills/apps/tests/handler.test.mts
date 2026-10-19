@@ -75,8 +75,9 @@ test("page gives the page's link, relative until AnythingLLM's address is set", 
 
 test("a starter makes a working app and page in one call, with the user's data over its own", async () => {
   const reply = await call("home", { action: "create", name: "focus", title: "Focus", starter: "focus-timer", data: { minutes: 50 } });
-  assert.match(reply, /^Made the app focus: Focus, from the focus-timer starter: the focus template with timer, entry-form, working as it is\./);
-  assert.match(reply, /\napp\.json:\n\{\n  "title": "Focus"[\s\S]*\npage\.html:\n<!doctype html>[\s\S]*data-ref="go"[\s\S]*data-ref="form"[\s\S]*Before giving the user the page:\nBefore showing the app/, "the page comes with the answer, and what to check");
+  assert.match(reply, /^Made the app focus: Focus, from the focus-timer starter: the focus template with timer, entry-form, working as it is\. It's ready: give the user the card/);
+  assert.match(reply, /\napp\.json:\n\{\n  "title": "Focus"/);
+  assert.doesNotMatch(reply, /page\.html:|<!doctype html>|Before showing the app/, "a starter is finished as made: no page to rewrite, no checks to make");
   assert.match(reply, /\*\*\[Focus\]\(\/apps-lean\/[\w-]+\.html\)\*\* · 50-minute timer · 0 sessions/);
   const shown = await call("home", { action: "read", name: "focus" });
   assert.match(shown, /Data: \{"minutes":50,"started":null,"entries":\[\]\}/);
