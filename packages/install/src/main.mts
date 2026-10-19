@@ -45,7 +45,7 @@ const OPTIONS: Record<string, ParseArgsConfig["options"]> = {
 
 const list = (value: unknown): string[] | undefined => (typeof value === "string" ? value.split(",").map((s) => s.trim()).filter(Boolean) : undefined);
 
-async function main(argv: string[]): Promise<number | void> {
+async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   const values = parseArgs({ args: rest, options: OPTIONS[command] ?? {} }).values as Record<string, string | boolean | undefined>;
   const text = (name: string) => values[name] as string | undefined;
@@ -71,9 +71,7 @@ async function main(argv: string[]): Promise<number | void> {
 }
 
 main(process.argv.slice(2)).then(
-  (code) => {
-    if (code !== undefined) process.exit(code);
-  },
+  (code) => process.exit(code),
   (e: unknown) => {
     console.error(`anywherellm-suite: ${(e as Error).message}`);
     process.exit(1);

@@ -6,13 +6,13 @@ An MCP server and agent skills that a stock AnythingLLM runs itself, and the com
 | --- | --- | --- | --- |
 | Control server (MCP: chat and schedule) | `packages/control` | started by AnythingLLM, from its storage folder, with `node` | Node 18+, no dependencies shipped |
 | Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS; browser bundles Puppeteer and runs the Chrome AnythingLLM's image ships, or the system's) |
-| The installer | `packages/install` | the command you run | Node 20+, no dependencies shipped |
+| The installer | `packages/install` | the command you run | Node 18+, no dependencies shipped |
 
 `packages/` holds what runs inside AnythingLLM and what puts it there. `contract/` is what the parts and the test lab agree on.
 
 ## Install
 
-You need a stock AnythingLLM (Desktop, or the Docker image) and Node 20.3 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the control server and the skills; build it with `npm install` once in `packages/`, then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
+You need a stock AnythingLLM (Desktop, or the Docker image) and Node 18 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the control server and the skills; build it with `npm install` once in `packages/`, then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
 
 ```sh
 node anywherellm-suite.cjs install                     # AnythingLLM Desktop, on Windows, macOS or Linux

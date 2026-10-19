@@ -3,30 +3,28 @@
 
 import path from "path";
 
-export type Env = Record<string, string | undefined>;
-
 export interface Place {
   platform: NodeJS.Platform;
-  env: Env;
+  env: Record<string, string | undefined>;
   home: string;
 }
 
 /** The path module that builds the platform's paths, whatever OS this runs on. */
 const pathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === "win32" ? path.win32 : path.posix);
 
-/** An app's settings folder: `%APPDATA%\<app>` on Windows, `~/Library/Application Support/<app>`
- *  on macOS, `$XDG_CONFIG_HOME/<app>` (an absolute one) or `~/.config/<app>` elsewhere. */
-export function configDir(app: string, { platform, env, home }: Place): string {
+/** AnythingLLM Desktop's storage folder, in Electron's settings folder for it (docs.anythingllm.com,
+ *  installation-desktop/storage): `%APPDATA%` on Windows, `~/Library/Application Support` on macOS,
+ *  `$XDG_CONFIG_HOME` (an absolute one) or `~/.config` elsewhere. */
+export function desktopStorage({ platform, env, home }: Place): string {
   const p = pathsOf(platform);
-  if (platform === "win32") return p.join(env.APPDATA || p.join(home, "AppData", "Roaming"), app);
-  if (platform === "darwin") return p.join(home, "Library", "Application Support", app);
   const xdg = env.XDG_CONFIG_HOME;
-  return p.join(xdg && p.isAbsolute(xdg) ? xdg : p.join(home, ".config"), app);
+  const settings =
+    platform === "win32" ? env.APPDATA || p.join(home, "AppData", "Roaming")
+    : platform === "darwin" ? p.join(home, "Library", "Application Support")
+    : xdg && p.isAbsolute(xdg) ? xdg
+    : p.join(home, ".config");
+  return p.join(settings, "anythingllm-desktop", "storage");
 }
-
-/** AnythingLLM Desktop's storage folder, which is Electron's settings folder for it on every OS
- *  (docs.anythingllm.com, installation-desktop/storage). */
-export const desktopStorage = (place: Place): string => pathsOf(place.platform).join(configDir("anythingllm-desktop", place), "storage");
 
 /** Whether two paths name one folder; file names on Windows and macOS ignore case. */
 export function samePath(platform: NodeJS.Platform, a: string, b: string): boolean {

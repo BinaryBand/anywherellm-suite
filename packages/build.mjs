@@ -3,9 +3,10 @@
 // part: that is the boundary between parts, since a part cannot ship another part's code.
 //
 //   install src/main.mts -> install/dist/anywherellm-suite.cjs, the command people run, for Node
-//           20. The extension is fixed (.cjs) so it runs the same wherever it is copied to. What
-//           install puts into AnythingLLM's storage, the control server and every skill, built
-//           first, is inlined as PAYLOAD. Allowed: src/ and shared/.
+//           18, like the control server it may start natively with the same node. The extension
+//           is fixed (.cjs) so it runs the same wherever it is copied to. What install puts into
+//           AnythingLLM's storage, the control server and every skill, built first, is inlined as
+//           PAYLOAD. Allowed: src/ and shared/.
 //   control src/main.mts -> control/dist/control.cjs, the MCP server AnythingLLM starts itself, so
 //           for Node 18 (the one in its image). Allowed: src/ and shared/.
 //   skills  each skill's src/handler.ts -> <skill>/build/<hubId>/handler.js plus plugin.json, the
@@ -149,7 +150,7 @@ async function payload() {
 async function buildInstall() {
   const define = { PAYLOAD: JSON.stringify(await payload()) };
   const outfile = path.join(here, "install", "dist", "anywherellm-suite.cjs");
-  await bundle({ entry: "install/src/main.mts", outfile, target: "node20", define, allowed: ["install/src/", "shared/"], label: "the installer" });
+  await bundle({ entry: "install/src/main.mts", outfile, target: "node18", define, allowed: ["install/src/", "shared/"], label: "the installer" });
   fs.chmodSync(outfile, 0o755);
   console.log(`built install -> ${path.relative(here, outfile)}`);
 }

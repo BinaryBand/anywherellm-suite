@@ -103,10 +103,13 @@ function readServers(file: string): Obj {
   return found as Obj;
 }
 
+/** The servers a servers file's JSON names. */
+const serversIn = (config: Obj): Obj => (config.mcpServers ?? {}) as Obj;
+
 /** What our entry in the servers file says (parseEntry), or null when there is none or no file to read. */
 export function current(storage: string): ReturnType<typeof parseEntry> {
   try {
-    return parseEntry(((readServers(serversFile(storage)).mcpServers ?? {}) as Obj)[NAME]);
+    return parseEntry(serversIn(readServers(serversFile(storage)))[NAME]);
   } catch {
     return null;
   }
@@ -116,7 +119,7 @@ export function current(storage: string): ReturnType<typeof parseEntry> {
 export function setEntry(storage: string, wanted: Obj | null): string {
   const file = serversFile(storage);
   const config = readServers(file);
-  const servers = { ...((config.mcpServers ?? {}) as Obj) };
+  const servers = { ...serversIn(config) };
   const old = servers[NAME] as Obj | undefined;
   if (old !== undefined && !ours(old)) throw new Told(`${file} has a server named ${NAME} that isn't ours; rename it first`);
   if (!wanted && old === undefined) return `no ${NAME} entry in ${file}`;
@@ -218,7 +221,7 @@ export function checks(storage: string, payload: Payload): Check[] {
   const control = same(controlFile(storage), payload.control);
   let listed: Check;
   try {
-    const found = ((readServers(serversFile(storage)).mcpServers ?? {}) as Obj)[NAME];
+    const found = serversIn(readServers(serversFile(storage)))[NAME];
     listed = [`the ${NAME} entry`, found !== undefined && ours(found), found === undefined ? `missing from ${serversFile(storage)}` : ours(found) ? "" : "another server has its name"];
   } catch (e) {
     listed = [`the ${NAME} entry`, false, (e as Error).message];
