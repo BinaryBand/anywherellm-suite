@@ -11,7 +11,7 @@ import { perProcess } from "#shared/anythingllm";
 import { secureFor } from "#shared/fence";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { isSignIn, postForm, refusal, tokenAnswer, tokensOf, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
+import { isSignIn, minutesLeft, postForm, refusal, tokenAnswer, tokensOf, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
 
 const GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 /** How many seconds apart to ask, when the provider doesn't say (RFC 8628 3.2). */
@@ -65,12 +65,11 @@ export async function startDevice(given: Readonly<SignIn>, report: Report): Prom
 }
 
 /** The code `signIn` showed the user that still waits, with the minutes it has left; null when
- *  none waits, it ran out, or it was kept before the vault kept what the user is shown. */
+ *  none waits or it (nearly) ran out. */
 export function waitingCode(signIn: Readonly<SignIn>): DeviceCode | null {
   const d = signIn.device;
-  const left = d ? d.until - Date.now() : 0;
-  if (!d?.user_code || !d.link || left <= 0) return null;
-  return { user_code: d.user_code, link: d.link, minutes: Math.max(1, Math.round(left / 60_000)) };
+  const minutes = d ? minutesLeft(d.until) : null;
+  return d && minutes ? { user_code: d.user_code, link: d.link, minutes } : null;
 }
 
 /** What the token address said: tokens, wait (asking `interval` seconds apart), or stop with why. */

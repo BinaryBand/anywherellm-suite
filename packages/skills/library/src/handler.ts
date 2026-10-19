@@ -158,8 +158,8 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
     const code = waits ?? (await startDevice(now, report));
     return `${waits ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
   }
-  if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   if (signedIn(found)) return already;
+  if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   const waits = waitingLink(found, redirect);
   const { url, state } = waits ?? (await startSignIn(found, redirect));
   await page.oauthPage(state, label); // again for a link that waits, whose page a new container lacks
