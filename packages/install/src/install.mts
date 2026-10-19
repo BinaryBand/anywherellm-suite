@@ -6,17 +6,16 @@
 // uninstall   all of that taken out again
 // health      every check; false when one fails
 //
-// The storage is the one named, else the one install was last given (ANYTHINGLLM_STORAGE in
-// `install.env`, in the user's settings folder: `~/.config/anywherellm-suite` on Linux), else
-// AnythingLLM Desktop's when it is there. The runtime and the roles are the ones named, else those of the entry already
-// there, else native for Desktop's storage and container for any other, and the chat role.
+// Each takes the storage named (--storage), else AnythingLLM Desktop's when it is there; nothing is
+// remembered between commands. The runtime and the roles are the ones named, else those of the
+// entry already there, else native for Desktop's storage and container for any other, and the chat
+// role.
 
 import fs from "node:fs";
 import path from "node:path";
 import { readPageKey } from "#shared/anythingllm";
 import { invalid } from "#shared/errors";
-import { readEnv, saveEnv } from "./envfile.mts";
-import { configDir, desktopStorage, expandHome, pathsOf, samePath, type Place } from "./paths.mts";
+import { desktopStorage, expandHome, samePath, type Place } from "./paths.mts";
 import { DEFAULT_ROLES, ROLES } from "#shared/roles";
 import { ANYTHINGLLM_PORT, request } from "#shared/upstream";
 import { checks, chosen, current, entry, INNER_STORAGE, NAME, needsPageKey, put, putPageKey, take, type Check, type Payload, type Runtime } from "./addons.mts";
@@ -42,18 +41,10 @@ export interface Options {
 
 const RUNTIMES: Runtime[] = ["container", "native"];
 
-const HEADER = ["# anywherellm-suite's installer: the storage `install` was last given, which `uninstall` and", "# `health` use when given none."];
-
-/** The installer's settings file. */
-export const settingsFile = (place: Place): string => pathsOf(place.platform).join(configDir("anywherellm-suite", place), "install.env");
-
-/** The storage install was last given, if any. */
-const remembered = (place: Place): string | null => readEnv(settingsFile(place)).ANYTHINGLLM_STORAGE || null;
-
 /** The storage to use, or a refusal that says how to find it. */
 function storageFor(ctx: Ctx, asked: string | undefined): string {
   const desktop = desktopStorage(ctx);
-  const where = asked ? path.resolve(expandHome(asked, ctx.home)) : (remembered(ctx) ?? (fs.existsSync(desktop) ? desktop : null));
+  const where = asked ? path.resolve(expandHome(asked, ctx.home)) : (fs.existsSync(desktop) ? desktop : null);
   if (!where) {
     throw invalid(
       `say which AnythingLLM: --storage DIR. For Docker, the folder mounted at ${INNER_STORAGE} (a named volume isn't reachable from here; use a bind mount). AnythingLLM Desktop's would be ${desktop}, and there is none.`,
@@ -76,7 +67,6 @@ export async function install(ctx: Ctx, opts: Options): Promise<void> {
   ctx.print(`AnythingLLM's storage: ${storage} (${runtime === "container" ? `a container's, seen there as ${INNER_STORAGE}` : "AnythingLLM runs on this machine"})`);
   for (const line of put(storage, ctx.payload, entry(runtime, storage, roles, ctx.node), skills)) ctx.print(line);
   if (opts.pageKey) ctx.print(putPageKey(storage, opts.pageKey));
-  saveEnv(settingsFile(ctx), { ANYTHINGLLM_STORAGE: storage }, HEADER);
   leftForYou(ctx, runtime, needsPageKey(storage, ctx.payload) && !readPageKey(storage));
 }
 
@@ -89,18 +79,16 @@ function leftForYou(ctx: Ctx, runtime: Runtime, askKey: boolean): void {
 }
 
 export function uninstall(ctx: Ctx, opts: { storage?: string } = {}): void {
-  const storage = opts.storage ? path.resolve(expandHome(opts.storage, ctx.home)) : remembered(ctx);
-  if (storage) for (const line of take(storage, ctx.payload)) ctx.print(line);
-  else ctx.print("No storage is known: name it with --storage to take the control server and the skills out.");
-  saveEnv(settingsFile(ctx), { ANYTHINGLLM_STORAGE: null }, HEADER);
-  if (storage) ctx.print("A skill's data stays in the storage (the library's in library-lean/).");
+  for (const line of take(storageFor(ctx, opts.storage), ctx.payload)) ctx.print(line);
+  ctx.print("A skill's data stays in the storage (the library's in library-lean/).");
 }
 
 /** Every health check; false when one failed. */
-export async function health(ctx: Ctx): Promise<boolean> {
-  const storage = remembered(ctx);
-  const found: Check[] = storage ? [["AnythingLLM's storage", fs.existsSync(storage), storage], ...checks(storage, ctx.payload)] : [["AnythingLLM's storage", false, "not set: run install"]];
-  if (storage && needsPageKey(storage, ctx.payload)) found.push(await pageKeyCheck(storage, (ctx.env.ANYTHINGLLM_URL || `http://127.0.0.1:${ANYTHINGLLM_PORT}`).replace(/\/+$/, "")));
+export async function health(ctx: Ctx, opts: { storage?: string } = {}): Promise<boolean> {
+  const storage = storageFor(ctx, opts.storage);
+  ctx.print(`AnythingLLM's storage: ${storage}`);
+  const found: Check[] = checks(storage, ctx.payload);
+  if (needsPageKey(storage, ctx.payload)) found.push(await pageKeyCheck(storage, (ctx.env.ANYTHINGLLM_URL || `http://127.0.0.1:${ANYTHINGLLM_PORT}`).replace(/\/+$/, "")));
   for (const [what, ok, detail] of found) ctx.print(`${ok ? "ok  " : "FAIL"} ${what}${detail ? `: ${detail}` : ""}`);
   return found.every(([, ok]) => ok);
 }

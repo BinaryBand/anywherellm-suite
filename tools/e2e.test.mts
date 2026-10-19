@@ -4,9 +4,11 @@
 //   E2E_CONTROL                 the control server install put in, as the container sees it
 //   E2E_ALLM_URL, E2E_PASSWORD  AnythingLLM from here, and its password (AUTH_TOKEN)
 //   E2E_WORKSPACE               the slug of the one workspace AnythingLLM holds
-//   E2E_CLI                     the built anywherellm-suite.cjs, with its settings in the environment
+//   E2E_CLI                     the built anywherellm-suite.cjs, with ANYTHINGLLM_URL in the environment
 //
-// Also E2E_ALLM_PORT and E2E_STORAGE, for a command run in the tests' place.
+//   E2E_STORAGE                 the throwaway's storage folder, as this machine sees it
+//
+// Also E2E_ALLM_PORT, for a command run in the tests' place.
 //
 // The control server is started as AnythingLLM starts it: `node $E2E_CONTROL` inside the container, with the container's environment. The throwaway has no model, so a chat holds
 // no exchanges: clearing one that has some is covered against the fake, in packages/control/tests.
@@ -141,7 +143,7 @@ test("a password AnythingLLM refuses, and an AnythingLLM that isn't there, are s
 });
 
 test("health passes for what install set up", run, () => {
-  const done = spawnSync(process.execPath, [env("E2E_CLI"), "health"], { encoding: "utf8" });
+  const done = spawnSync(process.execPath, [env("E2E_CLI"), "health", "--storage", env("E2E_STORAGE")], { encoding: "utf8" });
   assert.equal(done.status, 0, done.stdout + done.stderr);
   assert.match(done.stdout, /ok +the control entry/);
   assert.match(done.stdout, /ok +the pages' key/);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/install [install's options]: builds the suite and runs its install from this checkout, as
 # `node anywherellm-suite.cjs install` would: the control server and the skills into AnythingLLM's
-# storage (--storage DIR, else the one it was given before, else AnythingLLM Desktop's).
+# storage (--storage DIR, else AnythingLLM Desktop's).
 # `node packages/install/dist/anywherellm-suite.cjs --help` lists the options.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

@@ -6,7 +6,7 @@
 
 PART    ?=# install, control or skills; empty: all
 SKILL   ?=# a skill's folder name under packages/skills
-STORAGE ?=# AnythingLLM's storage folder; empty: the one given before, else Desktop's
+STORAGE ?=# AnythingLLM's storage folder; empty: AnythingLLM Desktop's
 
 help: ## List the commands
 	@awk -F':.*## ' '/^[a-z0-9-]+:.*## /{printf "  make %-14s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -36,5 +36,5 @@ e2e-skill: ## Run a skill's own check inside a throwaway AnythingLLM (SKILL=brow
 package: ## Build and zip a skill into dist/ (SKILL=library)
 	tools/package $(SKILL)
 
-install: ## Build and install into AnythingLLM's storage (STORAGE=<folder>; empty: the one given before, else Desktop's)
+install: ## Build and install into AnythingLLM's storage (STORAGE=<folder>; empty: Desktop's)
 	tools/install $(if $(STORAGE),--storage "$(STORAGE)")

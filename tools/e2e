@@ -51,7 +51,7 @@ page_key=$(curl -fs -X POST "$allm/api/browser-extension/api-keys/new" -H "Autho
 echo "[e2e] anywherellm-suite install, built from packages/"
 (cd "$ROOT/packages" && node build.mjs install >/dev/null)
 cli="$ROOT/packages/install/dist/anywherellm-suite.cjs"
-export XDG_CONFIG_HOME="$work/config" ANYTHINGLLM_URL="$allm"
+export ANYTHINGLLM_URL="$allm"
 node "$cli" install --storage "$storage" --roles chat,schedule --page-key "$page_key" >"$work/install.log"
 
 # A developer key, as the settings page makes one, and a workspace for the tests to find.

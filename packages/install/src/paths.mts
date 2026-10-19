@@ -12,7 +12,7 @@ export interface Place {
 }
 
 /** The path module that builds the platform's paths, whatever OS this runs on. */
-export const pathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === "win32" ? path.win32 : path.posix);
+const pathsOf = (platform: NodeJS.Platform): path.PlatformPath => (platform === "win32" ? path.win32 : path.posix);
 
 /** An app's settings folder: `%APPDATA%\<app>` on Windows, `~/Library/Application Support/<app>`
  *  on macOS, `$XDG_CONFIG_HOME/<app>` (an absolute one) or `~/.config/<app>` elsewhere. */

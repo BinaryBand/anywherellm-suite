@@ -16,7 +16,7 @@ const USAGE = `usage: anywherellm-suite <command>
           [--runtime container|native] [--roles chat,schedule] [--skills all|none|NAME,...]
           [--page-key brx-...]   the key the skills' pages post with (Settings > Browser Extension)
   uninstall [--storage DIR]      take them out again
-  health                         check it all; exit 1 when a check fails
+  health [--storage DIR]         check it all; exit 1 when a check fails
 
 The storage is AnythingLLM Desktop's when there is one; for Docker, the folder mounted at
 ${INNER_STORAGE}.
@@ -40,6 +40,7 @@ const OPTIONS: Record<string, ParseArgsConfig["options"]> = {
     "page-key": { type: "string" },
   },
   uninstall: { storage: { type: "string" } },
+  health: { storage: { type: "string" } },
 };
 
 const list = (value: unknown): string[] | undefined => (typeof value === "string" ? value.split(",").map((s) => s.trim()).filter(Boolean) : undefined);
@@ -62,7 +63,7 @@ async function main(argv: string[]): Promise<number | void> {
       uninstall(ctx, { storage: text("storage") });
       return 0;
     case "health":
-      return (await health(ctx)) ? 0 : 1;
+      return (await health(ctx, { storage: text("storage") })) ? 0 : 1;
     default:
       console.error(USAGE);
       return command ? 2 : 0;
