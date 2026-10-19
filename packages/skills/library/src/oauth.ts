@@ -7,8 +7,9 @@
 // and keeps them in the vault, renewing them as they run out; nothing of them, nor of the client,
 // reaches the model. A sign-in waiting for the provider is kept in the vault too, so whichever
 // process takes the code back (the chat's, or a scheduled job's) can finish it, once. Nothing here
-// knows any provider. Ported from the lean browser skill's oauth.js, which caught the redirect in its
-// own Chrome.
+// knows any provider (presets.ts does). Ported from the lean browser skill's oauth.js, which caught the
+// redirect in its own Chrome. A provider that signs in with a code the user enters, and no redirect,
+// signs in through device.ts.
 
 import crypto from "node:crypto";
 import { objectOf } from "#shared/answer";
@@ -39,6 +40,9 @@ export interface Definition {
   pkce: boolean;
   params: Record<string, string>;
   client_auth: "body" | "basic";
+  /** The provider's device authorization address (RFC 8628), for a sign-in with a code the user
+   *  enters at the provider and no redirect (device.ts). */
+  device_url?: string;
 }
 
 export interface Tokens {
@@ -55,6 +59,14 @@ interface Pending {
   until: number;
 }
 
+/** A device-flow sign-in waiting for the user to enter its code: the provider's device code, how
+ *  many seconds apart it said to ask for the tokens, and when the code runs out. */
+export interface DeviceWait {
+  code: string;
+  interval: number;
+  until: number;
+}
+
 /** An OAuth sign-in as the vault keeps it. */
 export interface SignIn extends vault.Entry {
   kind: "oauth";
@@ -63,6 +75,9 @@ export interface SignIn extends vault.Entry {
   client_secret: string | null;
   tokens: Tokens | null;
   pending?: Pending | null;
+  device?: DeviceWait | null;
+  /** Whether its client is the suite's own, from a preset (presets.ts). */
+  shared?: boolean;
   /** Why the last sign-in didn't finish, until one does. */
   error?: string | null;
 }
@@ -93,7 +108,8 @@ export function define(given: Record<string, unknown>): Definition {
   }
   const clientAuth = String(given.client_auth ?? "body");
   if (clientAuth !== "body" && clientAuth !== "basic") throw new LibraryError('client_auth is "body" (the client\'s secret sent in the form) or "basic" (in an Authorization header)');
-  return { authorize_url: secureUrl(given.authorize_url, "authorize_url"), token_url: secureUrl(given.token_url, "token_url"), scopes, pkce: given.pkce !== false, params: params as Record<string, string>, client_auth: clientAuth };
+  const device = given.device_url ? { device_url: secureUrl(given.device_url, "device_url") } : {};
+  return { authorize_url: secureUrl(given.authorize_url, "authorize_url"), token_url: secureUrl(given.token_url, "token_url"), scopes, pkce: given.pkce !== false, params: params as Record<string, string>, client_auth: clientAuth, ...device };
 }
 
 /** The redirect address to register for the client, for AnythingLLM's address `base`; null while
@@ -134,25 +150,46 @@ export async function start(given: Readonly<SignIn>, redirect: string): Promise<
   return { url: url.href, state };
 }
 
-/** Trades at the sign-in's token_url: `form` is the grant. Answers the tokens to keep. */
-async function tokenRequest(signIn: Readonly<SignIn>, form: Record<string, string>): Promise<Tokens> {
+/** A provider's answer: JSON, or a form as some token addresses answer. */
+export interface ProviderAnswer {
+  status: number;
+  data: Record<string, unknown>;
+}
+
+/** Posts `fields` as a form to the provider's `url`, and answers what it said. */
+export async function postForm(url: string, fields: Record<string, string>, headers: Record<string, string> = {}): Promise<ProviderAnswer> {
+  const answer = await net.send({ method: "POST", url, headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded", ...headers }, body: new URLSearchParams(fields).toString(), next: () => null });
+  const text = answer.body.toString("utf8");
+  try {
+    return { status: answer.status, data: JSON.parse(text) };
+  } catch {
+    return { status: answer.status, data: Object.fromEntries(new URLSearchParams(text)) };
+  }
+}
+
+/** Asks the sign-in's token_url with `form`, the grant, and the client as the provider wants it. */
+export function tokenAnswer(signIn: Readonly<SignIn>, form: Record<string, string>): Promise<ProviderAnswer> {
   const o = signIn.oauth;
-  const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded" };
+  const headers: Record<string, string> = {};
   const fields: Record<string, string> = { ...form, client_id: signIn.client_id ?? "" };
   if (signIn.client_secret && o.client_auth === "basic") headers.Authorization = `Basic ${Buffer.from(`${encodeURIComponent(signIn.client_id ?? "")}:${encodeURIComponent(signIn.client_secret)}`).toString("base64")}`;
   else if (signIn.client_secret) fields.client_secret = signIn.client_secret;
-  const answer = await net.send({ method: "POST", url: o.token_url, headers, body: new URLSearchParams(fields).toString(), next: () => null });
-  const text = answer.body.toString("utf8");
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    data = Object.fromEntries(new URLSearchParams(text));
-  }
-  if (!data.access_token) throw new LibraryError(`${hostOf(o.token_url)} gave no token (${answer.status}${data.error ? `: ${String(data.error_description || data.error).slice(0, 200)}` : ""})`);
+  return postForm(o.token_url, fields, headers);
+}
+
+/** Why the provider at `url` said no, in its words. */
+export const refusal = (url: string, { status, data }: ProviderAnswer, what: string): string => `${hostOf(url)} gave no ${what} (${status}${data.error ? `: ${String(data.error_description || data.error).slice(0, 200)}` : ""})`;
+
+/** The tokens to keep from the token address's answer; a LibraryError when it gave none. */
+export function tokensOf(signIn: Readonly<SignIn>, answer: ProviderAnswer): Tokens {
+  const { data } = answer;
+  if (!data.access_token) throw new LibraryError(refusal(signIn.oauth.token_url, answer, "token"));
   const seconds = Number(data.expires_in);
   return { access_token: String(data.access_token), refresh_token: data.refresh_token ? String(data.refresh_token) : (signIn.tokens?.refresh_token ?? null), expires_at: seconds > 0 ? Date.now() + seconds * 1000 : null };
 }
+
+/** Trades at the sign-in's token_url: `form` is the grant. Answers the tokens to keep. */
+const tokenRequest = async (signIn: Readonly<SignIn>, form: Record<string, string>): Promise<Tokens> => tokensOf(signIn, await tokenAnswer(signIn, form));
 
 /** After the provider sent the user back with `code` (or `error`) for `state`: takes the sign-in
  *  waiting with that state (once: a state no sign-in waits for is ignored), trades the code for

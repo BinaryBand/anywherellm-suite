@@ -11,6 +11,10 @@
 // the link can read what it shows and act on it, so it's shared as a signed-in session would be,
 // and rotated (a new token and secret) from the page. An OAuth provider sends the user back to
 // oauth.html, a fixed address; its event is taken only for a sign-in waiting with that state.
+//
+// The page also tells the skill AnythingLLM's address when ANYTHINGLLM_URL is unset: the https
+// address it was opened at, sent with the client the user saves, which is the redirect address
+// it showed them to register.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -43,6 +47,8 @@ interface PageFile {
   secret: string;
   needs: Need[];
   watchUntil: number;
+  /** The https address the user opened the page at, as the page said with a client it saved. */
+  origin?: string | null;
 }
 
 const pageFile = () => path.join(store.libraryDir(), "page.json");
@@ -71,11 +77,28 @@ function template(name: "library" | "oauth"): string {
 /** Writes `text` to the public file `name` unless it holds it already. */
 const putPublic = (name: string, text: string) => writePublic(pub(name), text);
 
+/** AnythingLLM's address: `base`, the skill's ANYTHINGLLM_URL, or else the https address the
+ *  page last said it was opened at (from `p`, page.json as read); null when neither is known. */
+const resolved = (base: string | null, p: PageFile | null): string | null => base ?? p?.origin ?? null;
+
+/** AnythingLLM's address, for the setting `base`, as the page's state and link take it. */
+export const baseFor = (base: string | null): string | null => resolved(base, read());
+
+/** An address the page says it was opened at, when it's an https origin and nothing more. */
+function originOf(given: unknown): string | null {
+  try {
+    const url = new URL(String(given ?? ""));
+    return url.protocol === "https:" && url.origin === String(given) ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The page's state, as it reads it: nothing secret. */
 function state(p: PageFile, base: string | null) {
   const now = Date.now();
   return {
-    redirect: redirectFor(base),
+    redirect: redirectFor(resolved(base, p)),
     needs: p.needs.filter((n) => n.until > now).map(({ label, site, kind }) => ({ label, site, kind })),
     secrets: secrets.secrets(),
     toolkits: store.services().map((service) => {
@@ -96,7 +119,7 @@ export async function show(base: string | null): Promise<string> {
   putPublic(`${p.token}.html`, await pageHtml(template("library"), { token: p.token, secret: p.secret, title: TITLE }));
   writeState(p, base);
   watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
-  return `${base ?? ""}/${pub(`${p.token}.html`)}`;
+  return `${resolved(base, p) ?? ""}/${pub(`${p.token}.html`)}`;
 }
 
 /** Writes the page's state again, when there's a page, as a run ends. */
@@ -106,10 +129,11 @@ export function refresh(base: string | null): void {
 }
 
 /** Writes the oauth page, where a provider sends the user back, and the file it posts with for
- *  `state`; removes those of sign-ins no longer waited for, and watches while one is. */
-export async function oauthPage(state: string): Promise<void> {
+ *  `state`, which names the sign-in `label` it says the user signed in to; removes those of
+ *  sign-ins no longer waited for, and watches while one is. */
+export async function oauthPage(state: string, label: string): Promise<void> {
   putPublic(path.basename(OAUTH_PAGE), template("oauth"));
-  putPublic(`s-${state}.json`, JSON.stringify({ key: pageKey(), title: TITLE }));
+  putPublic(`s-${state}.json`, JSON.stringify({ key: pageKey(), title: TITLE, label }));
   const keep = new Set(waiting().map((s) => `s-${s}.json`));
   for (const old of listPublic(pub("")).filter((f) => f.startsWith("s-") && !keep.has(f))) removePublic(pub(old));
   await change((p) => void (p.watchUntil = Math.max(p.watchUntil, Date.now() + PENDING_MS + 60 * 1000)));
@@ -145,6 +169,8 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
     case "oauth-client": {
       const sealed = text(e.sealed, 20000);
       await secrets.saveClient(label, text(e.client_id), sealed ? vault.openSealed(sealed) : null);
+      const at = originOf(e.origin);
+      if (at) await change((p) => void (p.origin = at));
       return { met: label };
     }
     case "key-delete":

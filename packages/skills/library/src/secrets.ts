@@ -26,12 +26,16 @@ export interface Secret {
   site: string;
   label: string;
   kind: "key" | "oauth";
-  /** "saved" (a key), or a sign-in's: "signed in", "ready to sign in", "waiting for its client",
-   *  or why its last sign-in didn't finish. */
+  /** "saved" (a key), or a sign-in's: "signed in", "waiting for the user to enter its code",
+   *  "ready to sign in", "waiting for its client", or why its last sign-in didn't finish. */
   status: string;
   /** A sign-in's scopes, and the host it signs in at. */
   scopes?: string;
   authorize?: string;
+  /** Whether a sign-in signs in with a code the user enters (no redirect), and whether its client
+   *  is the suite's own, which the user doesn't give. */
+  device?: boolean;
+  shared?: boolean;
 }
 
 /** `as`, checked. */
@@ -69,6 +73,7 @@ const named = (label?: string) => (e: Readonly<vault.Entry>) => (e.kind === "key
 /** Where a sign-in is. */
 function status(e: Readonly<SignIn>): string {
   if (e.tokens?.access_token) return "signed in";
+  if (e.device) return "waiting for the user to enter its code";
   if (e.error) return `its last sign-in didn't finish: ${e.error}`;
   return e.client_id ? "ready to sign in" : "waiting for its client";
 }
@@ -80,7 +85,7 @@ export const secrets = (): Secret[] =>
     .filter(named())
     .map((e) =>
       isSignIn(e)
-        ? { site: e.site, label: e.user, kind: "oauth", status: status(e), scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host }
+        ? { site: e.site, label: e.user, kind: "oauth", status: status(e), scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared }
         : { site: e.site, label: e.user, kind: "key", status: "saved" },
     );
 
@@ -110,18 +115,20 @@ export async function saveKey(site: string, label: string, value: string): Promi
   await vault.update((v) => put(v, { kind: "key", site, user: label, value }));
 }
 
-/** Saves how a sign-in signs in; one of the same name keeps its client, and its tokens while how
- *  it signs in is unchanged. One sign-in per provider: a new name for a provider signed in at
- *  already is refused, naming the one there. */
-export async function saveSignIn(site: string, label: string, oauth: Definition): Promise<void> {
+/** Saves how a sign-in signs in; one of the same name keeps its client (or takes `sharedClient`,
+ *  the suite's own from a preset), and its tokens while how it signs in and its client are
+ *  unchanged. One sign-in per provider: a new name for a provider signed in at already is refused,
+ *  naming the one there. */
+export async function saveSignIn(site: string, label: string, oauth: Definition, sharedClient?: string): Promise<void> {
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;
     const other = v.entries.find((e) => isSignIn(e) && !named(label)(e) && new URL(e.oauth.authorize_url).host === host) as SignIn | undefined;
     if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${status(other)}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, give the definition again with that label. For another account, the user deletes it on the Library page first`);
     const same = v.entries.find(named(label));
     const kept = same && isSignIn(same) ? same : null;
-    const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth);
-    put(v, { kind: "oauth", site, user: label, oauth, client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null, tokens: unchanged ? kept.tokens : null, pending: null, error: null });
+    const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };
+    const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth) && kept.client_id === client.client_id;
+    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, tokens: unchanged ? kept.tokens : null, pending: null, device: null, error: null });
   });
 }
 
@@ -133,7 +140,7 @@ export async function saveClient(label: string, clientId: string, clientSecret: 
   await vault.update((v) => {
     const found = v.entries.find(named(label));
     if (!found || !isSignIn(found)) throw new LibraryError(`there's no sign-in "${label}"`);
-    if (found.client_id !== id) Object.assign(found, { tokens: null, error: null });
+    if (found.client_id !== id) Object.assign(found, { tokens: null, error: null, device: null, shared: false });
     found.client_id = id;
     if (clientSecret?.trim()) found.client_secret = clientSecret.trim();
   });

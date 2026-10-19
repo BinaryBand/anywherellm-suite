@@ -128,7 +128,10 @@
       !!need,
     );
 
-  const saveClient = async (signIn, id, secret) => post("oauth-client", { label: signIn.label, client_id: id, sealed: secret ? await seal(secret) : "" });
+  // With ANYTHINGLLM_URL unset, the skill learns AnythingLLM's address from the client saved here: the
+  // https address this page was opened at, whose oauth page is the redirect address it shows.
+  const here = location.protocol === "https:" ? location.origin : "";
+  const saveClient = async (signIn, id, secret) => post("oauth-client", { label: signIn.label, client_id: id, sealed: secret ? await seal(secret) : "", origin: here });
 
   // The JSON file a provider's console gives for a client (Google's client_secret_….json: { web:
   // { client_id, client_secret, redirect_uris } }), read here: only its ID and sealed secret are sent.
@@ -144,8 +147,9 @@
   }
 
   const clientForm = (signIn, redirect) => {
+    redirect = redirect || (here && `${here}/library-lean/oauth.html`);
     const node = form(
-      el("p", { className: "cap", textContent: redirect ? `Register this redirect address for the client: ${redirect}` : "Set the Library skill's ANYTHINGLLM_URL (AnythingLLM's Agent Skills) to the address you open AnythingLLM at first: the redirect address depends on it." }),
+      el("p", { className: "cap", textContent: signIn.device ? "Switch the device flow on for the client: it needs no redirect address." : redirect ? `Register this redirect address for the client: ${redirect}` : "Open this page at AnythingLLM's https address, or set the Library skill's ANYTHINGLLM_URL (AnythingLLM's Agent Skills) to it, first: the redirect address depends on it." }),
       [["id", "Client ID"], ["secret", "Client secret (leave empty to keep it, or if it has none)", "password"]],
       "Save the client",
       async (v) => (v.id ? saveClient(signIn, v.id, v.secret) : (toast("Give the client ID"), false)),
@@ -186,8 +190,8 @@
       const needed = s.needs.some((n) => n.kind === "client" && n.label === o.label);
       signins.append(el("div", { className: "card" + (needed ? " need" : "") },
         el("div", { className: "row" }, el("strong", { textContent: o.label }), el("span", { className: o.status === "signed in" ? "good" : "cap", textContent: o.status })),
-        el("p", { className: "cap", textContent: `Signs in at ${o.authorize}; sends to ${o.site}${o.scopes ? `; scopes: ${o.scopes}` : ""}` }),
-        clientForm(o, s.redirect), remove("Delete", "key-delete", { label: o.label })));
+        el("p", { className: "cap", textContent: `Signs in at ${o.authorize}${o.device ? " with a code" : ""}; sends to ${o.site}${o.scopes ? `; scopes: ${o.scopes}` : ""}${o.shared ? "; with the suite's own client" : ""}` }),
+        ...(o.shared ? [] : [clientForm(o, s.redirect)]), remove("Delete", "key-delete", { label: o.label })));
     }
     if (s.redirect && !s.redirect.startsWith("https://") && oauth.length) signins.append(pasteForm());
 

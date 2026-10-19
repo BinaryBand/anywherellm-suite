@@ -15,11 +15,13 @@ import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
 import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
+import { askDevices, startDevice } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
 import { LOOPBACK, define, redirectFor, start as startSignIn } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
+import { presetOf } from "./presets";
 import { send } from "./request";
 import * as runs from "./runs";
 import { check as compiles, failureText } from "./sandbox";
@@ -120,28 +122,38 @@ async function secret(args: Args, self: HandlerContext): Promise<string> {
   return `The user gives the key on the Library page: ${await page.show(baseOf(self))}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
 }
 
-/** An OAuth sign-in, one step at a time. A call that gives the definition saves it and says what
- *  client the user makes at the provider and gives on the Library page; a later one, once there's
- *  a client, answers the sign-in link. */
+/** An OAuth sign-in, one step at a time. A call that gives the definition (or a preset) saves it and,
+ *  for the user's own client, says what client they make at the provider and give on the Library
+ *  page; a later one, once there's a client, answers the sign-in link, or the code the user enters. */
 async function signIn(args: Args, self: HandlerContext): Promise<string> {
-  const label = secrets.labelOf(args.label);
+  const label = secrets.labelOf(clean(args.label) || clean(args.preset));
   const base = baseOf(self);
-  const redirect = redirectFor(base);
-  if (args.definition !== undefined) {
+  const redirect = redirectFor(page.baseFor(base));
+  if (args.preset !== undefined) {
+    const p = presetOf(args.preset, args.scopes);
+    await secrets.saveSignIn(p.site, label, define(p.definition), p.client_id);
+  } else if (args.definition !== undefined) {
     const def = objectOf(args.definition, "definition");
     await secrets.saveSignIn(secrets.siteChecked(def.site ?? args.site), label, define(def));
   }
   const found = secrets.signIn(label);
-  if (!found) throw new LibraryError(`there's no sign-in "${label}": give its definition { site, authorize_url, token_url, scopes, params } (guide topic secrets)`);
-  if (!redirect) return `The sign-in "${label}" is saved, but the Library skill's ANYTHINGLLM_URL is empty, and the redirect address the provider sends the user back to depends on it. Ask the user to set it in AnythingLLM (Settings, Agent Skills, Library) to the address they open AnythingLLM at, like https://anythingllm.example.com, then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
+  if (!found) throw new LibraryError(`there's no sign-in "${label}": give its definition { site, authorize_url, token_url, scopes, params }, or a preset (guide topic secrets)`);
+  const host = new URL(found.oauth.authorize_url).host;
+  const done = `When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
   if (!found.client_id) {
     await page.need(label, found.site, "client");
-    return `"${label}" needs the user's own OAuth client at the provider (${new URL(found.oauth.authorize_url).host}). Tell them to make one in its developer console: a web application client, with this redirect address registered: ${redirect}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID and secret on the Library page, under Sign-ins: ${await page.show(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
+    const kind = found.oauth.device_url ? "a client with the device flow switched on (it needs no redirect address)" : redirect ? `a web application client, with this redirect address registered: ${redirect}` : "a web application client, with the redirect address the Library page shows registered";
+    return `"${label}" needs the user's own OAuth client at the provider (${host}). Tell them to make one in its developer console: ${kind}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID (and its secret, if it has one) on the Library page, under Sign-ins: ${await page.show(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
   }
+  if (found.oauth.device_url) {
+    const code = await startDevice(found, (m) => self.logger?.(m));
+    return `Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
+  }
+  if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Library page over https and save the client again there (${await page.show(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   const { url, state } = await startSignIn(found, redirect);
-  await page.oauthPage(state);
-  const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Library page's Sign-ins tab (Finish a sign-in): ${await page.show(base)}`;
-  return `Give the user this sign-in link, to open in their browser; it's good for 10 minutes:\n${url}\n${back} When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
+  await page.oauthPage(state, label);
+  const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent (on a phone, with a button back to the AnywhereLLM app)." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Library page's Sign-ins tab (Finish a sign-in): ${await page.show(base)}`;
+  return `Give the user this sign-in link, to open in their browser; it's good for 10 minutes:\n${url}\n${back} ${done}`;
 }
 
 /** auth as call takes it: none, how the key saved for the address's site goes ("bearer"), or
@@ -295,6 +307,7 @@ export const runtime = {
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
       await fromPage(this);
+      await askDevices(action === "library", (m) => this.logger?.(m));
       return await act(args, this);
     } catch (e) {
       if (e instanceof Told) return `Library: ${e.message}.`;

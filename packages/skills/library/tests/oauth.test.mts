@@ -1,6 +1,7 @@
 // OAuth sign-ins, against a stand-in provider on 127.0.0.1: the definition, the user's client on the
 // Library page, the sign-in link (PKCE), the code coming back through oauth.html's event, the tokens sent by
-// a function and renewed once as they run out, and the paste fallback.
+// a function and renewed once as they run out, and the paste fallback; a device-flow sign-in (a code the
+// user enters, no redirect), the presets, and AnythingLLM's address learned from the Library page.
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -9,20 +10,35 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, cardsShown, pageConfig, pageState, post, publicDir, reset, seal, storage } from "./harness.mts";
+import { call, cardsShown, pageConfig, pageState, post, publicDir, reset, seal, skillDir, storage } from "./harness.mts";
 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
 // token.
-const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false });
+// For the device flow: whether the user agreed (or declined), whether the next ask is told to slow
+// down, how long a code lasts, and how many times the token address was asked.
+const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expires: 900, asks: 0 });
 const provider = fresh();
 const server = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     const json = (status: number, value: unknown) => (res.writeHead(status, { "content-type": "application/json" }), res.end(JSON.stringify(value)));
+    const form = new URLSearchParams(body);
+    if (req.url === "/device/code") {
+      if (form.get("client_id") !== "client-1") return json(401, { error: "invalid_client" });
+      return json(200, { device_code: "dev-secret-1", user_code: "WDJB-MJHT", verification_uri: "https://example.com/login/device", expires_in: provider.expires, interval: 0 });
+    }
+    if (req.url === "/token" && form.get("grant_type") === "urn:ietf:params:oauth:grant-type:device_code") {
+      provider.asks++;
+      if (form.get("client_id") !== "client-1" || form.get("device_code") !== "dev-secret-1") return json(400, { error: "invalid_grant" });
+      if (provider.slow) return (provider.slow = false), json(400, { error: "slow_down" });
+      if (provider.declined) return json(400, { error: "access_denied" });
+      if (!provider.agreed) return json(400, { error: "authorization_pending" });
+      provider.access = `at-${crypto.randomUUID()}`;
+      return json(200, { access_token: provider.access, token_type: "bearer", scope: "me.read" });
+    }
     if (req.url === "/token") {
-      const form = new URLSearchParams(body);
       provider.basic = req.headers.authorization === `Basic ${Buffer.from("client-1:shh-secret").toString("base64")}`;
       if (form.get("client_id") !== "client-1" || (form.get("client_secret") !== "shh-secret" && !provider.basic)) return json(401, { error: "invalid_client" });
       if (form.get("grant_type") === "authorization_code") {
@@ -55,6 +71,12 @@ test.beforeEach(() => {
   Object.assign(provider, fresh());
 });
 
+/** Gives the client of the sign-in `label` on the page, as the user does: its ID, and its secret
+ *  sealed (or none), from a page opened at `origin`. */
+function giveClient(label: string, { secret = "", origin }: { secret?: string; origin?: string } = {}): void {
+  post({ secret: pageConfig().secret, ev: "oauth-client", label, client_id: "client-1", sealed: secret ? seal(secret) : "", ...(origin ? { origin } : {}) });
+}
+
 /** Defines the sign-in "demo" (as `def`), gives its client on the page, and answers the sign-in link;
  *  `base` is AnythingLLM's address. */
 async function link(base: string = LLM, def: Record<string, unknown> = definition): Promise<URL> {
@@ -62,7 +84,7 @@ async function link(base: string = LLM, def: Record<string, unknown> = definitio
   assert.match(first, /"demo" needs the user's own OAuth client at the provider \(127\.0\.0\.1:\d+\)/);
   assert.ok(first.includes(base.startsWith("https://") ? `${LLM}/library-lean/oauth.html` : "http://127.0.0.1/library-lean/oauth"), "the redirect address to register");
   assert.deepEqual(pageState().needs, [{ label: "demo", site: "127.0.0.1", kind: "client" }], "asked for on the page");
-  post({ secret: pageConfig().secret, ev: "oauth-client", label: "demo", client_id: "client-1", sealed: seal("shh-secret") });
+  giveClient("demo", { secret: "shh-secret" });
   const second = await call({ action: "secret", kind: "oauth", label: "demo" }, { base });
   assert.equal(cardsShown.length, 0, "never on a card");
   assert.ok(!second.includes("shh-secret"));
@@ -88,6 +110,7 @@ test("a sign-in: its definition, the client, the link, the code back through oau
   assert.ok(fs.existsSync(path.join(publicDir, "library-lean", "oauth.html")), "the page the provider sends the user back to");
   const sFile = path.join(publicDir, "library-lean", `s-${q.state}.json`);
   assert.equal(JSON.parse(fs.readFileSync(sFile, "utf8")).key, "brx-test", "what oauth.html posts with");
+  assert.equal(JSON.parse(fs.readFileSync(sFile, "utf8")).label, "demo", "the name its button back to the app says");
 
   post({ ev: "oauth-code", state: q.state, code: "good-code" }); // as oauth.html posts it: no page secret
   await call({ action: "library" }); // a call from a chat applies what the page posted
@@ -137,12 +160,20 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   assert.match(JSON.stringify(pageState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
 });
 
-test("with ANYTHINGLLM_URL unset, the answer says so and gives no redirect address", async () => {
+test("with ANYTHINGLLM_URL unset, the address the Library page was opened at is learned with the client", async () => {
   const said = await call({ action: "secret", kind: "oauth", label: "demo", definition });
-  assert.match(said, /ANYTHINGLLM_URL is empty/);
-  assert.ok(!said.includes("/library-lean/oauth"), "no redirect address");
-  await call({ action: "library" });
-  assert.equal(pageState().redirect, null, "nor on the page");
+  assert.match(said, /with the redirect address the Library page shows registered/);
+  assert.ok(!said.includes("/library-lean/oauth"), "no redirect address the skill can't know");
+  assert.equal(pageState().redirect, null, "nor on the page, which shows its own");
+  giveClient("demo", { secret: "shh-secret", origin: "http://phone.example.com" });
+  giveClient("demo", { origin: "https://phone.example.com/a/path" });
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }), /AnythingLLM's address isn't known/, "only an https origin counts");
+  giveClient("demo", { origin: "https://phone.example.com" });
+  const link = new URL((await call({ action: "secret", kind: "oauth", label: "demo" })).match(/^(http\S+)$/m)![1]);
+  assert.equal(link.searchParams.get("redirect_uri"), "https://phone.example.com/library-lean/oauth.html");
+  assert.equal(pageState().redirect, "https://phone.example.com/library-lean/oauth.html");
+  assert.match(await call({ action: "library" }), /: https:\/\/phone\.example\.com\/library-lean\/[\w-]+\.html$/, "and the page's link is absolute");
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo" }, { base: "https://llm.example.com" }), /redirect_uri=https%3A%2F%2Fllm\.example\.com%2F/, "ANYTHINGLLM_URL still wins");
 });
 
 test("one sign-in per provider: a definition under another name points to the one there", async () => {
@@ -166,4 +197,70 @@ test("a definition is checked, and a sign-in that isn't there is said so", async
   assert.match(await call({ action: "secret", kind: "oauth", label: "x", definition: { ...definition, params: { client_id: "sneaky" } } }), /params can't set client_id/);
   assert.match(await call({ action: "secret", kind: "oauth", label: "x", definition: { ...definition, token_url: "ftp://x.example/token" } }), /token_url is an https address/);
   assert.match(await call({ action: "secret", kind: "magic", label: "x" }), /kind is "key" \(an API key or token\) or "oauth"/);
+});
+
+// The device flow.
+
+const deviceDef = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, token_url: `${BASE}/token`, device_url: `${BASE}/device/code`, scopes: "me.read", pkce: false };
+
+/** Defines the device-flow sign-in "dev", gives its client (an ID, no secret) on the page, and
+ *  answers the code to show. */
+async function code(): Promise<string> {
+  const first = await call({ action: "secret", kind: "oauth", label: "dev", definition: deviceDef });
+  assert.match(first, /a client with the device flow switched on \(it needs no redirect address\)/);
+  giveClient("dev");
+  return call({ action: "secret", kind: "oauth", label: "dev" });
+}
+
+const devStatus = () => pageState().secrets.find((s: { label: string }) => s.label === "dev").status;
+
+test("a device sign-in: the code to show, the user agrees, and library finds it signed in", async () => {
+  const said = await code();
+  assert.match(said, /^Show the user this code in a code block of its own, so they can copy it:\n\n```\nWDJB-MJHT\n```\n\nThey open https:\/\/example\.com\/login\/device, enter the code and agree; it's good for 15 minutes\./);
+  assert.ok(!said.includes("dev-secret-1"), "the device code never reaches the model");
+  await call({ action: "library" });
+  assert.equal(devStatus(), "waiting for the user to enter its code");
+  assert.ok(provider.asks >= 1, "asked while the user hadn't agreed");
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.equal(devStatus(), "signed in");
+  await call({ action: "save", service: "dev", toolkit: { base_urls: [BASE], secrets: [{ label: "dev", as: "bearer" }] }, function: { name: "me", description: "Who signed in.", source: "async function main(i, kit) { const a = await kit.http({ path: '/me' }); if (!a.ok) throw new Error('status ' + a.status); return a.body.name; }" } });
+  assert.match(await call({ action: "run", name: "dev.me" }), /"Ada"/);
+  const asked = provider.asks;
+  await call({ action: "library" });
+  assert.equal(provider.asks, asked, "nothing more is asked once signed in");
+});
+
+test("a provider that asks to slow down is asked less often", async () => {
+  provider.slow = true;
+  await code();
+  await call({ action: "guide" });
+  const asked = provider.asks;
+  assert.ok(asked >= 1);
+  await call({ action: "guide" });
+  assert.equal(provider.asks, asked, "not asked again before the longer interval");
+  provider.agreed = true;
+  await call({ action: "library" }); // waits for the interval, as when the user says they're done
+  assert.equal(devStatus(), "signed in");
+});
+
+test("a device sign-in the user declines, or whose code runs out, says why", async () => {
+  provider.declined = true;
+  await code();
+  await call({ action: "library" });
+  assert.equal(devStatus(), "its last sign-in didn't finish: the user didn't agree at the provider");
+  provider.declined = false;
+  provider.expires = 1;
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /good for 1 minute\./);
+  await new Promise((r) => setTimeout(r, 1100));
+  await call({ action: "library" });
+  assert.equal(devStatus(), "its last sign-in didn't finish: the code ran out before the user entered it: start the sign-in again");
+});
+
+test("a preset is the suite's own client, and an unknown one names the presets", async (t) => {
+  assert.match(await call({ action: "secret", kind: "oauth", preset: "nope" }), /there's no preset "nope": the presets are github/);
+  const registered = /GITHUB_CLIENT_ID = "([^"]+)"/.test(fs.readFileSync(path.join(skillDir, "src", "presets.ts"), "utf8"));
+  // Once it's registered, secret would ask GitHub itself for a code.
+  if (registered) return t.skip("the suite's GitHub client is registered");
+  assert.match(await call({ action: "secret", kind: "oauth", preset: "github", scopes: "repo" }), /the suite's github client isn't registered yet/);
 });
