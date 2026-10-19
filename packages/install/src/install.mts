@@ -14,10 +14,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readPageKey } from "#shared/anythingllm";
-import { invalid } from "#shared/errors";
+import { Told } from "#shared/errors";
 import { desktopStorage, expandHome, samePath, type Place } from "./paths.mts";
 import { DEFAULT_ROLES, ROLES } from "#shared/roles";
-import { ANYTHINGLLM_PORT, request } from "#shared/upstream";
+import { anythingllmUrl, request } from "#shared/upstream";
 import { checks, chosen, current, entry, INNER_STORAGE, NAME, needsPageKey, put, putPageKey, take, type Check, type Payload, type Runtime } from "./addons.mts";
 
 /** This machine: its home, environment and OS (a test may say another), and what install needs. */
@@ -46,19 +46,19 @@ function storageFor(ctx: Ctx, asked: string | undefined): string {
   const desktop = desktopStorage(ctx);
   const where = asked ? path.resolve(expandHome(asked, ctx.home)) : (fs.existsSync(desktop) ? desktop : null);
   if (!where) {
-    throw invalid(
+    throw new Told(
       `say which AnythingLLM: --storage DIR. For Docker, the folder mounted at ${INNER_STORAGE} (a named volume isn't reachable from here; use a bind mount). AnythingLLM Desktop's would be ${desktop}, and there is none.`,
     );
   }
-  if (!fs.existsSync(path.join(where, "anythingllm.db")) && !fs.existsSync(path.join(where, "plugins"))) throw invalid(`${where} doesn't look like AnythingLLM's storage`);
+  if (!fs.existsSync(path.join(where, "anythingllm.db")) && !fs.existsSync(path.join(where, "plugins"))) throw new Told(`${where} doesn't look like AnythingLLM's storage`);
   return where;
 }
 
 export async function install(ctx: Ctx, opts: Options): Promise<void> {
-  if (opts.runtime && !RUNTIMES.includes(opts.runtime)) throw invalid(`--runtime is container or native, not ${opts.runtime}`);
+  if (opts.runtime && !RUNTIMES.includes(opts.runtime)) throw new Told(`--runtime is container or native, not ${opts.runtime}`);
   const unknown = (opts.roles ?? []).filter((r) => !ROLES.includes(r));
-  if (unknown.length || opts.roles?.length === 0) throw invalid(`--roles is one or more of ${ROLES.join(", ")}${unknown.length ? `, not ${unknown.join(", ")}` : ""}`);
-  if (opts.pageKey !== undefined && !/^brx-\S+$/.test(opts.pageKey)) throw invalid(`--page-key is a browser-extension key (brx-...), as AnythingLLM's Settings > Browser Extension makes one`);
+  if (unknown.length || opts.roles?.length === 0) throw new Told(`--roles is one or more of ${ROLES.join(", ")}${unknown.length ? `, not ${unknown.join(", ")}` : ""}`);
+  if (opts.pageKey !== undefined && !/^brx-\S+$/.test(opts.pageKey)) throw new Told(`--page-key is a browser-extension key (brx-...), as AnythingLLM's Settings > Browser Extension makes one`);
   const skills = chosen(ctx.payload, opts.skills);
   const storage = storageFor(ctx, opts.storage);
   const was = current(storage);
@@ -88,7 +88,7 @@ export async function health(ctx: Ctx, opts: { storage?: string } = {}): Promise
   const storage = storageFor(ctx, opts.storage);
   ctx.print(`AnythingLLM's storage: ${storage}`);
   const found: Check[] = checks(storage, ctx.payload);
-  if (needsPageKey(storage, ctx.payload)) found.push(await pageKeyCheck(storage, (ctx.env.ANYTHINGLLM_URL || `http://127.0.0.1:${ANYTHINGLLM_PORT}`).replace(/\/+$/, "")));
+  if (needsPageKey(storage, ctx.payload)) found.push(await pageKeyCheck(storage, anythingllmUrl(ctx.env)));
   for (const [what, ok, detail] of found) ctx.print(`${ok ? "ok  " : "FAIL"} ${what}${detail ? `: ${detail}` : ""}`);
   return found.every(([, ok]) => ok);
 }

@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import readline from "node:readline";
 import { test } from "node:test";
-import { Upstream } from "../packages/shared/upstream.mts";
+import { Upstream } from "../packages/control/src/upstream.mts";
 
 const env = (name: string): string => process.env[name] ?? "";
 const run = !env("E2E_CONTAINER") ? { skip: "run it through tools/e2e" } : {};
@@ -51,11 +51,10 @@ async function control(roles: string, extra: Record<string, string> = {}) {
   };
 }
 
-/** AnythingLLM's internal API, logged in as its pages are; its JSON. */
-const allm = async (path: string): Promise<any> => {
-  const api = new Upstream(env("E2E_ALLM_URL"), { read: () => env("E2E_PASSWORD"), where: "E2E_PASSWORD" });
-  return (await api.exchange("GET", path, undefined, 120_000)).json;
-};
+/** AnythingLLM's internal API, logged in once as its pages are. */
+const upstream = new Upstream(env("E2E_ALLM_URL"), env("E2E_PASSWORD"), "E2E_PASSWORD");
+/** Its JSON for `path`. */
+const allm = async (path: string): Promise<any> => (await upstream.exchange("GET", path, undefined, 120_000)).json;
 
 test("AnythingLLM starts the control server install put in, and lists the skill", run, async () => {
   await allm("/mcp-servers/force-reload");

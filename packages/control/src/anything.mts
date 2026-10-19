@@ -5,7 +5,7 @@
 // Also what a tool reads an answer with, which never throws (an answer of another shape reads as
 // empty), and the checks on what a tool puts into a path.
 
-import { said } from "#shared/upstream";
+import { said } from "./upstream.mts";
 
 export class ControlError extends Error {}
 

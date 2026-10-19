@@ -1,52 +1,28 @@
-// A stand-in for AnythingLLM's APIs, on a port of its own: the internal API's login
-// (`POST /api/request-token`: logins hand out tok-1, tok-2, ...) and its routes, and the browser
-// extension's key check (`GET /api/browser-extension/check`).
+// A stand-in for AnythingLLM on a port of its own: the browser extension's key check
+// (`GET /api/browser-extension/check`), the one call the installer makes. Any other request is
+// counted and gets a 404.
 
 import http from "node:http";
-import consumers from "node:stream/consumers";
 import { close, listen } from "./net.mts";
 
-interface Call {
-  method: string;
-  url: string;
-  body: unknown;
-  token: string;
-}
-
 export class FakeAnythingLLM {
-  password = "pw";
   /** The browser-extension keys it takes. */
   extensionKeys = new Set(["brx-good"]);
-  /** Tokens that get a 401. */
-  expired = new Set<string>();
-  /** Replies by `METHOD /path?query` (under /api); anything else is 200 {"ok": true}. */
-  replies = new Map<string, { status?: number; json: unknown }>();
-  calls: Call[] = [];
-  logins = 0;
+  /** Requests other than the key check. */
+  requests = 0;
   readonly server: http.Server;
   url = "";
 
   constructor() {
-    this.server = http.createServer(async (req, res) => {
-      const text = await consumers.text(req);
-      const body = text ? JSON.parse(text) : null;
-      const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+    this.server = http.createServer((req, res) => {
       const reply = (status: number, json: unknown) => {
         res.writeHead(status, { "Content-Type": "application/json" });
-        res.end(json === undefined ? "" : JSON.stringify(json));
+        res.end(JSON.stringify(json));
       };
-      const url = req.url ?? "";
-      if (url === "/api/request-token") {
-        if (body?.password !== this.password) return reply(200, { valid: false, token: null, message: "[003] Invalid password" });
-        this.logins++;
-        return reply(200, { valid: true, token: `tok-${this.logins}` });
-      }
-      if (url === "/api/browser-extension/check") return this.extensionKeys.has(token) ? reply(200, { connected: true }) : reply(403, { error: "No valid API key found." });
-      if (this.expired.has(token)) return reply(401, undefined);
-      const route = url.replace(/^\/api/, "");
-      this.calls.push({ method: req.method ?? "", url: route, body, token });
-      const found = this.replies.get(`${req.method} ${route}`);
-      reply(found?.status ?? 200, found ? found.json : { ok: true });
+      const token = (req.headers.authorization ?? "").replace(/^Bearer /, "");
+      if (req.url === "/api/browser-extension/check") return this.extensionKeys.has(token) ? reply(200, { connected: true }) : reply(403, { error: "No valid API key found." });
+      this.requests++;
+      reply(404, { error: "not a route the fake knows" });
     });
   }
 

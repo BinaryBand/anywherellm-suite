@@ -4,7 +4,6 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { checks, chosen, entry, put, serversFile, setEntry, take, type Payload } from "../src/addons.mts";
-import { readEnv } from "./fakes/env.mts";
 import { tempDir } from "./fakes/tmp.mts";
 
 const tmp = tempDir("addons");
@@ -96,7 +95,7 @@ test("the servers file keeps other servers and AnythingLLM's settings in ours, a
 test("another server named control is refused; a servers file that isn't JSON is refused", () => {
   const dir = storage();
   fs.writeFileSync(serversFile(dir), JSON.stringify({ mcpServers: { control: { command: "npx", args: ["someone-elses"] } } }));
-  assert.throws(() => setEntry(dir, ENTRY), { status: 400, message: /a server named control that isn't ours/ });
+  assert.throws(() => setEntry(dir, ENTRY), { message: /a server named control that isn't ours/ });
   fs.writeFileSync(serversFile(dir), "{oops");
   assert.throws(() => setEntry(dir, ENTRY), /isn't JSON/);
 });
@@ -146,13 +145,14 @@ test("a storage that isn't the user's to write says what to do", { skip: process
   const dir = storage();
   fs.chmodSync(dir, 0o555);
   try {
-    assert.throws(() => put(dir, PAYLOAD, ENTRY, []), { status: 400, message: /belongs to another user.*podman unshare/ });
+    assert.throws(() => put(dir, PAYLOAD, ENTRY, []), { message: /belongs to another user.*podman unshare/ });
   } finally {
     fs.chmodSync(dir, 0o755);
   }
 });
 
 test("the storage path inside the container is the contract's", () => {
-  const contract = readEnv(fileURLToPath(new URL("../../../contract/versions.env", import.meta.url)));
-  assert.deepEqual(entry("container", "/x", ["chat"], "node").args, [`${contract.INNER_STORAGE}/anywherellm-suite/control.cjs`]);
+  const contract = fs.readFileSync(fileURLToPath(new URL("../../../contract/versions.env", import.meta.url)), "utf8");
+  const inner = /^INNER_STORAGE=(.+)$/m.exec(contract)?.[1];
+  assert.deepEqual(entry("container", "/x", ["chat"], "node").args, [`${inner}/anywherellm-suite/control.cjs`]);
 });

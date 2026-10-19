@@ -17,7 +17,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { pageKeyFile, SAVED_NOW, SUITE_DIR } from "#shared/anythingllm";
 import { sameText, writeAtomicIfChanged } from "#shared/atomic";
-import { invalid } from "#shared/errors";
+import { Told } from "#shared/errors";
 import { DEFAULT_ROLES, ROLES_ENV } from "#shared/roles";
 
 /** The files install writes, built into it (packages/build.mjs). */
@@ -75,7 +75,7 @@ function writable<T>(file: string, operation: () => T): T {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code !== "EACCES" && code !== "EPERM") throw e;
-    throw invalid(
+    throw new Told(
       `can't write ${file}: the storage belongs to another user, likely the container's. Run install as that user, or for rootless podman inside \`podman unshare\`, or start the container with --userns=keep-id`,
     );
   }
@@ -97,9 +97,9 @@ function readServers(file: string): Obj {
   try {
     found = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
   } catch (e) {
-    throw invalid(`${file} isn't JSON (${(e as Error).message}); fix it first`);
+    throw new Told(`${file} isn't JSON (${(e as Error).message}); fix it first`);
   }
-  if (!found || typeof found !== "object" || Array.isArray(found)) throw invalid(`${file} doesn't hold a JSON object`);
+  if (!found || typeof found !== "object" || Array.isArray(found)) throw new Told(`${file} doesn't hold a JSON object`);
   return found as Obj;
 }
 
@@ -118,7 +118,7 @@ export function setEntry(storage: string, wanted: Obj | null): string {
   const config = readServers(file);
   const servers = { ...((config.mcpServers ?? {}) as Obj) };
   const old = servers[NAME] as Obj | undefined;
-  if (old !== undefined && !ours(old)) throw invalid(`${file} has a server named ${NAME} that isn't ours; rename it first`);
+  if (old !== undefined && !ours(old)) throw new Told(`${file} has a server named ${NAME} that isn't ours; rename it first`);
   if (!wanted && old === undefined) return `no ${NAME} entry in ${file}`;
   if (wanted) servers[NAME] = old?.anythingllm ? { ...wanted, anythingllm: old.anythingllm } : wanted;
   else delete servers[NAME];
@@ -162,7 +162,7 @@ function holds(file: string, text: string): boolean {
 export function chosen(payload: Payload, names?: string[]): Skill[] {
   if (!names || names.includes("all")) return payload.skills;
   const unknown = names.filter((n) => n !== "none" && !payload.skills.some((s) => s.name === n));
-  if (unknown.length) throw invalid(`no such skill: ${unknown.join(", ")}; the skills are ${payload.skills.map((s) => s.name).join(", ") || "none"}`);
+  if (unknown.length) throw new Told(`no such skill: ${unknown.join(", ")}; the skills are ${payload.skills.map((s) => s.name).join(", ") || "none"}`);
   return payload.skills.filter((s) => names.includes(s.name));
 }
 

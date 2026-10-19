@@ -3,11 +3,11 @@
 // port and password are already there:
 //
 //   ANYTHINGLLM_URL        AnythingLLM (default http://127.0.0.1:<SERVER_PORT, else 3001>)
-//   AUTH_TOKEN             its password, read at each login; none for a Desktop or an open instance
+//   AUTH_TOKEN             its password; none for a Desktop or an open instance
 //   ANYTHINGLLM_MCP_ROLES  comma-separated, from `chat` and `schedule` (default `chat`)
 
 import { DEFAULT_ROLES, ROLES, ROLES_ENV } from "#shared/roles";
-import { ANYTHINGLLM_PORT } from "#shared/upstream";
+import { anythingllmUrl } from "#shared/upstream";
 
 export interface Settings {
   url: string;
@@ -21,5 +21,5 @@ export function fromEnv(env: Record<string, string | undefined>): Settings {
   if (!roles.length || !roles.every((r) => ROLES.includes(r))) {
     throw new Error(`${ROLES_ENV} is one or more of ${ROLES.join(", ")}; got ${JSON.stringify(asked)}`);
   }
-  return { url: env.ANYTHINGLLM_URL || `http://127.0.0.1:${env.SERVER_PORT || ANYTHINGLLM_PORT}`, roles };
+  return { url: anythingllmUrl(env), roles };
 }

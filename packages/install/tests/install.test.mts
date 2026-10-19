@@ -22,7 +22,6 @@ beforeEach(async () => {
   home = fs.mkdtempSync(path.join(tmp, "home-"));
   storage = path.join(home, "storage");
   fs.mkdirSync(path.join(storage, "plugins"), { recursive: true });
-  fs.writeFileSync(path.join(storage, ".env"), "AUTH_TOKEN='pw'\n");
   printed = [];
   ctx = {
     home,
@@ -43,8 +42,7 @@ test("install puts the server, its entry and the skills into the storage, and as
   assert.equal(fs.readFileSync(path.join(storage, "anywherellm-suite", "control.cjs"), "utf8"), PAYLOAD.control);
   assert.deepEqual(control(), { command: "node", args: ["/app/server/storage/anywherellm-suite/control.cjs"], env: { ANYTHINGLLM_MCP_ROLES: "chat" } });
   assert.ok(fs.existsSync(path.join(storage, "plugins", "agent-skills", "library-lean", "handler.js")));
-  assert.deepEqual(fake.calls, []);
-  assert.equal(fake.logins, 0);
+  assert.equal(fake.requests, 0);
   assert.match(printed.join("\n"), /refresh the MCP servers/);
 });
 
@@ -61,11 +59,11 @@ test("with no --storage each command takes AnythingLLM Desktop's, and install ru
 });
 
 test("with no storage to be found each command says how to name one", async () => {
-  const refusal = { status: 400, message: /--storage DIR.*mounted at \/app\/server\/storage.*bind mount.*Desktop's would be/ };
+  const refusal = { message: /--storage DIR.*mounted at \/app\/server\/storage.*bind mount.*Desktop's would be/ };
   await assert.rejects(install(ctx, opts({ storage: undefined })), refusal);
   await assert.rejects(health(ctx), refusal);
   assert.throws(() => uninstall(ctx), refusal);
-  await assert.rejects(install(ctx, opts({ storage: home })), { status: 400, message: /doesn't look like AnythingLLM's storage/ });
+  await assert.rejects(install(ctx, opts({ storage: home })), { message: /doesn't look like AnythingLLM's storage/ });
   fs.mkdirSync(path.join(home, "s2", "plugins"), { recursive: true });
   await install(ctx, opts({ storage: "~/s2" }));
   assert.ok(fs.existsSync(path.join(home, "s2", "anywherellm-suite", "control.cjs")));
