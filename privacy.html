@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AnywhereLLM Suite - Privacy policy</title>
+<style>
+:root { --bg:#fcf8f3; --ink:#1c1b22; --muted:#5b5a66; --accent:#4b5dc3; }
+@media (prefers-color-scheme: dark) { :root { --bg:#181922; --ink:#ecebf2; --muted:#a3a2b3; --accent:#9aa7ff; } }
+body { background:var(--bg); color:var(--ink); font:17px/1.55 system-ui, sans-serif; margin:0; }
+main { max-width:40rem; margin:0 auto; padding:2.5rem 1rem 4rem; }
+h1 { font-size:1.8rem; margin:0 0 .5rem; }
+h2 { font-size:1.15rem; margin:2rem 0 .4rem; }
+.muted { color:var(--muted); font-size:.95rem; }
+a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+<h1>Privacy policy</h1>
+<p class="muted">AnywhereLLM Suite. Last updated 19 October 2026.</p>
+
+<h2>Who this is for</h2>
+<p>AnywhereLLM Suite is a personal project run by its owner (GitHub: BinaryBand) on the owner's own server. It is used by one person, to sign in to that person's own accounts. It is not offered to the public as a service.</p>
+
+<h2>What it accesses</h2>
+<p>When the owner signs in to a service such as Google or GitHub, the suite receives an access token for that account, limited to the permissions the owner approved on the provider's own consent screen. For Google, those permissions are Calendar, Gmail (read, compose and send, but not permanent deletion) and Drive.</p>
+
+<h2>How it is used</h2>
+<p>Google account data is used only to carry out requests the owner makes to the owner's own AI agent, such as reading a calendar entry, drafting an email or finding a file. It is not used for advertising, is not sold, and is not shared with anyone else.</p>
+<p>The suite's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including its Limited Use requirements.</p>
+
+<h2>Where it is stored</h2>
+<p>Sign-in tokens are stored encrypted on the owner's own AnythingLLM server, in a vault that only the suite's tools read. The agent that uses a sign-in never sees the token itself. Tokens are sent only to the provider's own API address, over https. The suite does not copy Google data to any server run by its author.</p>
+<p>Content the agent reads on the owner's request (for example an email) is passed to the AI model provider the owner has configured for AnythingLLM, so that the model can answer. Which provider that is, and its own privacy terms, are the owner's choice.</p>
+
+<h2>How long and how to remove it</h2>
+<p>A sign-in is kept until the owner deletes it in the suite's Vault page. The owner can also revoke access at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Deleting a sign-in or revoking access ends the suite's access to that account.</p>
+
+<h2>Analytics and cookies</h2>
+<p>None. This page and the home page are static and set no cookies.</p>
+
+<h2>Contact</h2>
+<p>Questions: open an issue at <a href="https://github.com/BinaryBand/anywherellm-suite/issues">github.com/BinaryBand/anywherellm-suite/issues</a>.</p>
+</main>
+</body>
+</html>
