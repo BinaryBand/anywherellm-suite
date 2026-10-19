@@ -69,6 +69,19 @@ test("every component, alone in a page, passes the page check", async () => {
     assert.deepEqual(await parts.pageProblems(parts.assemble("column", [name]).page), [], name);
 });
 
+// The page check's stand-in DOM finds any ref, so it can't see a q() that finds nothing: q() looks
+// inside the part's element, never at the element itself.
+test("every ref a component's script asks q() for is inside its part", () => {
+  for (const { name, body } of Object.values(parts.parts()).filter((p) => p.kind === "component")) {
+    const script = parts.scriptsOf(body).join("\n");
+    const markup = body.replace(/<script[\s\S]*?<\/script>/g, "");
+    const root = new RegExp(`<[^>]*data-part="${name}"[^>]*>`).exec(markup);
+    if (!root) continue;
+    const inside = markup.slice(root.index + root[0].length);
+    for (const [, ref] of script.matchAll(/\bq\("([\w-]+)"\)/g)) assert.ok(inside.includes(`data-ref="${ref}"`), `${name}: q("${ref}") finds nothing`);
+  }
+});
+
 /** A figure drawn from `spec` by parts.js and its kinds, in a stand-in browser: the SVG it makes. */
 function drawn(spec: Record<string, unknown>): string {
   const made: any[] = [];

@@ -1,7 +1,7 @@
 <!--part
 {"name":"choices","line":"a question with choices and a note: the agent asks, the user answers","schema":{"type":"object","required":["question","choices","answer"],"properties":{"question":{"type":"string","minLength":1,"maxLength":200},"choices":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"string","minLength":1,"maxLength":80}},"answer":{"type":["object","null"],"required":["choice"],"properties":{"choice":{"type":"string","maxLength":80},"note":{"type":"string","maxLength":500},"at":{"type":"string"}}}}},"data":{"question":"Which one?","choices":["This","That"],"answer":null},"events":["answer"]}
 -->
-<form class="stack" data-part="choices" data-ref="form">
+<form class="stack" data-part="choices">
 <h2 data-ref="q"></h2>
 <fieldset class="stack" data-ref="choices"></fieldset>
 <label class="stack">Anything else? <textarea data-ref="note" maxlength="500" placeholder="Optional"></textarea></label>
@@ -9,8 +9,8 @@
 <p data-ref="sent" role="status"></p>
 </form>
 <script>
-App.mount("choices", ({ at, q }) => {
-  q("form").onsubmit = (e) => {
+App.mount("choices", ({ root, at, q }) => {
+  root.onsubmit = (e) => {
     e.preventDefault();
     const picked = q("choices").querySelector("input:checked");
     if (!picked) return (q("sent").textContent = "Pick one first.");
