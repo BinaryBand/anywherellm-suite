@@ -1,7 +1,7 @@
 <!--part
 {"name":"item-list","line":"a list to add to, tick off","schema":{"type":"object","required":["items"],"properties":{"items":{"type":"array","maxItems":500,"items":{"type":"object","required":["text","done"],"properties":{"text":{"type":"string","maxLength":200},"done":{"type":"boolean"}}}}}},"events":["add","tick","untick"]}
 -->
-<div class="stack" data-part="item-list">
+<div class="stack wide" data-part="item-list">
 <form class="row" data-ref="add"><input class="grow" data-ref="new" placeholder="Add an item"><button type="submit">Add</button></form>
 <ul class="items" data-ref="items"></ul>
 <p class="empty" data-ref="none">Nothing yet. Add the first item above.</p>

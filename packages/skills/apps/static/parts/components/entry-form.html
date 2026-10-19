@@ -1,7 +1,7 @@
 <!--part
 {"name":"entry-form","line":"a form adding dated entries","schema":{"type":"object","required":["entries"],"properties":{"entries":{"type":"array","maxItems":2000,"items":{"type":"object","required":["text","at"],"properties":{"text":{"type":"string","maxLength":500},"at":{"type":"string","maxLength":40}}}}}},"data":{"entries":[]},"events":["add"]}
 -->
-<div class="stack" data-part="entry-form">
+<div class="stack wide" data-part="entry-form">
 <form class="stack" data-ref="form"><label class="field">Note<textarea data-ref="text" maxlength="500" required></textarea></label><button type="submit">Add</button></form>
 <ul class="items" data-ref="entries"></ul>
 </div>

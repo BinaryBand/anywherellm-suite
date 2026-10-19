@@ -1,7 +1,7 @@
 <!--part
 {"name":"date-grid","line":"four weeks of days to tap","schema":{"type":"object","required":["days"],"properties":{"days":{"type":"object","maxProperties":4000,"additionalProperties":{"type":"boolean"}}}},"data":{"days":{}},"events":["mark","unmark"]}
 -->
-<div class="days" data-part="date-grid"></div>
+<div class="days wide" data-part="date-grid"></div>
 <script>
 App.mount("date-grid", ({ root, at }) => () => {
   const days = App.get(at + "/days"), noon = new Date(); noon.setUTCHours(12, 0, 0, 0);

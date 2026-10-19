@@ -82,6 +82,14 @@ test("every ref a component's script asks q() for is inside its part", () => {
   }
 });
 
+// A dashboard's grid puts tiles side by side. Only the small ones (a number) fit in a phone's half-width;
+// a date grid, a timer or a table squeezed into one wraps its numbers and breaks its words.
+test("every component but the small tiles says it is wide, so a dashboard gives it a row", () => {
+  const small = new Set(["counter", "stat", "pager"]);
+  for (const { name, body } of Object.values(parts.parts()).filter((p) => p.kind === "component" && !small.has(p.name)))
+    if (/data-part="/.test(body) || /data-(figure|tree)=/.test(body)) assert.match(body.replace(/<script[\s\S]*?<\/script>/g, ""), /class="[^"]*\bwide\b/, `${name} has no wide class`);
+});
+
 /** A figure drawn from `spec` by parts.js and its kinds, in a stand-in browser: the SVG it makes. */
 function drawn(spec: Record<string, unknown>): string {
   const made: any[] = [];

@@ -1,7 +1,7 @@
 <!--part
 {"name":"timer","line":"counts down from a stored start","single":true,"schema":{"type":"object","required":["minutes","started"],"properties":{"minutes":{"type":"integer","minimum":1,"maximum":240},"started":{"type":["string","null"],"maxLength":40}}},"data":{"minutes":25,"started":null},"events":["start","stop"]}
 -->
-<div class="stack center" data-part="timer">
+<div class="stack center wide" data-part="timer">
 <div class="dial"><span class="big" data-ref="left"></span></div>
 <div class="row"><button type="button" class="primary" data-ref="go">Start</button><button type="button" data-ref="stop">Reset</button></div>
 </div>

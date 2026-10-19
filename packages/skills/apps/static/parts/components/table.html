@@ -1,7 +1,7 @@
 <!--part
 {"name":"table","line":"rows to sort, filter and edit in place: a sheet, a log","schema":{"type":"object","required":["columns","rows"],"properties":{"columns":{"type":"array","minItems":1,"maxItems":12,"items":{"type":"object","required":["key","label"],"properties":{"key":{"type":"string","pattern":"^[a-z][a-z0-9_]{0,39}$"},"label":{"type":"string","minLength":1,"maxLength":40},"type":{"enum":["text","number","date"]}}}},"rows":{"type":"array","maxItems":1000,"items":{"type":"object"}}}},"data":{"columns":[{"key":"item","label":"Item"},{"key":"amount","label":"Amount","type":"number"}],"rows":[]},"events":["edit","add-row","remove-row"]}
 -->
-<div class="stack" data-part="table">
+<div class="stack wide" data-part="table">
 <input type="search" data-ref="filter" placeholder="Filter" aria-label="Filter the rows">
 <div class="scroll"><table><thead><tr data-ref="head"></tr></thead><tbody data-ref="rows"></tbody></table></div>
 <p class="empty" data-ref="none">No rows yet. Add the first one.</p>

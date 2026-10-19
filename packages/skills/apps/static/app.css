@@ -36,6 +36,7 @@ input[type=range]{width:100%;min-height:44px;margin:0;accent-color:var(--accent)
 label{display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer}
 label.field{flex-direction:column;align-items:stretch;gap:4px;cursor:auto;font-size:14px;color:var(--muted)}
 label.field>*{color:var(--ink);font-size:16px}
+label:has(input:not([type=checkbox],[type=radio],[type=range]),select,textarea){flex-direction:column;align-items:stretch;gap:4px}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 progress{appearance:none;display:block;width:100%;height:10px;border:0;border-radius:99px;background:var(--well);overflow:hidden}
 progress::-webkit-progress-bar{background:var(--well)}
@@ -55,11 +56,13 @@ hr{margin:0;border:0;border-top:1px solid var(--line)}
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .grow{flex:1;min-width:0}
 .grid{display:grid;gap:var(--gap);grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr))}
+.grid>.wide{grid-column:1/-1}
 .split{display:grid;gap:var(--gap)}
 @media (min-width:720px){main:has(.split){max-width:960px}.split{grid-template-columns:minmax(0,1fr) minmax(0,2fr)}}
 .card{padding:calc(var(--pad)*.8);border:1px solid var(--line);border-radius:var(--radius);background:var(--bg)}
 .center{align-items:center;text-align:center}
 .scroll{overflow-x:auto}
+.scroll table{overflow-wrap:normal}
 /* text */
 .big{font-size:44px;font-weight:650;line-height:1.1;font-variant-numeric:tabular-nums}
 .tag{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border-radius:99px;background:var(--soft);color:var(--ink);font-size:12.5px;font-weight:600}
@@ -73,7 +76,8 @@ hr{margin:0;border:0;border-top:1px solid var(--line)}
 .items li{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
 .items label{flex:1;min-width:0;min-height:48px}
 .items span{flex:1;min-width:0}
-.dial{display:grid;place-items:center;width:min(70vw,240px);aspect-ratio:1;border:6px solid var(--soft);border-radius:50%}
+.dial{container-type:inline-size;display:grid;place-items:center;width:min(70vw,240px);max-width:100%;aspect-ratio:1;border:6px solid var(--soft);border-radius:50%}
+.dial .big{font-size:min(44px,22cqw);white-space:nowrap}
 .days{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 .days button{min-width:0;padding:0;border-radius:calc(var(--radius)*.6)}
 .days button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}

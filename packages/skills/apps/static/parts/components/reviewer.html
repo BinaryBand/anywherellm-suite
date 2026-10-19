@@ -1,7 +1,7 @@
 <!--part
 {"name":"reviewer","line":"flashcards: flip, then grade","schema":{"type":"object","required":["cards"],"properties":{"cards":{"type":"array","maxItems":1000,"items":{"type":"object","required":["front","back","seen","right"],"properties":{"front":{"type":"string","maxLength":300},"back":{"type":"string","maxLength":300},"seen":{"type":"integer","minimum":0},"right":{"type":"integer","minimum":0}}}}}},"data":{"cards":[{"front":"tack","back":"thanks","seen":0,"right":0}]},"events":["review"]}
 -->
-<div class="stack" data-part="reviewer">
+<div class="stack wide" data-part="reviewer">
 <button type="button" class="card flip" data-ref="card"></button>
 <div class="row" data-ref="grade"><button class="grow" data-ref="again">Again</button><button class="primary grow" data-ref="right">Got it</button></div>
 <p class="empty" data-ref="none">No cards yet.</p>
