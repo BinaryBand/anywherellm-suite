@@ -93,7 +93,7 @@ export const starters = (): Record<string, Json> => (startersRead ??= JSON.parse
 export function starterNamed(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
   const all = starters();
-  return all[name] ? name : Object.keys(all).find((s) => (all[s].aliases || []).includes(name));
+  return Object.hasOwn(all, name) ? name : Object.keys(all).find((s) => (all[s].aliases || []).includes(name));
 }
 
 /** The index the agent reads: the starters, then each part's name and line, by kind. */
@@ -123,7 +123,7 @@ In this edition (apps-lean), the page has no server of its own: a change is save
 
 /** A starter as the guide shows it: what create makes from it, without the page. */
 function starterTopic(name: string): string {
-  const { line, template: from, parts: used, definition, data } = recipe(name)!;
+  const { line, template: from, parts: used, definition, data } = starter(name)!;
   return `${name} starter: ${line}
 create with {"action": "create", "name": "...", "title": "...", "starter": "${name}"}: the ${from} template with ${partsText(used)}, working as it is. data replaces the keys it names; text (app.json) replaces about, rules, card or schema.
 app.json: ${JSON.stringify(definition)}
@@ -144,7 +144,7 @@ function topicText(topic: string): string | null {
   if (topic === "check")
     return "This edition has no browser check: nothing loads the page before the user sees it. Read page.html once against the design rules (guide design) and the finish topic (guide finish) instead, and test what you can by reasoning through the page's script.\n";
   if (topicNames().includes(topic)) return file(`topics/${topic}.md`);
-  if (starters()[topic]) return starterTopic(topic);
+  if (Object.hasOwn(starters(), topic)) return starterTopic(topic);
   const part = parts()[topic];
   return part ? shown(part) : null;
 }
@@ -180,8 +180,8 @@ function split(name: string): { markup: string; script: string } {
   if (!part || part.kind !== "component") throw new Error(`no component ${name}`);
   // A component of markup alone (one in .static, say) has no script to place.
   const at = part.body.indexOf("<script>");
-  if (at < 0) return { markup: part.body.trim(), script: "" };
-  return { markup: part.body.slice(0, at).trim(), script: part.body.slice(at).trim() };
+  const cut = at < 0 ? part.body.length : at;
+  return { markup: part.body.slice(0, cut).trim(), script: part.body.slice(cut).trim() };
 }
 
 /** `page` with `markup` at the slot and `script` at the scripts, each kept for what follows. */
@@ -195,6 +195,12 @@ export function compose(page: string, name: string): string {
 
 /** A parts entry: a component's name, or a group of them repeated for each item of a list. */
 export type Entry = string | { each: string; parts: string[] };
+
+/** A parts list's component names, and its groups. */
+const sorted = (used: Entry[]) => ({
+  names: used.filter((e): e is string => typeof e === "string"),
+  groups: used.filter((e): e is Exclude<Entry, string> => typeof e !== "string"),
+});
 
 /** The component names in a parts entry. */
 const namesIn = (entry: Entry): string[] => (typeof entry === "string" ? [entry] : entry.parts);
@@ -217,8 +223,9 @@ function mergedOf(names: string[]): { schema: Json; data: Json } {
 /** The schema a parts list asks for, and its first data: a group's components merged into the
  *  items of its list, each item named, the list empty at first. */
 function merged(used: Entry[]): { schema: Json; data: Json } {
-  const top = mergedOf(used.filter((e): e is string => typeof e === "string"));
-  for (const group of used.filter((e) => typeof e !== "string")) {
+  const { names, groups } = sorted(used);
+  const top = mergedOf(names);
+  for (const group of groups) {
     const { schema: item } = mergedOf(group.parts);
     item.required.unshift("name");
     item.properties = { name: { type: "string", minLength: 1, maxLength: 80 }, ...item.properties };
@@ -246,16 +253,16 @@ function partsProblems(used: unknown): string[] {
     const twice = repeats(names);
     if (twice.length) out.push(`${where} holds each component once, not ${twice.join(", ")} twice`);
   };
-  once(entries.filter((e): e is string => typeof e === "string"), "a page");
-  for (const g of entries.filter((e) => typeof e !== "string")) {
+  const { names, groups } = sorted(entries);
+  once(names, "a page");
+  for (const g of groups) {
     once(g.parts, `each ${g.each} item`);
     if (!/^[a-z][A-Za-z0-9_]{0,39}$/.test(g.each)) out.push(`each names a list in the data, such as habits, not ${JSON.stringify(g.each)}`);
     // A header's `single` marks one for the whole page, such as tabs, which switches its views.
     const single = g.parts.filter((n) => components.includes(n) && parts()[n].header.single);
     if (single.length) out.push(`${single.join(" and ")} can't repeat for each item`);
   }
-  const lists = entries.filter((e) => typeof e !== "string").map((g) => g.each);
-  if (new Set(lists).size < lists.length) out.push("each list repeats once");
+  if (repeats(groups.map((g) => g.each)).length) out.push("each list repeats once");
   return out;
 }
 
@@ -285,45 +292,38 @@ export function assemble(name: string = DEFAULT_TEMPLATE, used: Json = []): { pa
   return { page, ...merged(used) };
 }
 
-/** The starter called `name` without its page: its line, template and parts, its app.json
- *  (`definition`) with the schema its components ask for, and their first data under its own; null
- *  when there's no such starter. */
-function recipe(name: string): { line: string; template: string; parts: Entry[]; definition: Json; data: Json; script?: string } | null {
+/** The starter called `name`, made whole: its line, template and parts, its app.json (`definition`)
+ *  with the schema its components ask for, their first data under its own, and its page, with the
+ *  starter's own script after its components'; null when there's no such starter. */
+export function starter(name: string): { line: string; template: string; parts: Entry[]; definition: Json; data: Json; page: string } | null {
   const own = starters()[starterNamed(name) ?? ""];
   if (!own) return null;
-  const { schema, data } = merged(own.parts);
-  return { line: own.line, template: own.template, parts: own.parts, definition: { ...definitionOf(own), schema }, data: { ...data, ...own.data }, script: own.script };
+  const { page, schema, data } = assemble(own.template, own.parts);
+  const { script } = own;
+  return {
+    line: own.line,
+    template: own.template,
+    parts: own.parts,
+    definition: { ...definitionOf(own), schema },
+    data: { ...data, ...own.data },
+    page: script ? page.replace(SCRIPTS, () => `<script>\n${script}\n</script>\n${SCRIPTS}`) : page,
+  };
 }
 
-/** The starter called `name`, made whole: its recipe and its page, with the starter's own script
- *  after its components'; null when there's no such starter. */
-export function starter(name: string): Omit<NonNullable<ReturnType<typeof recipe>>, "script"> & { page: string } | null {
-  const found = recipe(name);
-  if (!found) return null;
-  const { script, ...made } = found;
-  const { page } = assemble(made.template, made.parts);
-  return { ...made, page: script ? page.replace(SCRIPTS, () => `<script>\n${script}\n</script>\n${SCRIPTS}`) : page };
-}
-
-let libs: Record<string, string> | null = null;
-/** The libraries a page may name, as a page gets them inline: parts.js with every figure. Made once
- *  per load, as the parts are. */
+/** The libraries a page may name, as a page gets them inline: parts.js with every figure. */
 export function libraries(): Record<string, string> {
-  if (libs) return libs;
   const figures = Object.values(parts()).filter((p) => p.kind === "figure").map((p) => p.body);
-  return (libs = { "app.js": file("app.js"), "app.css": file("app.css"), "parts.js": [file("parts.js"), ...figures].join("\n") });
+  return { "app.js": file("app.js"), "app.css": file("app.css"), "parts.js": [file("parts.js"), ...figures].join("\n") };
 }
 
 // What a page may use without declaring it: the browser's own globals. A name starting with a
 // capital (IntersectionObserver, HTMLElement) is taken as one too.
-const BROWSER = new Set(
-  (
-    "window self globalThis document App Parts AppsLean localStorage sessionStorage location history navigator matchMedia " +
-    "setTimeout setInterval clearTimeout clearInterval requestAnimationFrame cancelAnimationFrame requestIdleCallback queueMicrotask fetch alert confirm prompt " +
-    "getComputedStyle innerWidth innerHeight outerWidth scrollX scrollY scrollTo scrollBy addEventListener removeEventListener dispatchEvent devicePixelRatio " +
-    "crypto performance structuredClone atob btoa screen visualViewport speechSynthesis open close print focus blur getSelection origin isSecureContext name event"
-  ).split(" "),
-);
+const BROWSER = (
+  "window self globalThis document App Parts AppsLean localStorage sessionStorage location history navigator matchMedia " +
+  "setTimeout setInterval clearTimeout clearInterval requestAnimationFrame cancelAnimationFrame requestIdleCallback queueMicrotask fetch alert confirm prompt " +
+  "getComputedStyle innerWidth innerHeight outerWidth scrollX scrollY scrollTo scrollBy addEventListener removeEventListener dispatchEvent devicePixelRatio " +
+  "crypto performance structuredClone atob btoa screen visualViewport speechSynthesis open close print focus blur getSelection origin isSecureContext name event"
+).split(" ");
 
 /** How long the page check lets one of a page's scripts, or one draw, run, and the whole check:
  *  a page that loops forever is stopped rather than holding AnythingLLM's process. */
@@ -399,7 +399,7 @@ try {
 function unknownNames(scripts: string[]): Promise<string[]> {
   const worker = new Worker(CHECKER, {
     eval: true,
-    workerData: { scripts, browser: [...BROWSER], ms: CHECK_MS },
+    workerData: { scripts, browser: BROWSER, ms: CHECK_MS },
     resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16 },
     stdout: true,
     stderr: true,

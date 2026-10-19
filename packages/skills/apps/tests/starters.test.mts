@@ -57,3 +57,10 @@ test("an open focus timer ends a countdown that's over once, and logs it with wh
   assert.deepEqual(ops[2].value, { text: "Chapter 3", at: new Date(Date.parse(started) + 25 * 6e4).toISOString() });
   assert.equal(note.value, "");
 });
+
+test("a name that is an object's own property is no starter", async () => {
+  for (const name of ["constructor", "toString", "__proto__"]) {
+    assert.equal(parts.starterNamed(name), undefined);
+    assert.match(await call("home", { action: "create", name: "plain", starter: name }), /starter must be one of: /);
+  }
+});
