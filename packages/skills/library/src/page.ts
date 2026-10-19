@@ -29,7 +29,7 @@ import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
 import { LibraryError } from "./errors";
 import * as listing from "./listing";
-import { OAUTH_PAGE, PENDING_MS, finish, redirectFor, waiting } from "./oauth";
+import { OAUTH_PAGE, PENDING_MS, finish, redirectFor, waiting, type SignInState } from "./oauth";
 import { outcomeOf, recentRuns } from "./runs";
 import * as secrets from "./secrets";
 import * as store from "./store";
@@ -111,13 +111,17 @@ function state(base: string | null) {
   };
 }
 
-/** The Vault's keys section, as the Vault reads it: nothing secret. */
+/** A sign-in's tag on the Vault, by where it is. */
+const TAGS: Record<SignInState["at"], string> = { "signed in": "Signed in", "code waits": "Enter the code", "link waits": "Open the link", "no client": "Needs a client", "ran out": "Not signed in", failed: "Not signed in", ready: "Not signed in" };
+
+/** The Vault's keys section, as the Vault reads it: nothing secret. Each sign-in has its tag, and
+ *  whether it's signed in, which the page shows as given. */
 function keysState(p: PageFile | null, base: string | null) {
   const now = Date.now();
   return {
     redirect: redirectFor(resolved(base, p)),
     needs: (p?.needs ?? []).filter((n) => n.until > now).map(({ label, site, kind }) => ({ label, site, kind })),
-    secrets: secrets.secrets(),
+    secrets: secrets.secrets().map((s) => (s.at ? { ...s, tag: { text: TAGS[s.at], ok: s.at === "signed in" } } : s)),
   };
 }
 

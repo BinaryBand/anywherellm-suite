@@ -104,6 +104,7 @@ async function link(base: string = LLM, def: Record<string, unknown> = definitio
   assert.match(first, /"demo" needs the user's own OAuth client at the provider \(127\.0\.0\.1:\d+\)/);
   assert.ok(first.includes(base.startsWith("https://") ? `${LLM}/library-lean/oauth.html` : "http://127.0.0.1/library-lean/oauth"), "the redirect address to register");
   assert.deepEqual(vaultState().needs, [{ label: "demo", site: "127.0.0.1", kind: "client" }], "asked for on the page");
+  assert.deepEqual(secretIn("demo")?.tag, { text: "Needs a client", ok: false });
   giveClient("demo", { secret: "shh-secret" });
   const second = await call({ action: "secret", kind: "oauth", label: "demo" }, { base });
   assert.equal(cardsShown.length, 0, "never on a card");
@@ -174,7 +175,8 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   const q = Object.fromEntries((await link()).searchParams);
   post({ ev: "oauth-code", state: "not-a-state-anyone-made", code: "good-code" });
   await call({ action: "library" });
-  assert.match(JSON.stringify(vaultState().secrets), /"status":"waiting for the user to sign in at its link","tag":\{"text":"Open the link","ok":false\}/, "a code for no waiting sign-in is ignored");
+  assert.equal(statusIn("demo"), "waiting for the user to sign in at its link", "a code for no waiting sign-in is ignored");
+  assert.deepEqual(secretIn("demo")?.tag, { text: "Open the link", ok: false });
   post({ ev: "oauth-code", state: q.state, error: "access_denied" });
   await call({ action: "library" });
   assert.match(JSON.stringify(vaultState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");

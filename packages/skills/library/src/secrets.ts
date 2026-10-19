@@ -28,8 +28,8 @@ export interface Secret {
   kind: "key" | "oauth";
   /** "saved" (a key), or where a sign-in is, in words (statusText). */
   status: string;
-  /** A sign-in's tag on the Vault, and whether it's signed in: the page shows it as given. */
-  tag?: { text: string; ok: boolean };
+  /** Where a sign-in is (stateOf), for the Vault's tag. */
+  at?: SignInState["at"];
   /** A sign-in's scopes, and the host it signs in at. */
   scopes?: string;
   authorize?: string;
@@ -91,14 +91,10 @@ function statusText(state: SignInState): string {
   }
 }
 
-/** A sign-in's tag on the Vault, by where it is. */
-const TAGS: Record<SignInState["at"], string> = { "signed in": "Signed in", "code waits": "Enter the code", "link waits": "Open the link", "no client": "Needs a client", "ran out": "Not signed in", failed: "Not signed in", ready: "Not signed in" };
-
 /** A sign-in as the agent and the pages see it. */
 function signInSecret(e: Readonly<SignIn>): Secret {
   const state = stateOf(e);
-  const tag = { text: TAGS[state.at], ok: state.at === "signed in" };
-  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), tag, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
+  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), at: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
 }
 
 /** The saved secrets, without their values. */
