@@ -27,9 +27,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run shared:test
-      - run: npm run install:test
-      - run: npm run control:test
-      - run: npm run skills:test
+      - run: node build.mjs # every part: the installer carries the others
+      - run: npm run install:unit
+      - run: npm run control:unit
+      - run: npm run skills:unit
 
   e2e:
     runs-on: ubuntu-latest

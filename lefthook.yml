@@ -1,17 +1,17 @@
 # Git hooks, the gate before a push (.github/workflows/test.yml runs the same tests in CI). Install once per clone:
 #   lefthook install
-# A hook runs only when a staged or pushed file matches its glob. tools/check knows the installer,
-# the control server and the skills (their unit tests, not a container run: that is `make e2e`);
-# their imports are checked when they are built (packages/build.mjs).
+# The hook runs only when a pushed file matches its glob. tools/check tests the installer, the
+# control server and the skills (their unit tests, not a container run: that is `make e2e`), after
+# one type-check and one build of all three: the installer carries the others, so a change to one
+# part is checked by all. Their imports are checked when they are built (packages/build.mjs).
 
 pre-push:
   commands:
-    install:
-      glob: ["packages/install/**/*.{ts,mts,mjs,json}", "packages/*.{json,mjs,mts}", "packages/shared/**"]
-      run: tools/check install
-    control:
-      glob: ["packages/control/**/*.{ts,mts,mjs,json}", "packages/*.{json,mjs,mts}", "packages/shared/**"]
-      run: tools/check control
-    skills:
-      glob: ["packages/skills/**/*.{js,ts,mts,mjs,json,html,css,md}", "packages/*.{json,mjs,mts}", "packages/shared/**"]
-      run: tools/check skills
+    check:
+      glob:
+        - "packages/install/**/*.{ts,mts,mjs,json}"
+        - "packages/control/**/*.{ts,mts,mjs,json}"
+        - "packages/skills/**/*.{js,ts,mts,mjs,json,html,css,md}"
+        - "packages/*.{json,mjs,mts}"
+        - "packages/shared/**"
+      run: tools/check
