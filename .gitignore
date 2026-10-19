@@ -12,6 +12,3 @@ app/pubspec.lock.bak
 packages/skills/*/build/
 
 docs/.*
-
-# Lab run output
-apps/results/
