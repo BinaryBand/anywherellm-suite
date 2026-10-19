@@ -26,7 +26,7 @@ const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 /** How long an idle connection is kept for the next request: shorter than servers keep theirs. */
 const IDLE_MS = 4 * 1000;
-const USER_AGENT = "anythingllm-suite (an AnythingLLM agent skill)";
+const USER_AGENT = "anywherellm-suite (an AnythingLLM agent skill)";
 
 type Resolve = (hostname: string, options: dns.LookupAllOptions, callback: (err: NodeJS.ErrnoException | null, addresses: dns.LookupAddress[]) => void) => void;
 
@@ -70,7 +70,7 @@ export type Headers = Record<string, string>;
 type Once = Required<Pick<Send, "method" | "url" | "headers" | "timeout" | "maxBytes">> & Pick<Send, "body" | "resolve" | "signal"> & { allowed: Set<string> };
 
 type Agents = { http: http.Agent; https: https.Agent };
-const AGENTS = Symbol.for("anythingllm-suite.net.agents");
+const AGENTS = Symbol.for("anywherellm-suite.net.agents");
 
 /** The connections kept for the hosts `allowed` lets through: one pool per allow-list, so a
  *  connection opened under a looser one is never reused under a stricter one. Kept on globalThis,

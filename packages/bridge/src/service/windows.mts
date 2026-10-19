@@ -1,5 +1,5 @@
-// The bridge as a Task Scheduler task of the user's, `anythingllm-bridge`, started at logon. The
-// task runs `serve.cmd` in `%LOCALAPPDATA%\anythingllm-bridge`, which sets the settings file and
+// The bridge as a Task Scheduler task of the user's, `anywherellm-bridge`, started at logon. The
+// task runs `serve.cmd` in `%LOCALAPPDATA%\anywherellm-bridge`, which sets the settings file and
 // appends the bridge's output to `bridge.log` beside it. It runs through `conhost.exe --headless`,
 // so no console window stays open on the desktop. A task has no restart after a crash here; the
 // next logon starts it again. Not yet run on a real Windows: the commands follow schtasks' help.
@@ -8,7 +8,7 @@ import path from "node:path";
 import { writeAtomicIfChanged } from "#shared/atomic";
 import type { Definition, Host, Manager } from "./index.mts";
 
-export const TASK = "anythingllm-bridge";
+export const TASK = "anywherellm-bridge";
 /** SCHED_S_TASK_RUNNING (0x41301): the last result of a task that is running, in any display language. */
 const RUNNING = "267009";
 
@@ -21,7 +21,7 @@ function quoted(word: string): string {
 export function scriptText({ command, envFile }: Definition, log: string): string {
   return [
     "@echo off",
-    "rem Written by `anythingllm-suite install --bridge`: the bridge to AnythingLLM's internal API, started at logon.",
+    "rem Written by `anywherellm-suite install --bridge`: the bridge to AnythingLLM's internal API, started at logon.",
     `set ${quoted(`BRIDGE_ENV_FILE=${envFile}`)}`,
     `${command.map(quoted).join(" ")} >> ${quoted(log)} 2>&1`,
     "",
@@ -32,7 +32,7 @@ export function scriptText({ command, envFile }: Definition, log: string): strin
 export const csvFields = (line: string): string[] => [...line.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => m[1].replace(/""/g, '"'));
 
 export function windows(host: Host): Manager {
-  const dir = path.join(host.env.LOCALAPPDATA || path.join(host.home, "AppData", "Local"), "anythingllm-bridge");
+  const dir = path.join(host.env.LOCALAPPDATA || path.join(host.home, "AppData", "Local"), "anywherellm-bridge");
   const script = path.join(dir, "serve.cmd");
   const log = path.join(dir, "bridge.log");
   const schtasks = (...args: string[]) => host.run("schtasks", args);

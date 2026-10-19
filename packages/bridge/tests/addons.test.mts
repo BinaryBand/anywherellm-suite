@@ -27,12 +27,12 @@ const servers = (dir: string) => JSON.parse(fs.readFileSync(serversFile(dir), "u
 test("a container's entry runs its own node on the path it sees; a native one, this node on the host's", () => {
   assert.deepEqual(entry("container", "/srv/s", ["chat", "schedule"], "/usr/bin/node"), {
     command: "node",
-    args: ["/app/server/storage/anythingllm-suite/control.cjs"],
+    args: ["/app/server/storage/anywherellm-suite/control.cjs"],
     env: { ANYTHINGLLM_MCP_ROLES: "chat,schedule" },
   });
   assert.deepEqual(entry("native", "/home/u/storage", ["chat"], "/opt/node/bin/node"), {
     command: "/opt/node/bin/node",
-    args: [path.join("/home/u/storage", "anythingllm-suite", "control.cjs")],
+    args: [path.join("/home/u/storage", "anywherellm-suite", "control.cjs")],
     env: { ANYTHINGLLM_MCP_ROLES: "chat" },
   });
 });
@@ -40,7 +40,7 @@ test("a container's entry runs its own node on the path it sees; a native one, t
 test("put writes the server, the entry and the skills, and a second put changes nothing", () => {
   const dir = storage();
   const first = put(dir, PAYLOAD, ENTRY, PAYLOAD.skills.slice(0, 1));
-  assert.equal(fs.readFileSync(path.join(dir, "anythingllm-suite", "control.cjs"), "utf8"), PAYLOAD.control);
+  assert.equal(fs.readFileSync(path.join(dir, "anywherellm-suite", "control.cjs"), "utf8"), PAYLOAD.control);
   assert.deepEqual(servers(dir), { control: ENTRY });
   assert.equal(fs.readFileSync(path.join(dir, "plugins", "agent-skills", "library-lean", "handler.js"), "utf8"), "// library\n");
   assert.ok(!fs.existsSync(path.join(dir, "plugins", "agent-skills", "other-skill")), "only the skills chosen");
@@ -103,7 +103,7 @@ test("another server named control is refused; a servers file that isn't JSON is
 
 test("a native entry on Windows is still ours", () => {
   const dir = storage();
-  const windows = { command: "C:\\Program Files\\nodejs\\node.exe", args: ["C:\\Users\\u\\AppData\\Roaming\\anythingllm-desktop\\storage\\anythingllm-suite\\control.cjs"] };
+  const windows = { command: "C:\\Program Files\\nodejs\\node.exe", args: ["C:\\Users\\u\\AppData\\Roaming\\anythingllm-desktop\\storage\\anywherellm-suite\\control.cjs"] };
   fs.writeFileSync(serversFile(dir), JSON.stringify({ mcpServers: { control: windows } }));
   assert.match(setEntry(dir, ENTRY), /set control/);
 });
@@ -115,7 +115,7 @@ test("take removes the server, the entry and the skills it knows, and leaves a s
   fs.writeFileSync(path.join(dir, "library-lean", "data.json"), "{}");
   take(dir, PAYLOAD);
   assert.deepEqual(servers(dir), {});
-  assert.ok(!fs.existsSync(path.join(dir, "anythingllm-suite")));
+  assert.ok(!fs.existsSync(path.join(dir, "anywherellm-suite")));
   assert.deepEqual(fs.readdirSync(path.join(dir, "plugins", "agent-skills")), []);
   assert.ok(fs.existsSync(path.join(dir, "library-lean", "data.json")));
 });
@@ -127,7 +127,7 @@ test("checks find what is missing or not this version's", () => {
   put(dir, PAYLOAD, ENTRY, PAYLOAD.skills.slice(0, 1));
   assert.deepEqual(failing(), []);
   fs.writeFileSync(path.join(dir, "plugins", "agent-skills", "library-lean", "handler.js"), "old");
-  fs.writeFileSync(path.join(dir, "anythingllm-suite", "control.cjs"), "old");
+  fs.writeFileSync(path.join(dir, "anywherellm-suite", "control.cjs"), "old");
   assert.deepEqual(failing(), ["the control server: not this version's: run install again", "the library skill: handler.js not this version's: run install again"]);
 });
 
@@ -154,5 +154,5 @@ test("a storage that isn't the user's to write says what to do", { skip: process
 
 test("the storage path inside the container is the contract's", () => {
   const contract = readEnv(fileURLToPath(new URL("../../../contract/versions.env", import.meta.url)));
-  assert.deepEqual(entry("container", "/x", ["chat"], "node").args, [`${contract.INNER_STORAGE}/anythingllm-suite/control.cjs`]);
+  assert.deepEqual(entry("container", "/x", ["chat"], "node").args, [`${contract.INNER_STORAGE}/anywherellm-suite/control.cjs`]);
 });

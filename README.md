@@ -1,4 +1,4 @@
-# anythingllm-suite
+# anywherellm-suite
 
 Everything that extends a stock AnythingLLM, in one repository: an MCP server and agent skills that AnythingLLM runs itself, a bridge to its internal API, and the phone app that talks to the bridge.
 
@@ -13,17 +13,17 @@ Everything that extends a stock AnythingLLM, in one repository: an MCP server an
 
 ## Install
 
-You need a stock AnythingLLM (Desktop, or the Docker image) and Node 20.3 or later on the machine it runs on. The command is one file, `anythingllm-suite.cjs`, which carries the control server and the skills; build it with `npm install` once in `packages/`, then `node build.mjs bridge` there (it lands in `packages/bridge/dist/`), or `make install` from a checkout.
+You need a stock AnythingLLM (Desktop, or the Docker image) and Node 20.3 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the control server and the skills; build it with `npm install` once in `packages/`, then `node build.mjs bridge` there (it lands in `packages/bridge/dist/`), or `make install` from a checkout.
 
 ```sh
-node anythingllm-suite.cjs install                     # AnythingLLM Desktop, on Windows, macOS or Linux
-node anythingllm-suite.cjs install --storage ~/anythingllm   # Docker: the folder mounted at /app/server/storage
-node anythingllm-suite.cjs install --page-key brx-...  # once: the key the skills' pages post with
+node anywherellm-suite.cjs install                     # AnythingLLM Desktop, on Windows, macOS or Linux
+node anywherellm-suite.cjs install --storage ~/anythingllm   # Docker: the folder mounted at /app/server/storage
+node anywherellm-suite.cjs install --page-key brx-...  # once: the key the skills' pages post with
 ```
 
 It writes the control server, its entry in AnythingLLM's MCP servers file and the skills into AnythingLLM's storage folder, and AnythingLLM runs them itself: nothing runs beside it, so there is no service or socket to set up. Then, in AnythingLLM, open Settings > Agent Skills, refresh the MCP servers (or restart AnythingLLM) and switch on what you want.
 
-The skills' pages (the browser's tab, the Vault, the Library page, the apps) send what the user does there through AnythingLLM's browser-extension upload, so they need a browser-extension key: make one in AnythingLLM's Settings > Browser Extension and give it to install once with `--page-key`. Install keeps it in the storage (`anythingllm-suite/page-key`, readable by its owner alone) until it's given another; `health` asks AnythingLLM whether it still takes it. The key sits in every page, which anyone with a page's address can read: it can add documents (and embed them in a workspace), list the workspaces and revoke itself, never read a chat or a document. Revoke it in the same settings and give install a new one.
+The skills' pages (the browser's tab, the Vault, the Library page, the apps) send what the user does there through AnythingLLM's browser-extension upload, so they need a browser-extension key: make one in AnythingLLM's Settings > Browser Extension and give it to install once with `--page-key`. Install keeps it in the storage (`anywherellm-suite/page-key`, readable by its owner alone) until it's given another; `health` asks AnythingLLM whether it still takes it. The key sits in every page, which anyone with a page's address can read: it can add documents (and embed them in a workspace), list the workspaces and revoke itself, never read a chat or a document. Revoke it in the same settings and give install a new one.
 
 - **Which AnythingLLM:** `--storage DIR`, else the one install was last given, else AnythingLLM Desktop's (`%APPDATA%\anythingllm-desktop\storage`, `~/Library/Application Support/anythingllm-desktop/storage`, `~/.config/anythingllm-desktop/storage`). For Docker it is the host folder you bind-mounted, as AnythingLLM's own instructions do; a named volume isn't reachable from the host. With rootless podman, start the container with `--userns=keep-id` or run install inside `podman unshare`, so the storage is yours to write. The skills' pages go into AnythingLLM's public folder (`/app/server/public`), which is the container's own: a container made again (as a podman quadlet is on each restart) starts without them, until each skill writes them again. To keep them, bind-mount each skill's folder in it (`/app/server/public/apps-lean`, `library-lean`, `browser-lean`), never the folder itself, which also holds AnythingLLM's own web app.
 - **What it puts in:** `--roles chat,schedule` (default `chat`: the schedule role lets the agent plant prompts that run later, unattended), `--skills all|none|library,...` (default all), `--page-key brx-...` (kept until another is given), `--runtime container|native` (default: native for Desktop's storage, container for any other).
@@ -45,7 +45,7 @@ The library's keys and sign-ins and the browser's logins and passkeys are in one
 
 ```text
 packages/control/   the control MCP server (TypeScript; ships as control.cjs, inside the installer)
-packages/bridge/    the installer and the bridge (TypeScript; ships as one file, anythingllm-suite.cjs)
+packages/bridge/    the installer and the bridge (TypeScript; ships as one file, anywherellm-suite.cjs)
 packages/skills/    one folder per skill; each ships as its own zip, and inside the installer
 packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the per-OS paths, AnythingLLM's login)
 packages/package.json, tsconfig.json   the toolchain: one install, one type-check

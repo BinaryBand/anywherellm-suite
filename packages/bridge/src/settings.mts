@@ -1,6 +1,6 @@
 // The bridge's settings, read from its environment (which the settings file `bridge.env` fills, in
-// the user's settings folder: `~/.config/anythingllm-bridge` on Linux, `~/Library/Application
-// Support/anythingllm-bridge` on macOS, `%APPDATA%\anythingllm-bridge` on Windows).
+// the user's settings folder: `~/.config/anywherellm-bridge` on Linux, `~/Library/Application
+// Support/anywherellm-bridge` on macOS, `%APPDATA%\anywherellm-bridge` on Windows).
 //
 // | Name                   | Default                           | Meaning                          |
 // | BRIDGE_PORT            | 8467                              | the port it listens on           |
@@ -91,7 +91,7 @@ export function fromEnv(env: Env): Settings {
 }
 
 /** The user's settings file. */
-export const settingsFile = (place: Place): string => pathsOf(place.platform).join(configDir("anythingllm-bridge", place), "bridge.env");
+export const settingsFile = (place: Place): string => pathsOf(place.platform).join(configDir("anywherellm-bridge", place), "bridge.env");
 
 /** The settings file: BRIDGE_ENV_FILE when set (another file, to run a second bridge), else the user's. */
 export const fileFor = (place: Place): string => place.env.BRIDGE_ENV_FILE || settingsFile(place);

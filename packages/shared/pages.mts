@@ -63,7 +63,7 @@ export async function pageHtml(template: string, cfg: Record<string, unknown>): 
  *  to set it when there's none. */
 export function pageKey(): string {
   const key = readPageKey(storageDir());
-  if (!key) throw new Told(`the skills' pages have no key to post with (${pageKeyFile(storageDir())}): make one in AnythingLLM's Settings > Browser Extension, then run \`anythingllm-suite install --page-key <key>\``);
+  if (!key) throw new Told(`the skills' pages have no key to post with (${pageKeyFile(storageDir())}): make one in AnythingLLM's Settings > Browser Extension, then run \`anywherellm-suite install --page-key <key>\``);
   return key;
 }
 

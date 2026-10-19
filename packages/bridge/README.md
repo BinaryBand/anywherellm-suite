@@ -1,10 +1,10 @@
-# anythingllm-bridge
+# anywherellm-bridge
 
 A bridge to the parts of AnythingLLM that only its own settings pages reach: its **internal API** (`/api`), which the developer API (`/api/v1`) leaves out. A client such as AnywhereLLM Lite calls the bridge with only a developer key; the bridge logs in to the internal API with AnythingLLM's password and passes on the routes you list.
 
 It needs nothing from AnythingLLM beyond a stock instance, adds no skill and keeps no state. What each route does is AnythingLLM's own, so the caller knows the routes; [contract/endpoints.md](../../contract/endpoints.md) records the ones worth opening, with their shapes as AnythingLLM 1.16.2 gives them.
 
-It is part of one file, `dist/anythingllm-suite.cjs`, the suite's command (its `install` also puts the control server and the skills into AnythingLLM; see the [README](../../README.md)), that runs on Node 20.3 or later and needs nothing installed beside it. Only the phone app needs the bridge.
+It is part of one file, `dist/anywherellm-suite.cjs`, the suite's command (its `install` also puts the control server and the skills into AnythingLLM; see the [README](../../README.md)), that runs on Node 20.3 or later and needs nothing installed beside it. Only the phone app needs the bridge.
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
 
 It listens on `BRIDGE_PORT` (8467), on 127.0.0.1.
 
-- `GET /health` needs no key: `{"ok": true, "service": "anythingllm-bridge", "allow": [...]}`.
+- `GET /health` needs no key: `{"ok": true, "service": "anywherellm-bridge", "allow": [...]}`.
 - Any other request needs `Authorization: Bearer <developer key>`, which AnythingLLM must accept. Any origin may call it, and a preflight needs no key.
 - `<METHOD> /<path>` (GET, POST, PUT or DELETE) is AnythingLLM's `/api/<path>`, with the query string and the JSON body sent on. AnythingLLM's status and JSON come back as they are: a 400 with `{"job": null, "error": ...}` stays that.
 - A route is passed only when `BRIDGE_ALLOW` lists it. Any other is `403`. With the setting empty, nothing passes.
@@ -42,7 +42,7 @@ BRIDGE_ALLOW=GET /scheduled-jobs, GET /setup-complete, /workspaces, POST /system
 
 ## Settings
 
-The settings file is `bridge.env` in the user's settings folder (`~/.config/anythingllm-bridge/` on Linux, or `$XDG_CONFIG_HOME/anythingllm-bridge/`; `~/Library/Application Support/anythingllm-bridge/` on macOS; `%APPDATA%\anythingllm-bridge\` on Windows), or the file `BRIDGE_ENV_FILE` names (to run a second bridge). The service reads it as its environment; the commands read it too, and a variable already set in the environment wins over the file.
+The settings file is `bridge.env` in the user's settings folder (`~/.config/anywherellm-bridge/` on Linux, or `$XDG_CONFIG_HOME/anywherellm-bridge/`; `~/Library/Application Support/anywherellm-bridge/` on macOS; `%APPDATA%\anywherellm-bridge\` on Windows), or the file `BRIDGE_ENV_FILE` names (to run a second bridge). The service reads it as its environment; the commands read it too, and a variable already set in the environment wins over the file.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -59,21 +59,21 @@ The settings file is `bridge.env` in the user's settings folder (`~/.config/anyt
 
 ## Deploy it
 
-1. Build the suite's command: `npm install` once in `packages/`, then `node build.mjs bridge` there. Copy `packages/bridge/dist/anythingllm-suite.cjs` where you want it to live; the service points at that path.
-1. Run `node anythingllm-suite.cjs install --bridge` (with `--storage <AnythingLLM's storage folder>` unless it is AnythingLLM Desktop's). Besides the control server and the skills, it points the bridge at the storage, where the password is, sets `BRIDGE_ALLOW` when it isn't set, and starts the bridge under the user's service manager, where one answers:
+1. Build the suite's command: `npm install` once in `packages/`, then `node build.mjs bridge` there. Copy `packages/bridge/dist/anywherellm-suite.cjs` where you want it to live; the service points at that path.
+1. Run `node anywherellm-suite.cjs install --bridge` (with `--storage <AnythingLLM's storage folder>` unless it is AnythingLLM Desktop's). Besides the control server and the skills, it points the bridge at the storage, where the password is, sets `BRIDGE_ALLOW` when it isn't set, and starts the bridge under the user's service manager, where one answers:
 
    | OS | Service | Its log |
    | --- | --- | --- |
-   | Linux | the systemd user unit `anythingllm-bridge.service` in `~/.config/systemd/user` | `journalctl --user -u anythingllm-bridge` |
-   | macOS | the launchd agent `local.anythingllm-bridge` in `~/Library/LaunchAgents`, in the GUI session | `~/Library/Logs/anythingllm-bridge.log` |
-   | Windows | the Task Scheduler task `anythingllm-bridge`, at logon, running `%LOCALAPPDATA%\anythingllm-bridge\serve.cmd` with no window | `bridge.log` beside it |
+   | Linux | the systemd user unit `anywherellm-bridge.service` in `~/.config/systemd/user` | `journalctl --user -u anywherellm-bridge` |
+   | macOS | the launchd agent `local.anywherellm-bridge` in `~/Library/LaunchAgents`, in the GUI session | `~/Library/Logs/anywherellm-bridge.log` |
+   | Windows | the Task Scheduler task `anywherellm-bridge`, at logon, running `%LOCALAPPDATA%\anywherellm-bridge\serve.cmd` with no window | `bridge.log` beside it |
 
    `--service systemd|launchd|windows|foreground|auto` picks one (saved as `BRIDGE_SERVICE`); `--no-start` stops before starting it. launchd and the Task Scheduler have only run against scripted commands so far, not on a real Mac or PC.
-1. With no service manager (no user systemd, an ssh session without a GUI login, `--service foreground`), run `node anythingllm-suite.cjs serve` under your own supervisor: a terminal, tmux, a container or a process manager. It reads the same settings file.
+1. With no service manager (no user systemd, an ssh session without a GUI login, `--service foreground`), run `node anywherellm-suite.cjs serve` under your own supervisor: a terminal, tmux, a container or a process manager. It reads the same settings file.
 1. If AnythingLLM's `.env` isn't at `<storage>/.env`, set `ANYTHINGLLM_ENV` in the settings file. AnythingLLM Desktop has no password, so it needs none.
 1. To pass other routes, change `BRIDGE_ALLOW` in the settings file and run `install --bridge` again (it restarts the service).
-1. Run `node anythingllm-suite.cjs health`. Besides what install put into the storage, it checks the service, the bridge, AnythingLLM, the bridge's login, that `BRIDGE_ALLOW` isn't empty, and the public route.
-1. To connect a phone, give AnythingLLM and the bridge addresses your devices reach (next section), then run `node anythingllm-suite.cjs pair`. It prints a link, `anywherellm://connect?...`, that AnywhereLLM Lite opens. The link holds `url` (AnythingLLM's address), `key` (the developer key named `AnywhereLLM`, made the first time), and `toolkit` and `apps` (the bridge's and anythingllm-apps-v2's addresses, when known; the app still reads the first as `toolkit`). There is no QR code; any QR generator can draw the link. Each address must be https, or plain http to a private host.
+1. Run `node anywherellm-suite.cjs health`. Besides what install put into the storage, it checks the service, the bridge, AnythingLLM, the bridge's login, that `BRIDGE_ALLOW` isn't empty, and the public route.
+1. To connect a phone, give AnythingLLM and the bridge addresses your devices reach (next section), then run `node anywherellm-suite.cjs pair`. It prints a link, `anywherellm://connect?...`, that AnywhereLLM Lite opens. The link holds `url` (AnythingLLM's address), `key` (the developer key named `AnywhereLLM`, made the first time), and `toolkit` and `apps` (the bridge's and anythingllm-apps-v2's addresses, when known; the app still reads the first as `toolkit`). There is no QR code; any QR generator can draw the link. Each address must be https, or plain http to a private host.
 
 `uninstall` stops the service, takes the control server and the skills out, and forgets the storage. `settings` prints the settings in use.
 

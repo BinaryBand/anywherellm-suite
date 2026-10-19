@@ -289,3 +289,10 @@ Both take an AnythingLLM internal out of the skills, by the suite's rule (suppor
 - **The live apps were rewritten once** (37 of 47 had history entries or file versions without `n`; a throwaway script filled them in, with a backup beside `apps-lean/`), not carried by code from then on.
 - **The rule:** a format change that the only instance can be moved over by hand, once, is not worth code and tests that every later reader pays for. A later user with data of an older format would be given a one-off script, outside the packages.
 
+## AnywhereLLM Suite, 2026-10-19
+
+- **Renamed from anythingllm-suite,** so the suite's name no longer reads as AnythingLLM's own (Mintplex Labs') before its sign-in consent screens and pages go public. The GitHub repository is `BinaryBand/anywherellm-suite` (the old address redirects), and the GitHub OAuth app is "AnywhereLLM Suite" (same client ID). The entries above keep the names of their day.
+- **What changed:** the command (`anywherellm-suite.cjs`), the suite's folder in AnythingLLM's storage (`anywherellm-suite/`, with `control.cjs` and `page-key`), the bridge (`anywherellm-bridge`: its systemd unit, launchd label, Windows task and settings folder), the user agent, the skills' author, and the per-process keys (`Symbol.for("anywherellm-suite.*")`).
+- **What didn't:** anything naming AnythingLLM itself (`ANYTHINGLLM_URL` and the bridge's other `ANYTHINGLLM_*` settings, `anythingllm_mcp_servers.json`, its storage and Desktop paths), `ANYTHINGLLM_MCP_ROLES`, the skills' hubIds and folders (`*-lean`, `vault-lean`), and the vault's HKDF label (`shared/vault.mts` INFO), which would change every derived key.
+- **No aliases** for the old names (see No migration shims): the one live instance moves over by hand. Install writes the new storage folder and the new bridge unit; the old folder, unit and settings folder are moved or removed once the new ones are checked.
+

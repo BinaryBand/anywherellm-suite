@@ -4,7 +4,7 @@
 
 import { LibraryError } from "./errors";
 
-/** The suite's GitHub OAuth app, "AnythingLLM Suite" (github.com/settings/applications/3944676),
+/** The suite's GitHub OAuth app, "AnywhereLLM Suite" (github.com/settings/applications/3944676),
  *  with Enable Device Flow ticked. Its ID is public, and it has no secret. */
 const GITHUB_CLIENT_ID = "Ov23li2l9pSDiyh3JA7p";
 

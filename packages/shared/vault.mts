@@ -47,6 +47,8 @@ export interface Vault {
   entries: Entry[];
 }
 
+/** The label a derived key is made with (HKDF info). It keeps the suite's earlier name: a new one
+ *  would derive another key, and every vault sealed under a derived key would be lost. */
 const INFO = "anythingllm-suite vault v1";
 const MAX_ENTRIES = 500;
 const generateKeyPair = promisify(crypto.generateKeyPair);

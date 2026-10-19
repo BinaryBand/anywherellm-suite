@@ -20,7 +20,7 @@ site(KEYS, { title: "Keys", text: "Sign in with a passkey", fields: { e1: { type
 const lastPage = () => world.pages[world.pages.length - 1];
 /** The saved passkeys, as the Vault lists them (the vault is the instance's: other tests' logins are there too). */
 const passkeys = () => logins.list().filter((l) => l.kind === "passkey");
-const browserState = () => (globalThis as unknown as Record<symbol, { browsers: Map<string, { holds: Map<string, { last: number }> }> }>)[Symbol.for("anythingllm-suite.browser-lean.state")];
+const browserState = () => (globalThis as unknown as Record<symbol, { browsers: Map<string, { holds: Map<string, { last: number }> }> }>)[Symbol.for("anywherellm-suite.browser-lean.state")];
 
 test("the user takes the tab over, types a login sealed, is offered to save it, and hands it back; the agent waits meanwhile", async () => {
   const call = (args: Record<string, unknown>, thread = 1) => called(args, { workspace: "take", thread });

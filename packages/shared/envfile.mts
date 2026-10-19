@@ -6,7 +6,7 @@ import fs from "node:fs";
 import { writeAtomic } from "#shared/atomic";
 
 const HEADER = [
-  "# anythingllm-bridge's settings: the runner's environment. `install` writes the first",
+  "# anywherellm-bridge's settings: the runner's environment. `install` writes the first",
   "# ones; the README lists every setting.",
 ];
 

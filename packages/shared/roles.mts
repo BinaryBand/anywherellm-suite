@@ -1,4 +1,4 @@
-// The control server's roles, which `anythingllm-suite install --roles` writes into its entry and
+// The control server's roles, which `anywherellm-suite install --roles` writes into its entry and
 // the server reads from its environment (packages/control, packages/bridge).
 
 export const ROLES = ["chat", "schedule"];

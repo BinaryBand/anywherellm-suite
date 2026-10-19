@@ -52,7 +52,7 @@ const raw = (path: string) =>
 test("/health needs no key and lists the routes", async () => {
   const res = await fetch(url + "/health");
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, service: "anythingllm-bridge", allow: ["GET /scheduled-jobs", "POST /scheduled-jobs/new", "/workspaces"] });
+  assert.deepEqual(await res.json(), { ok: true, service: "anywherellm-bridge", allow: ["GET /scheduled-jobs", "POST /scheduled-jobs/new", "/workspaces"] });
 });
 
 test("a preflight needs no key, and every answer lets any origin in", async () => {

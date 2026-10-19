@@ -1,6 +1,6 @@
 # anythingllm-control
 
-An MCP server with the controls of the user's AnythingLLM that its agent doesn't have: its chats (the threads of a workspace) and its scheduled jobs. AnythingLLM runs it itself: `anythingllm-suite install` puts `control.cjs` into AnythingLLM's storage folder and a `control` entry into its MCP servers file, and AnythingLLM starts it over stdio with `node` (the one in its container, or the host's for Desktop) and its own environment. It calls AnythingLLM's internal API on the same machine, logged in with `AUTH_TOKEN` from that environment, so it needs no developer key, bridge, socket or service.
+An MCP server with the controls of the user's AnythingLLM that its agent doesn't have: its chats (the threads of a workspace) and its scheduled jobs. AnythingLLM runs it itself: `anywherellm-suite install` puts `control.cjs` into AnythingLLM's storage folder and a `control` entry into its MCP servers file, and AnythingLLM starts it over stdio with `node` (the one in its container, or the host's for Desktop) and its own environment. It calls AnythingLLM's internal API on the same machine, logged in with `AUTH_TOKEN` from that environment, so it needs no developer key, bridge, socket or service.
 
 It is one file, `dist/control.cjs` (`node build.mjs control` in `packages/`), for Node 18 (the one in AnythingLLM's image), with no dependencies. `src/mcp.mts` is the MCP protocol's stdio side, as much as a server of tools needs.
 

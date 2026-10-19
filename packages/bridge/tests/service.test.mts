@@ -52,7 +52,7 @@ const ctxWith = (run: Run, platform: NodeJS.Platform = "linux", env: Record<stri
   env: { BRIDGE_PORT: String(port), BRIDGE_ENV_FILE: envFile(), LOCALAPPDATA: path.join(home, "local"), ...env },
   platform,
   print: (l) => printed.push(l),
-  command: ["/usr/bin/node", "/opt/my apps/anythingllm-suite.cjs", "serve"],
+  command: ["/usr/bin/node", "/opt/my apps/anywherellm-suite.cjs", "serve"],
   node: "/usr/bin/node",
   defaultAllow: "/workspaces",
   payload: { control: "", skills: [] },
@@ -64,7 +64,7 @@ const opts = (more: Partial<Options> = {}): Options => ({ storage, bridge: true,
 const host = (run: Run, platform: NodeJS.Platform): Host => ({ platform, env: {}, home, run, uid: 501 });
 const envFile = () => path.join(home, "bridge.env");
 const settings = () => readEnv(envFile());
-const DEFINITION = { command: ["/usr/bin/node", "/opt/my apps/anythingllm-suite.cjs", "serve"], envFile: "/h/bridge.env", port: 8467 };
+const DEFINITION = { command: ["/usr/bin/node", "/opt/my apps/anywherellm-suite.cjs", "serve"], envFile: "/h/bridge.env", port: 8467 };
 
 beforeEach(async () => {
   bridge = createServer({ rules: parseRules(""), upstream: new Upstream("http://127.0.0.1:1", null), log: () => {} });
@@ -101,7 +101,7 @@ test("BRIDGE_SERVICE names a manager or auto", () => {
 test("--service is saved, auto takes it out, and a bad one is refused", async () => {
   await install(ctxWith(manager().run), opts({ service: "foreground" }));
   assert.equal(settings().BRIDGE_SERVICE, "foreground");
-  assert.match(printed.join("\n"), /BRIDGE_SERVICE is foreground. Run `anythingllm-suite serve`/);
+  assert.match(printed.join("\n"), /BRIDGE_SERVICE is foreground. Run `anywherellm-suite serve`/);
   await install(ctxWith(systemctl().run), opts({ service: "auto" }));
   assert.equal(settings().BRIDGE_SERVICE, undefined);
   await assert.rejects(install(ctxWith(systemctl().run), opts({ service: "cron" })), /BRIDGE_SERVICE is one of/);
@@ -120,14 +120,14 @@ test("systemd: install writes the unit, then reloads, enables and restarts, in t
 });
 
 test("systemd: the unit is in XDG_CONFIG_HOME when it is set", () => {
-  assert.equal(unitFile({ platform: "linux", env: { XDG_CONFIG_HOME: "/c" }, home: "/h" }), "/c/systemd/user/anythingllm-bridge.service");
-  assert.equal(unitFile({ platform: "linux", env: {}, home: "/h" }), "/h/.config/systemd/user/anythingllm-bridge.service");
+  assert.equal(unitFile({ platform: "linux", env: { XDG_CONFIG_HOME: "/c" }, home: "/h" }), "/c/systemd/user/anywherellm-bridge.service");
+  assert.equal(unitFile({ platform: "linux", env: {}, home: "/h" }), "/h/.config/systemd/user/anywherellm-bridge.service");
 });
 
 test("systemd: the unit runs the command with the settings file as its environment", () => {
   const text = unitText(DEFINITION);
   assert.match(text, /^EnvironmentFile=\/h\/bridge\.env$/m);
-  assert.match(text, /^ExecStart=\/usr\/bin\/node "\/opt\/my apps\/anythingllm-suite\.cjs" serve$/m);
+  assert.match(text, /^ExecStart=\/usr\/bin\/node "\/opt\/my apps\/anywherellm-suite\.cjs" serve$/m);
   assert.match(text, /^WantedBy=default\.target$/m);
 });
 
@@ -139,7 +139,7 @@ test("systemd: a second install with the same unit restarts without reloading", 
 });
 
 test("systemd: a restart it refuses is an error that points at the journal", async () => {
-  await assert.rejects(install(ctxWith(systemctl({ [`systemctl --user restart ${UNIT}`]: { status: 1 } }).run), opts()), /systemctl restart .* failed; see `journalctl --user -u anythingllm-bridge\.service`/);
+  await assert.rejects(install(ctxWith(systemctl({ [`systemctl --user restart ${UNIT}`]: { status: 1 } }).run), opts()), /systemctl restart .* failed; see `journalctl --user -u anywherellm-bridge\.service`/);
 });
 
 test("a started bridge that never answers is an error that says where its log is", async () => {
@@ -173,7 +173,7 @@ test("systemd: uninstall says so when it would not stop the service", async () =
   await install(ctxWith(systemctl().run), opts());
   printed.length = 0;
   uninstall(ctxWith(systemctl({ [`systemctl --user disable --now ${UNIT}`]: { status: 1 } }).run));
-  assert.match(printed.join("\n"), /anythingllm-bridge\.service would not stop: stop the bridge yourself/);
+  assert.match(printed.join("\n"), /anywherellm-bridge\.service would not stop: stop the bridge yourself/);
 });
 
 test("systemd: the user manager is usable while it is running, degraded or starting, and not otherwise", () => {
@@ -194,108 +194,108 @@ test("health shows the service's state, and fails when it is not active", async 
 
 // --- launchd
 
-const plist = () => path.posix.join(home, "Library", "LaunchAgents", "local.anythingllm-bridge.plist");
+const plist = () => path.posix.join(home, "Library", "LaunchAgents", "local.anywherellm-bridge.plist");
 
 test("launchd: install writes the agent, then enables, boots out and bootstraps it in the GUI domain", async () => {
   const lc = manager();
   const ctx = ctxWith(lc.run, "darwin");
   await install(ctx, opts());
-  const log = path.posix.join(home, "Library", "Logs", "anythingllm-bridge.log");
+  const log = path.posix.join(home, "Library", "Logs", "anywherellm-bridge.log");
   assert.equal(fs.readFileSync(plist(), "utf8"), plistText({ command: ctx.command, envFile: envFile(), port }, log));
   assert.deepEqual(lc.calls, [
     "launchctl print gui/501",
-    "launchctl enable gui/501/local.anythingllm-bridge",
-    "launchctl bootout gui/501/local.anythingllm-bridge",
+    "launchctl enable gui/501/local.anywherellm-bridge",
+    "launchctl bootout gui/501/local.anywherellm-bridge",
     `launchctl bootstrap gui/501 ${plist()}`,
   ]);
   assert.ok(fs.existsSync(path.dirname(log)), "the log's folder is made");
 });
 
 test("launchd: the agent runs the command, keeps it alive after a crash, and logs to one file", () => {
-  const text = plistText({ ...DEFINITION, command: ["/usr/local/bin/node", "/opt/a&b/anythingllm-suite.cjs", "serve"] }, "/Users/u/Library/Logs/anythingllm-bridge.log");
-  assert.match(text, /<key>Label<\/key><string>local\.anythingllm-bridge<\/string>/);
-  assert.match(text, /<array>\n {4}<string>\/usr\/local\/bin\/node<\/string>\n {4}<string>\/opt\/a&amp;b\/anythingllm-suite\.cjs<\/string>\n {4}<string>serve<\/string>\n {2}<\/array>/);
+  const text = plistText({ ...DEFINITION, command: ["/usr/local/bin/node", "/opt/a&b/anywherellm-suite.cjs", "serve"] }, "/Users/u/Library/Logs/anywherellm-bridge.log");
+  assert.match(text, /<key>Label<\/key><string>local\.anywherellm-bridge<\/string>/);
+  assert.match(text, /<array>\n {4}<string>\/usr\/local\/bin\/node<\/string>\n {4}<string>\/opt\/a&amp;b\/anywherellm-suite\.cjs<\/string>\n {4}<string>serve<\/string>\n {2}<\/array>/);
   assert.match(text, /<key>BRIDGE_ENV_FILE<\/key><string>\/h\/bridge\.env<\/string>/);
   assert.match(text, /<key>RunAtLoad<\/key><true\/>/);
   assert.match(text, /<key>SuccessfulExit<\/key><false\/>/);
-  assert.match(text, /<key>StandardErrorPath<\/key><string>\/Users\/u\/Library\/Logs\/anythingllm-bridge\.log<\/string>/);
+  assert.match(text, /<key>StandardErrorPath<\/key><string>\/Users\/u\/Library\/Logs\/anywherellm-bridge\.log<\/string>/);
 });
 
 test("launchd: a refused bootstrap is an error that says where the log is", async () => {
-  await assert.rejects(install(ctxWith(manager({ "launchctl bootstrap": { status: 5 } }).run, "darwin"), opts()), /launchctl bootstrap gui\/501 .* failed; see .*anythingllm-bridge\.log/);
+  await assert.rejects(install(ctxWith(manager({ "launchctl bootstrap": { status: 5 } }).run, "darwin"), opts()), /launchctl bootstrap gui\/501 .* failed; see .*anywherellm-bridge\.log/);
 });
 
 test("launchd: it is active while launchctl says it runs; uninstall boots it out and disables it", async () => {
   await install(ctxWith(manager().run, "darwin"), opts());
   printed.length = 0;
-  await health(ctxWith(manager({ "launchctl print gui/501/local.anythingllm-bridge": { status: 0, stdout: "gui/501/local.anythingllm-bridge = {\n\tstate = running\n}" } }).run, "darwin"));
-  assert.ok(printed.includes("ok   local.anythingllm-bridge: active"), printed.join("\n"));
+  await health(ctxWith(manager({ "launchctl print gui/501/local.anywherellm-bridge": { status: 0, stdout: "gui/501/local.anywherellm-bridge = {\n\tstate = running\n}" } }).run, "darwin"));
+  assert.ok(printed.includes("ok   local.anywherellm-bridge: active"), printed.join("\n"));
   printed.length = 0;
-  await health(ctxWith(manager({ "launchctl print gui/501/local.anythingllm-bridge": { status: 0, stdout: "\tstate = waiting\n" } }).run, "darwin"));
-  assert.ok(printed.includes("FAIL local.anythingllm-bridge: inactive"), printed.join("\n"));
+  await health(ctxWith(manager({ "launchctl print gui/501/local.anywherellm-bridge": { status: 0, stdout: "\tstate = waiting\n" } }).run, "darwin"));
+  assert.ok(printed.includes("FAIL local.anywherellm-bridge: inactive"), printed.join("\n"));
   const lc = manager();
   uninstall(ctxWith(lc.run, "darwin"));
-  assert.deepEqual(lc.calls, ["launchctl bootout gui/501/local.anythingllm-bridge", "launchctl disable gui/501/local.anythingllm-bridge"]);
+  assert.deepEqual(lc.calls, ["launchctl bootout gui/501/local.anywherellm-bridge", "launchctl disable gui/501/local.anywherellm-bridge"]);
 });
 
 // --- the Task Scheduler
 
-const local = () => path.join(home, "local", "anythingllm-bridge");
+const local = () => path.join(home, "local", "anywherellm-bridge");
 
 test("windows: install writes serve.cmd and a logon task that runs it with no window, then runs it", async () => {
-  const st = manager({ "schtasks /Query /TN anythingllm-bridge": { status: 1 } });
+  const st = manager({ "schtasks /Query /TN anywherellm-bridge": { status: 1 } });
   const ctx = ctxWith(st.run, "win32");
   await install(ctx, opts());
   const script = path.join(local(), "serve.cmd");
   assert.equal(fs.readFileSync(script, "utf8"), scriptText({ command: ctx.command, envFile: envFile(), port }, path.join(local(), "bridge.log")));
   assert.deepEqual(st.calls, [
     "schtasks /Query /FO CSV /NH",
-    `schtasks /Create /TN anythingllm-bridge /TR conhost.exe --headless cmd.exe /d /c "${script}" /SC ONLOGON /F`,
-    "schtasks /Change /TN anythingllm-bridge /ENABLE",
-    "schtasks /End /TN anythingllm-bridge",
-    "schtasks /Run /TN anythingllm-bridge",
+    `schtasks /Create /TN anywherellm-bridge /TR conhost.exe --headless cmd.exe /d /c "${script}" /SC ONLOGON /F`,
+    "schtasks /Change /TN anywherellm-bridge /ENABLE",
+    "schtasks /End /TN anywherellm-bridge",
+    "schtasks /Run /TN anywherellm-bridge",
   ]);
 });
 
 test("windows: serve.cmd quotes each word, doubles %, and refuses a double quote", () => {
-  const text = scriptText({ command: ["C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\a b\\100%\\anythingllm-suite.cjs", "serve"], envFile: "C:\\Users\\a b\\bridge.env", port: 1 }, "C:\\log.txt");
+  const text = scriptText({ command: ["C:\\Program Files\\nodejs\\node.exe", "C:\\Users\\a b\\100%\\anywherellm-suite.cjs", "serve"], envFile: "C:\\Users\\a b\\bridge.env", port: 1 }, "C:\\log.txt");
   assert.deepEqual(text.split("\r\n").slice(2), [
     'set "BRIDGE_ENV_FILE=C:\\Users\\a b\\bridge.env"',
-    '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\a b\\100%%\\anythingllm-suite.cjs" "serve" >> "C:\\log.txt" 2>&1',
+    '"C:\\Program Files\\nodejs\\node.exe" "C:\\Users\\a b\\100%%\\anywherellm-suite.cjs" "serve" >> "C:\\log.txt" 2>&1',
     "",
   ]);
   assert.throws(() => scriptText({ ...DEFINITION, envFile: 'C:\\a"b' }, "C:\\l"), /double quote/);
 });
 
 test("windows: a second install with the same script and task creates nothing", async () => {
-  await install(ctxWith(manager({ "schtasks /Query /TN anythingllm-bridge": { status: 1 } }).run, "win32"), opts());
+  await install(ctxWith(manager({ "schtasks /Query /TN anywherellm-bridge": { status: 1 } }).run, "win32"), opts());
   const st = manager();
   await install(ctxWith(st.run, "win32"), opts());
   assert.ok(!st.calls.some((c) => c.includes("/Create")), st.calls.join("\n"));
 });
 
 test("windows: running is read from the status or the last result, in any language", async () => {
-  const row = (status: string, result: string) => `"HOST","\\anythingllm-bridge","N/A","${status}","Interactive only","10/15/2026 9:00:00 AM","${result}","me"`;
+  const row = (status: string, result: string) => `"HOST","\\anywherellm-bridge","N/A","${status}","Interactive only","10/15/2026 9:00:00 AM","${result}","me"`;
   assert.deepEqual(csvFields(row("Running", "267009")).slice(3, 7), ["Running", "Interactive only", "10/15/2026 9:00:00 AM", "267009"]);
-  await install(ctxWith(manager({ "schtasks /Query /TN anythingllm-bridge": { status: 1 } }).run, "win32"), opts());
+  await install(ctxWith(manager({ "schtasks /Query /TN anywherellm-bridge": { status: 1 } }).run, "win32"), opts());
   for (const [status, result, word] of [
     ["Running", "0", "active"],
     ["Wird ausgeführt", "267009", "active"],
     ["Ready", "0", "ready"],
     ["Disabled", "1", "disabled"],
   ]) {
-    const st = manager({ "schtasks /Query /TN anythingllm-bridge /V": { status: 0, stdout: `${row(status, result)}\r\n` } });
+    const st = manager({ "schtasks /Query /TN anywherellm-bridge /V": { status: 0, stdout: `${row(status, result)}\r\n` } });
     printed.length = 0;
     await health(ctxWith(st.run, "win32"));
-    assert.ok(printed.some((l) => l.endsWith(`task anythingllm-bridge: ${word}`)), `${status}: ${printed.join("\n")}`);
+    assert.ok(printed.some((l) => l.endsWith(`task anywherellm-bridge: ${word}`)), `${status}: ${printed.join("\n")}`);
   }
 });
 
 test("windows: uninstall ends the task and disables it", async () => {
-  await install(ctxWith(manager({ "schtasks /Query /TN anythingllm-bridge": { status: 1 } }).run, "win32"), opts());
+  await install(ctxWith(manager({ "schtasks /Query /TN anywherellm-bridge": { status: 1 } }).run, "win32"), opts());
   printed.length = 0;
   const st = manager();
   uninstall(ctxWith(st.run, "win32"));
-  assert.deepEqual(st.calls, ["schtasks /Query /TN anythingllm-bridge", "schtasks /End /TN anythingllm-bridge", "schtasks /Change /TN anythingllm-bridge /DISABLE"]);
+  assert.deepEqual(st.calls, ["schtasks /Query /TN anywherellm-bridge", "schtasks /End /TN anywherellm-bridge", "schtasks /Change /TN anywherellm-bridge /DISABLE"]);
   assert.ok(printed.includes("Stopped the bridge."));
 });

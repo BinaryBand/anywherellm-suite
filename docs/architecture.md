@@ -3,11 +3,11 @@
 ```mermaid
 flowchart LR
     app["app (AnywhereLLM Lite, phone)"] -- "developer key" --> bridge
-    cli["anythingllm-suite install"] -. "writes into the storage" .-> storage
+    cli["anywherellm-suite install"] -. "writes into the storage" .-> storage
     subgraph host["the machine that hosts AnythingLLM"]
         bridge["packages/bridge :8467 (a service, with --bridge)"]
         subgraph allm["AnythingLLM :3001 (a container, or Desktop)"]
-            storage["storage: anythingllm-suite/control.cjs, plugins/anythingllm_mcp_servers.json, plugins/agent-skills/"]
+            storage["storage: anywherellm-suite/control.cjs, plugins/anythingllm_mcp_servers.json, plugins/agent-skills/"]
             control["packages/control (an MCP server over stdio)"]
             skills["packages/skills (library, browser, notebook, apps)"]
         end

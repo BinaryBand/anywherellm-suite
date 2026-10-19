@@ -2,7 +2,7 @@
 // beside it, and the build fails (removing the output) when a bundle took in a file from outside its
 // part: that is the boundary between parts, since a part cannot ship another part's code.
 //
-//   bridge  src/main.mts -> bridge/dist/anythingllm-suite.cjs, the command people run (install,
+//   bridge  src/main.mts -> bridge/dist/anywherellm-suite.cjs, the command people run (install,
 //           the bridge), for Node 20.3 or later (AbortSignal.any). The extension is fixed (.cjs) so
 //           it runs the same wherever it is copied to. contract/default-allow.txt is inlined (the one
 //           copy of the default BRIDGE_ALLOW), and so is what install puts into AnythingLLM's storage:
@@ -150,7 +150,7 @@ async function payload() {
 
 async function buildBridge() {
   const define = { PAYLOAD: JSON.stringify(await payload()) };
-  const outfile = path.join(here, "bridge", "dist", "anythingllm-suite.cjs");
+  const outfile = path.join(here, "bridge", "dist", "anywherellm-suite.cjs");
   await bundle({
     entry: "bridge/src/main.mts",
     outfile,

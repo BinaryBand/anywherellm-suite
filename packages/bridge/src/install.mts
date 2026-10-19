@@ -121,7 +121,7 @@ export async function install(ctx: Ctx, opts: Options): Promise<void> {
 async function start(ctx: Ctx, settings: Settings, file: string): Promise<void> {
   const manager = choose(settings.service, hostOf(ctx));
   if (manager === foreground) {
-    ctx.print(`${settings.service ? "BRIDGE_SERVICE is foreground" : "This machine has no service manager the bridge drives"}. Run \`anythingllm-suite serve\``);
+    ctx.print(`${settings.service ? "BRIDGE_SERVICE is foreground" : "This machine has no service manager the bridge drives"}. Run \`anywherellm-suite serve\``);
     ctx.print("under your own supervisor: a terminal, tmux, a container, a process manager. It reads the same settings file.");
     return;
   }

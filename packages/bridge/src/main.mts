@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// anythingllm-suite: `install`, `uninstall` and `health` put the control server and the skills into
+// anywherellm-suite: `install`, `uninstall` and `health` put the control server and the skills into
 // AnythingLLM's storage, and with --bridge set up the bridge (install.mts); `serve` runs the bridge;
 // `pair` prints the link a phone connects with; `settings` prints the settings in use.
 
@@ -19,7 +19,7 @@ import { fileFor, loadSettings, shown } from "./settings.mts";
 /** The control server and the skills, put in by packages/build.mjs. */
 declare const PAYLOAD: Payload;
 
-const USAGE = `usage: anythingllm-suite <command>
+const USAGE = `usage: anywherellm-suite <command>
 
   install [--storage DIR]        put the control server and the skills into AnythingLLM's storage
           [--runtime container|native] [--roles chat,schedule] [--skills all|none|NAME,...]
@@ -74,7 +74,7 @@ async function main(argv: string[]): Promise<number | void> {
       const settings = loadSettings(ctx);
       const server = createServer({ rules: settings.allow, upstream: Upstream.of(settings), log: console.error });
       server.on("error", (e) => {
-        console.error(`anythingllm-suite: ${e.message}`);
+        console.error(`anywherellm-suite: ${e.message}`);
         process.exit(1);
       });
       server.listen(settings.port, "127.0.0.1", () => console.error(`the bridge on :${settings.port}, passing ${settings.allow.length} routes`));
@@ -122,7 +122,7 @@ main(process.argv.slice(2)).then(
     if (code !== undefined) process.exit(code);
   },
   (e: unknown) => {
-    console.error(`anythingllm-suite: ${(e as Error).message}`);
+    console.error(`anywherellm-suite: ${(e as Error).message}`);
     process.exit(1);
   },
 );

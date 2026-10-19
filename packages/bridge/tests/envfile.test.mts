@@ -18,7 +18,7 @@ test("a new file gets the header and mode 600, in a folder made for it", () => {
   const file = path.join(tmp, "new", "dir", "bridge.env");
   saveEnv(file, { A: "1" });
   const lines = fs.readFileSync(file, "utf8").split("\n");
-  assert.match(lines[0], /^# anythingllm-bridge's settings/);
+  assert.match(lines[0], /^# anywherellm-bridge's settings/);
   assert.equal(lines.at(-2), "A=1");
   if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600); // Windows has no modes
   saveEnv(path.join(tmp, "own.env"), { A: "1" }, ["# mine"]);

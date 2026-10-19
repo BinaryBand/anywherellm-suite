@@ -5,7 +5,7 @@
 //   E2E_ALLM_URL, E2E_PASSWORD  AnythingLLM from here, and its password (AUTH_TOKEN)
 //   E2E_BRIDGE_URL, E2E_KEY     the bridge `install --bridge` set up, and a developer key
 //   E2E_WORKSPACE               the slug of the one workspace AnythingLLM holds
-//   E2E_CLI                     the built anythingllm-suite.cjs, with its settings in the environment
+//   E2E_CLI                     the built anywherellm-suite.cjs, with its settings in the environment
 //
 // The control server is started as AnythingLLM starts it: `node $E2E_CONTROL` inside the container, with the container's environment. The throwaway has no model, so a chat holds
 // no exchanges: clearing one that has some is covered against the fake, in packages/control/tests.

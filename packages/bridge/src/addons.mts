@@ -1,9 +1,9 @@
 // What install puts into AnythingLLM's storage folder, where AnythingLLM finds it and runs it itself:
 //
-//   anythingllm-suite/control.cjs             the control MCP server (packages/control)
+//   anywherellm-suite/control.cjs             the control MCP server (packages/control)
 //   plugins/anythingllm_mcp_servers.json      an entry `control` that starts it with `node`
 //   plugins/agent-skills/<hubId>/             each skill (packages/skills)
-//   anythingllm-suite/page-key                the browser-extension key the skills' pages post
+//   anywherellm-suite/page-key                the browser-extension key the skills' pages post
 //                                             with, when install is given one (--page-key)
 //
 // The entry runs the container's own node on the path the container sees (/app/server/storage), or

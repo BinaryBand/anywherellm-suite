@@ -322,7 +322,7 @@ test("a device sign-in that ends says how in the log, and nothing secret", async
 /** Forgets what this process kept of the device flow (when to ask, the loop), as a restart of
  *  AnythingLLM does; the vault keeps the code. */
 function restart(): void {
-  for (const key of ["schedule", "loop", "asking"]) delete (globalThis as Record<symbol, unknown>)[Symbol.for(`anythingllm-suite.library-lean.device.${key}`)];
+  for (const key of ["schedule", "loop", "asking"]) delete (globalThis as Record<symbol, unknown>)[Symbol.for(`anywherellm-suite.library-lean.device.${key}`)];
 }
 
 const sameCode = /^The code shown before still waits, and no new one was made: show it again\. Show the user this code in a code block of its own, so they can copy it:\n\n```\nWDJB-MJHT\n```\n/;

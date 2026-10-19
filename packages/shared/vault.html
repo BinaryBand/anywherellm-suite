@@ -112,7 +112,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
         body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: "vault-lean-" + section, docSource: "vault-lean page" } }),
       });
-      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anythingllm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
+      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
       toast("Sent");
       setTimeout(load, 1500);
       return true;

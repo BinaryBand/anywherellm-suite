@@ -19,7 +19,7 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 | What | Where |
 | --- | --- |
 | Each app: app.json's keys, page.html, data, its newest 20 changes and 10 earlier files, its page's token and secret | `apps-lean/<workspace>/<name>.json` in AnythingLLM's storage, changed under its lock |
-| The key every page posts with (a browser-extension key: it can store documents, never read them) | `anythingllm-suite/page-key`, which install keeps (`--page-key`) |
+| The key every page posts with (a browser-extension key: it can store documents, never read them) | `anywherellm-suite/page-key`, which install keeps (`--page-key`) |
 | Each app's page, at a random address | `public/apps-lean/<token>.html` beside AnythingLLM's server (`ANYTHINGLLM_PUBLIC_DIR` to move it) |
 | What a page posts, until the skill applies it | `documents/custom-documents/raw-apps-lean-event-*.json`, as AnythingLLM's collector writes it |
 | What pages did since a workspace's last chat call (20 lines) | `apps-lean/<workspace>/.news.json` |
@@ -27,7 +27,7 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 
 ## Using it
 
-`anythingllm-suite install` puts it in (see the [README](../../../README.md)); then switch on Apps under Agent Skills. Each app's page is published as it's made; set Apps' ANYTHINGLLM_URL to the address your browser and phone reach AnythingLLM at, so the card's link opens from anywhere rather than only from AnythingLLM's own chat. Where the public folder can't be written (AnythingLLM Desktop), apps work from the chat and have no page.
+`anywherellm-suite install` puts it in (see the [README](../../../README.md)); then switch on Apps under Agent Skills. Each app's page is published as it's made; set Apps' ANYTHINGLLM_URL to the address your browser and phone reach AnythingLLM at, so the card's link opens from anywhere rather than only from AnythingLLM's own chat. Where the public folder can't be written (AnythingLLM Desktop), apps work from the chat and have no page.
 
 Taps reach the app as they land: the skill watches where AnythingLLM's collector writes what pages post, from its first call after AnythingLLM starts until AnythingLLM stops (not in a scheduled job, whose process ends within minutes), and each workspace's next chat call is told what its pages did. Until that first call, taps show on the device that made them and reach the app at the call. Where the folder watch doesn't see changes (Docker Desktop's bind mounts on macOS and Windows), a 30 s poll does.
 

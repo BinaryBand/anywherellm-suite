@@ -68,7 +68,7 @@ export const foreground: Manager = {
   start: () => {},
   stop: () => true,
   status: () => "not managed",
-  logs: "the terminal or supervisor that runs `anythingllm-suite serve`",
+  logs: "the terminal or supervisor that runs `anywherellm-suite serve`",
 };
 
 const BUILD: Record<Kind, (host: Host) => Manager> = { systemd, launchd, windows, foreground: () => foreground };

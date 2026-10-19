@@ -1,6 +1,6 @@
-// The bridge as a launchd agent of the user's GUI session, `local.anythingllm-bridge`, in
+// The bridge as a launchd agent of the user's GUI session, `local.anywherellm-bridge`, in
 // `~/Library/LaunchAgents`. It starts at login (RunAtLoad) and again after a crash, not after a clean
-// exit (KeepAlive SuccessfulExit false). Its output goes to `~/Library/Logs/anythingllm-bridge.log`.
+// exit (KeepAlive SuccessfulExit false). Its output goes to `~/Library/Logs/anywherellm-bridge.log`.
 // It is loaded with the bootstrap/bootout commands, which replaced load/unload in macOS 10.11.
 // Not yet run on a real Mac: the commands follow launchctl(1).
 
@@ -9,7 +9,7 @@ import path from "node:path";
 import { writeAtomicIfChanged } from "#shared/atomic";
 import type { Definition, Host, Manager } from "./index.mts";
 
-export const LABEL = "local.anythingllm-bridge";
+export const LABEL = "local.anywherellm-bridge";
 
 const xml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const string = (text: string): string => `<string>${xml(text)}</string>`;
@@ -17,7 +17,7 @@ const string = (text: string): string => `<string>${xml(text)}</string>`;
 export function plistText({ command, envFile }: Definition, log: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Written by \`anythingllm-suite install --bridge\`: the bridge to AnythingLLM's internal API. -->
+<!-- Written by \`anywherellm-suite install --bridge\`: the bridge to AnythingLLM's internal API. -->
 <plist version="1.0">
 <dict>
   <key>Label</key>${string(LABEL)}
@@ -44,7 +44,7 @@ ${command.map((word) => `    ${string(word)}`).join("\n")}
 
 export function launchd(host: Host): Manager {
   const file = path.posix.join(host.home, "Library", "LaunchAgents", `${LABEL}.plist`);
-  const log = path.posix.join(host.home, "Library", "Logs", "anythingllm-bridge.log");
+  const log = path.posix.join(host.home, "Library", "Logs", "anywherellm-bridge.log");
   const domain = `gui/${host.uid}`;
   const target = `${domain}/${LABEL}`;
   const launchctl = (...args: string[]) => host.run("launchctl", args);

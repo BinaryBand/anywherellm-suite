@@ -28,7 +28,7 @@ Each answer about the tab ends with its card, a picture of the tab that opens it
 
 ## Using it
 
-`anythingllm-suite install` puts it in. Switch on Browser under Agent Skills, and set its ANYTHINGLLM_URL to the address you open AnythingLLM at, so the card opens anywhere. It needs a Chrome: the newest one Puppeteer downloaded (`PUPPETEER_CACHE_DIR`, else `~/.cache/puppeteer`, where AnythingLLM's Docker image keeps its collector's), else a system Chrome or Chromium in `/usr/bin`; set `BROWSER_LEAN_CHROME` in AnythingLLM's environment to choose one. The tab's page needs the pages' key (`install --page-key`, see the [README](../../../README.md#install)).
+`anywherellm-suite install` puts it in. Switch on Browser under Agent Skills, and set its ANYTHINGLLM_URL to the address you open AnythingLLM at, so the card opens anywhere. It needs a Chrome: the newest one Puppeteer downloaded (`PUPPETEER_CACHE_DIR`, else `~/.cache/puppeteer`, where AnythingLLM's Docker image keeps its collector's), else a system Chrome or Chromium in `/usr/bin`; set `BROWSER_LEAN_CHROME` in AnythingLLM's environment to choose one. The tab's page needs the pages' key (`install --page-key`, see the [README](../../../README.md#install)).
 
 On the tab's page the user can also take the tab over: tap, swipe to scroll, type into a field with their own keyboard (a password sealed on their device), go back or reload, then hand it back. The agent reads but doesn't act meanwhile, and a hold with no step for 10 minutes lapses. After the user signs in that way, the page offers to save the login.
 

@@ -1,4 +1,4 @@
-// The bridge as a systemd user unit, `anythingllm-bridge.service`, in the user's
+// The bridge as a systemd user unit, `anywherellm-bridge.service`, in the user's
 // `$XDG_CONFIG_HOME/systemd/user` (`~/.config/systemd/user`). Its log is the journal.
 
 import fs from "node:fs";
@@ -6,17 +6,17 @@ import { writeAtomicIfChanged } from "#shared/atomic";
 import { configDir, pathsOf } from "#shared/paths";
 import type { Definition, Host, Manager } from "./index.mts";
 
-export const UNIT = "anythingllm-bridge.service";
+export const UNIT = "anywherellm-bridge.service";
 
 export const unitFile = (host: Pick<Host, "platform" | "env" | "home">): string => pathsOf(host.platform).join(configDir("systemd", host), "user", UNIT);
 
 const quote = (word: string): string => (/[\s"'\\$%]/.test(word) ? `"${word.replace(/[\\"]/g, "\\$&").replace(/%/g, "%%").replace(/\$/g, "$$$$")}"` : word);
 
 export function unitText({ command, envFile, port }: Definition): string {
-  return `# anythingllm-bridge: the bridge to AnythingLLM's internal API (:${port}). Written by
-# \`anythingllm-suite install --bridge\`; its settings are ${envFile}.
+  return `# anywherellm-bridge: the bridge to AnythingLLM's internal API (:${port}). Written by
+# \`anywherellm-suite install --bridge\`; its settings are ${envFile}.
 [Unit]
-Description=anythingllm-bridge: a bridge to AnythingLLM's internal API (:${port})
+Description=anywherellm-bridge: a bridge to AnythingLLM's internal API (:${port})
 
 [Service]
 EnvironmentFile=${envFile}

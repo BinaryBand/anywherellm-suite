@@ -59,10 +59,10 @@ test("a public address the phone cannot use is refused, by name", () => {
 });
 
 test("the settings file is in the user's settings folder, or BRIDGE_ENV_FILE", () => {
-  assert.equal(settingsFile({ env: {}, home: "/h", platform: "linux" }), "/h/.config/anythingllm-bridge/bridge.env");
-  assert.equal(settingsFile({ env: { XDG_CONFIG_HOME: "/c" }, home: "/h", platform: "linux" }), "/c/anythingllm-bridge/bridge.env");
-  assert.equal(settingsFile({ env: {}, home: "/Users/u", platform: "darwin" }), "/Users/u/Library/Application Support/anythingllm-bridge/bridge.env");
-  assert.equal(settingsFile({ env: { APPDATA: "C:\\R" }, home: "C:\\h", platform: "win32" }), "C:\\R\\anythingllm-bridge\\bridge.env");
+  assert.equal(settingsFile({ env: {}, home: "/h", platform: "linux" }), "/h/.config/anywherellm-bridge/bridge.env");
+  assert.equal(settingsFile({ env: { XDG_CONFIG_HOME: "/c" }, home: "/h", platform: "linux" }), "/c/anywherellm-bridge/bridge.env");
+  assert.equal(settingsFile({ env: {}, home: "/Users/u", platform: "darwin" }), "/Users/u/Library/Application Support/anywherellm-bridge/bridge.env");
+  assert.equal(settingsFile({ env: { APPDATA: "C:\\R" }, home: "C:\\h", platform: "win32" }), "C:\\R\\anywherellm-bridge\\bridge.env");
   assert.equal(fileFor({ env: { BRIDGE_ENV_FILE: "/e" }, home: "/h", platform: "linux" }), "/e");
 });
 

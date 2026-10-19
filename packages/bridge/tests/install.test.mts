@@ -33,7 +33,7 @@ beforeEach(async () => {
     home,
     env: { ANYTHINGLLM_URL: fake.url, BRIDGE_PORT: "1" },
     print: (l) => printed.push(l),
-    command: ["/usr/bin/node", "/x/anythingllm-suite.cjs", "serve"],
+    command: ["/usr/bin/node", "/x/anywherellm-suite.cjs", "serve"],
     node: "/opt/node/bin/node",
     defaultAllow: DEFAULT,
     payload: PAYLOAD,
@@ -49,8 +49,8 @@ const control = () => JSON.parse(fs.readFileSync(serversFile(storage), "utf8")).
 
 test("install puts the server, its entry and the skills into the storage, and asks nothing of AnythingLLM", async () => {
   await install(ctx, opts());
-  assert.equal(fs.readFileSync(path.join(storage, "anythingllm-suite", "control.cjs"), "utf8"), PAYLOAD.control);
-  assert.deepEqual(control(), { command: "node", args: ["/app/server/storage/anythingllm-suite/control.cjs"], env: { ANYTHINGLLM_MCP_ROLES: "chat" } });
+  assert.equal(fs.readFileSync(path.join(storage, "anywherellm-suite", "control.cjs"), "utf8"), PAYLOAD.control);
+  assert.deepEqual(control(), { command: "node", args: ["/app/server/storage/anywherellm-suite/control.cjs"], env: { ANYTHINGLLM_MCP_ROLES: "chat" } });
   assert.ok(fs.existsSync(path.join(storage, "plugins", "agent-skills", "library-lean", "handler.js")));
   assert.deepEqual(settings(), { ANYTHINGLLM_STORAGE: storage }, "no BRIDGE_ALLOW without --bridge");
   assert.deepEqual(fake.calls, []);
@@ -63,7 +63,7 @@ test("with no --storage it takes AnythingLLM Desktop's, and runs the server nati
   fs.mkdirSync(path.join(desktop, "plugins"), { recursive: true });
   await install(ctx, opts({ storage: undefined }));
   const found = JSON.parse(fs.readFileSync(serversFile(desktop), "utf8")).mcpServers.control;
-  assert.deepEqual(found, { command: "/opt/node/bin/node", args: [path.join(desktop, "anythingllm-suite", "control.cjs")], env: { ANYTHINGLLM_MCP_ROLES: "chat" } });
+  assert.deepEqual(found, { command: "/opt/node/bin/node", args: [path.join(desktop, "anywherellm-suite", "control.cjs")], env: { ANYTHINGLLM_MCP_ROLES: "chat" } });
   assert.equal(settings().ANYTHINGLLM_STORAGE, desktop);
   assert.match(printed.join("\n"), /run install again if that Node moves/);
 });
@@ -114,7 +114,7 @@ test("uninstall takes it all out and forgets the storage; the skill's data and B
   fs.mkdirSync(path.join(storage, "library-lean"));
   uninstall(ctx);
   assert.deepEqual(JSON.parse(fs.readFileSync(serversFile(storage), "utf8")).mcpServers, {});
-  assert.ok(!fs.existsSync(path.join(storage, "anythingllm-suite")));
+  assert.ok(!fs.existsSync(path.join(storage, "anywherellm-suite")));
   assert.ok(!fs.existsSync(path.join(storage, "plugins", "agent-skills", "library-lean")));
   assert.ok(fs.existsSync(path.join(storage, "library-lean")));
   assert.deepEqual(settings(), { BRIDGE_ALLOW: DEFAULT });
@@ -130,7 +130,7 @@ test("health checks what install put in, and the bridge only when there is one",
   printed.length = 0;
   assert.equal(await health(ctx), true, printed.join("\n"));
   assert.ok(!printed.some((l) => /bridge on :|BRIDGE_ALLOW/.test(l)), printed.join("\n"));
-  fs.writeFileSync(path.join(storage, "anythingllm-suite", "control.cjs"), "old");
+  fs.writeFileSync(path.join(storage, "anywherellm-suite", "control.cjs"), "old");
   printed.length = 0;
   assert.equal(await health(ctx), false);
   assert.match(printed.join("\n"), /FAIL the control server: not this version's/);
@@ -144,7 +144,7 @@ test("the pages' key is kept for its owner alone, until another is given; health
   assert.equal(await health(ctx), false);
   assert.match(printed.join("\n"), /FAIL the pages' key: none: make one/);
 
-  const file = path.join(storage, "anythingllm-suite", "page-key");
+  const file = path.join(storage, "anywherellm-suite", "page-key");
   await install(ctx, opts({ pageKey: "brx-good" }));
   assert.equal(fs.readFileSync(file, "utf8"), "brx-good\n");
   if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600); // Windows has no modes

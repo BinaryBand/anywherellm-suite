@@ -28,7 +28,7 @@ export function serverRequire<T>(what: string): T {
  *  skill's handler.js afresh for each agent run, and shared by every skill's bundled copy. */
 export function perProcess<T>(key: string, make: () => T): T {
   const g = globalThis as unknown as Record<symbol, T>;
-  const at = Symbol.for(`anythingllm-suite.${key}`);
+  const at = Symbol.for(`anywherellm-suite.${key}`);
   if (!(at in g)) g[at] = make();
   return g[at];
 }
@@ -42,7 +42,7 @@ export function serial<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
 }
 
 /** The suite's own folder in the storage: the control server, and the pages' key. */
-export const SUITE_DIR = "anythingllm-suite";
+export const SUITE_DIR = "anywherellm-suite";
 
 /** The browser-extension key the skills' pages post with, which install keeps in the storage
  *  (`install --page-key`): one the user made in AnythingLLM's Settings > Browser Extension. */

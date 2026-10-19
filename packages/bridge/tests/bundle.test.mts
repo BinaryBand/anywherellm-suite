@@ -1,4 +1,4 @@
-// The built file, run as a person would run it: `node dist/anythingllm-suite.cjs serve`.
+// The built file, run as a person would run it: `node dist/anywherellm-suite.cjs serve`.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import http from "node:http";
@@ -9,7 +9,7 @@ import { FakeAnythingLLM } from "./fakes/anythingllm.mts";
 import { close, listen } from "./fakes/net.mts";
 import { tempDir } from "./fakes/tmp.mts";
 
-const bundle = fileURLToPath(new URL("../dist/anythingllm-suite.cjs", import.meta.url));
+const bundle = fileURLToPath(new URL("../dist/anywherellm-suite.cjs", import.meta.url));
 const tmp = tempDir("bundle");
 // Its own home and settings file on every OS, so a run never reads or writes the real ones.
 const baseEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, HOME: tmp, USERPROFILE: tmp, APPDATA: tmp, BRIDGE_ENV_FILE: path.join(tmp, "bridge.env") }; // SystemRoot: Node on Windows needs it
@@ -33,7 +33,7 @@ test("serve passes a listed route for a good key and refuses the rest", async ()
       child.on("exit", (code) => reject(new Error(`exited ${code}`)));
     });
     const url = `http://127.0.0.1:${port}`;
-    assert.deepEqual(await (await fetch(`${url}/health`)).json(), { ok: true, service: "anythingllm-bridge", allow: ["GET /scheduled-jobs"] });
+    assert.deepEqual(await (await fetch(`${url}/health`)).json(), { ok: true, service: "anywherellm-bridge", allow: ["GET /scheduled-jobs"] });
     const key = { Authorization: "Bearer good-key" };
     assert.deepEqual(await (await fetch(`${url}/scheduled-jobs`, { headers: key })).json(), { ok: true });
     assert.equal((await fetch(`${url}/system/api-keys`, { headers: key })).status, 403);

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/e2e: the suite against the real thing. Starts a throwaway AnythingLLM (the image in
 # contract/versions.env) on a free port with its storage bind-mounted from a temporary folder, as
-# AnythingLLM's Docker instructions do; runs the built `anythingllm-suite install --bridge` into that
+# AnythingLLM's Docker instructions do; runs the built `anywherellm-suite install --bridge` into that
 # storage (with a browser-extension key for the pages), the bridge's `serve` on another free port,
 # makes a developer key and a workspace, and runs tools/e2e.test.mts, or with arguments
 # (`tools/e2e command...`) that command in its place, as a client's own e2e does. Everything lives in the
@@ -58,9 +58,9 @@ token=$(curl -fs -X POST "$allm/api/request-token" -H 'Content-Type: application
   -d "{\"password\":\"$password\"}" | json 'j.token')
 page_key=$(curl -fs -X POST "$allm/api/browser-extension/api-keys/new" -H "Authorization: Bearer $token" | json 'j.apiKey')
 
-echo "[e2e] anythingllm-suite install --bridge, built from packages/"
+echo "[e2e] anywherellm-suite install --bridge, built from packages/"
 (cd "$ROOT/packages" && node build.mjs bridge >/dev/null)
-cli="$ROOT/packages/bridge/dist/anythingllm-suite.cjs"
+cli="$ROOT/packages/bridge/dist/anywherellm-suite.cjs"
 export BRIDGE_ENV_FILE="$work/bridge.env" BRIDGE_PORT="$bridge_port" ANYTHINGLLM_URL="$allm"
 node "$cli" install --storage "$storage" --roles chat,schedule --page-key "$page_key" --bridge --no-start >"$work/install.log"
 
@@ -75,7 +75,7 @@ key=$(curl -fs -X POST "$allm/api/system/generate-api-key" -H "Authorization: Be
 workspace=$(curl -fs -X POST "$allm/api/v1/workspace/new" -H "Authorization: Bearer $key" \
   -H 'Content-Type: application/json' -d '{"name":"E2E Workspace"}' | json 'j.workspace.slug')
 
-export E2E_ENGINE="$engine" E2E_CONTAINER="$name" E2E_CONTROL="$INNER_STORAGE/anythingllm-suite/control.cjs" \
+export E2E_ENGINE="$engine" E2E_CONTAINER="$name" E2E_CONTROL="$INNER_STORAGE/anywherellm-suite/control.cjs" \
   E2E_ALLM_URL="$allm" E2E_ALLM_PORT="$allm_port" E2E_PASSWORD="$password" E2E_BRIDGE_URL="$bridge" \
   E2E_BRIDGE_PORT="$bridge_port" E2E_KEY="$key" E2E_WORKSPACE="$workspace" E2E_CLI="$cli" E2E_STORAGE="$storage"
 if [ $# -gt 0 ]; then

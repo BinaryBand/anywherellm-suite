@@ -110,7 +110,7 @@ input{font:inherit;color:var(--ink)}
           headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
           body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: cfg.title, docSource: "browser-lean page" } }),
         });
-        if (!r.ok) toast(r.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anythingllm-suite install --page-key with it" : "AnythingLLM answered " + r.status);
+        if (!r.ok) toast(r.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + r.status);
       } catch (e) {
         toast("Can't reach AnythingLLM");
       }
