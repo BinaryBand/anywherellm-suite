@@ -35,22 +35,17 @@ var AppsLean = (() => {
   const uuid = () => (self.crypto && crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(16).slice(2));
   const native = window.fetch.bind(window);
 
-  /** Posts an event of this app's page, with its secret, as a document AnythingLLM only stores;
-   *  relative, as the page is served by AnythingLLM itself at whatever address the user reached it.
-   *  Answers the response and the event's id. */
-  async function upload(fields) {
+  /** Posts the change as an event of this app's page, with its secret, as a document AnythingLLM only
+   *  stores; relative, as the page is served by AnythingLLM itself at whatever address the user
+   *  reached it. */
+  async function append(body) {
     const id = uuid();
-    const event = { apps_lean_event: 1, workspace: cfg.workspace, app: cfg.app, secret: cfg.secret, id, t: new Date().toISOString(), ...fields };
+    const event = { apps_lean_event: 1, workspace: cfg.workspace, app: cfg.app, secret: cfg.secret, id, t: new Date().toISOString(), ev: body.ev || "change", fields: body.fields, patch: body.patch };
     const r = await native("/api/browser-extension/upload-content", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
       body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: cfg.eventTitle, docSource: "apps-lean page" } }),
     });
-    return { r, id };
-  }
-
-  async function append(body) {
-    const { r, id } = await upload({ kind: "change", ev: body.ev || "change", fields: body.fields, patch: body.patch });
     if (r.status === 403) return answer(403, { error: "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anythingllm-suite install --page-key with it." });
     if (!r.ok) return answer(r.status >= 500 ? 503 : r.status, { error: "AnythingLLM answered " + r.status + "." });
     pending.push({ id, patch: body.patch });
@@ -130,11 +125,13 @@ var AppsLean = (() => {
   }
 
   // --- Comment: the user picks up to 5 things on the page and says one thing about them, a question
-  // or a change; it goes to the chat as an ask, which the agent acts on only when the user asks it to
-  // there. While picking, taps pick instead of pressing: these listeners, on the window and added
-  // before any part's, see each tap first and keep it from the page; scrolling still works.
-  const PICKS = cfg.picks, WORDS = cfg.words;
-  let picking = false, picks = [], text = "", sending = false, failed = false, row = null;
+  // or a change, which goes to the chat as their message. Only AnywhereLLM, whose web view gives the
+  // page its AnywhereLLMApps channel, has a chat to send it to; elsewhere there's no Comment. While
+  // picking, taps pick instead of pressing: these listeners, on the window and added before any
+  // part's, see each tap first and keep it from the page; scrolling still works.
+  const PICKS = 5, WORDS = 1000;
+  const chat = window.AnywhereLLMApps && window.AnywhereLLMApps.postMessage ? window.AnywhereLLMApps : null;
+  let picking = false, picks = [], text = "", sending = false, failed = "", row = null;
   const host = document.createElement("div");
   const ui = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
   const ours = (e) => (e.composedPath ? e.composedPath().includes(host) : host.contains(e.target));
@@ -193,26 +190,45 @@ var AppsLean = (() => {
       small{color:var(--muted,#666)}
     </style>` + (!open ? `<button class="b${row ? " in" : ""}" data-a="start" type="button">Comment</button>` : picking
       ? `<div class="t" role="dialog" aria-label="Pick what to comment on"><div class="r"><b>Tap what you want to comment on</b><small>${picks.length} of ${PICKS}</small></div><div class="r"><button data-a="cancel" type="button">Cancel</button><button class="p" data-a="describe" type="button"${picks.length ? "" : " disabled"}>${picks.length ? "Comment on " + picks.length + (picks.length === 1 ? " pick" : " picks") : "Pick something first"}</button></div></div>`
-      : `<div class="t" role="dialog" aria-label="Write your comment"><b>${picks.length} picked</b><div class="r" style="flex-wrap:wrap;justify-content:flex-start">${picks.map((p, i) => `<span class="c">${i + 1}. ${esc(p.where.part || p.where.ref || p.where.tag)}${p.where.shown ? ": " + esc(p.where.shown) : ""}</span>`).join("")}</div><label><small>What do you want to say about these?</small><textarea data-text maxlength="${WORDS}" placeholder="A question or a change">${esc(text)}</textarea></label><small>${failed ? "Couldn't send it: try again in a moment." : "Nothing changes until you ask in the chat."}</small><div class="r"><button data-a="back" type="button">Back</button><button class="p" data-a="send" type="button"${text.trim() ? "" : " disabled"}>Send to the chat</button></div></div>`);
+      : `<div class="t" role="dialog" aria-label="Write your comment"><b>${picks.length} picked</b><div class="r" style="flex-wrap:wrap;justify-content:flex-start">${picks.map((p, i) => `<span class="c">${i + 1}. ${esc(p.where.part || p.where.ref || p.where.tag)}${p.where.shown ? ": " + esc(p.where.shown) : ""}</span>`).join("")}</div><label><small>What do you want to say about these?</small><textarea data-text maxlength="${WORDS}" placeholder="A question or a change">${esc(text)}</textarea></label><small>${failed ? esc(failed) : "It goes to the chat as your message, and the agent answers there."}</small><div class="r"><button data-a="back" type="button">Back</button><button class="p" data-a="send" type="button"${text.trim() ? "" : " disabled"}>Send to the chat</button></div></div>`);
   }
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  /** The comment as the user's message: which app and what they picked, by what marks each in
+   *  page.html, then their words. */
+  function message() {
+    const code = (v) => "`" + String(v).replace(/`/g, "'") + "`";
+    const about = `Comment on my ${cfg.title || cfg.app} app's page (apps-lean app ${code(cfg.app)})`;
+    const said = text.trim();
+    if (!picks.length) return `${about}:\n\n${said}`;
+    const described = ({ tag, id, cls, part, ref, at, figure, shown }) =>
+      [code((tag || "element") + (id ? "#" + id : cls ? "." + cls : "")), part && "part " + code(part), ref && "data-ref " + code(ref), at && "data at " + code(at), figure && "figure " + code(figure), shown && `showing "${shown}"`].filter(Boolean).join(", ");
+    return [`${about}, about what I picked there:`, ...picks.map((p, i) => `${i + 1}. ${described(p.where)}`), "", said].join("\n");
+  }
   function end() {
     for (const p of picks) outline(p.el, false);
     picks = [];
     text = "";
-    picking = failed = false;
+    picking = false;
+    failed = "";
     tray();
   }
-  // A send that fails keeps the picks and the text, for another try; one tap sends once.
+  // AnywhereLLM sends the comment in the chat and answers on the window (anywherellm-comment):
+  // whether it went, and why not. A send that fails keeps the picks and the text, for another try;
+  // one tap sends once.
   async function send() {
     if (sending) return;
     sending = true;
-    const { r } = await upload({ kind: "ask", ev: "ask", text: text.trim(), picks: picks.map((p) => p.where) }).catch(() => ({ r: null }));
+    const answered = new Promise((done) => {
+      const heard = (e) => (clearTimeout(wait), window.removeEventListener("anywherellm-comment", heard), done(e.detail || {}));
+      const wait = setTimeout(() => heard({ detail: { why: "AnywhereLLM didn't answer: try again in a moment." } }), 10000);
+      window.addEventListener("anywherellm-comment", heard);
+    });
+    chat.postMessage(JSON.stringify({ comment: { workspace: cfg.workspace, message: message() } }));
+    const { ok, why } = await answered;
     sending = false;
-    failed = !(r && r.ok);
+    failed = ok ? "" : why || "Couldn't send it: try again in a moment.";
     if (failed) return tray();
     end();
-    bar("Sent to the chat. Ask the agent there to answer, or to make the change.");
   }
   // What each of the tray's buttons does to picking: on, off, or send.
   const ACTS = { start: true, back: true, describe: false, cancel: null, send: "send" };
@@ -233,24 +249,27 @@ var AppsLean = (() => {
   // Keys typed in the tray are its own: from outside its shadow they'd look like keys on the page
   // (a deck's space and arrows turn its screen).
   ui.addEventListener("keydown", (e) => e.stopPropagation());
-  for (const type of ["click", "pointerdown", "mousedown", "mouseup", "pointerup", "submit", "input", "change", "keydown", "touchend"])
-    window.addEventListener(type, (e) => {
-      if (!picking || ours(e)) return;
-      if (type === "keydown" && e.key === "Escape") end();
-      if (type !== "touchend") e.preventDefault();
-      e.stopImmediatePropagation();
-      if (type !== "click" || !e.target || e.target === document.body || e.target === document.documentElement) return;
-      const at = picks.findIndex((p) => p.el === e.target || p.el.contains(e.target));
-      if (at >= 0) ((outline(picks[at].el, false)), picks.splice(at, 1));
-      else if (picks.length < PICKS) (outline(e.target, true), picks.push({ el: e.target, where: locate(e.target) }));
-      tray();
-    }, { capture: true });
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tray);
-  else tray();
-  // A page that draws itself again can take the button out with what it replaces: it goes back at
-  // once, as it was (its shadow root goes with it).
-  if (typeof MutationObserver === "function")
-    new MutationObserver(() => host.isConnected || !document.body || place()).observe(document.documentElement, { childList: true, subtree: true });
+  // Without a chat to send to, Comment isn't put on the page, and nothing listens for it.
+  if (chat) {
+    for (const type of ["click", "pointerdown", "mousedown", "mouseup", "pointerup", "submit", "input", "change", "keydown", "touchend"])
+      window.addEventListener(type, (e) => {
+        if (!picking || ours(e)) return;
+        if (type === "keydown" && e.key === "Escape") end();
+        if (type !== "touchend") e.preventDefault();
+        e.stopImmediatePropagation();
+        if (type !== "click" || !e.target || e.target === document.body || e.target === document.documentElement) return;
+        const at = picks.findIndex((p) => p.el === e.target || p.el.contains(e.target));
+        if (at >= 0) ((outline(picks[at].el, false)), picks.splice(at, 1));
+        else if (picks.length < PICKS) (outline(e.target, true), picks.push({ el: e.target, where: locate(e.target) }));
+        tray();
+      }, { capture: true });
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tray);
+    else tray();
+    // A page that draws itself again can take the button out with what it replaces: it goes back at
+    // once, as it was (its shadow root goes with it).
+    if (typeof MutationObserver === "function")
+      new MutationObserver(() => host.isConnected || !document.body || place()).observe(document.documentElement, { childList: true, subtree: true });
+  }
 
   window.fetch = (url, opts) => {
     if (url === "lean:append") return append(JSON.parse(opts.body));

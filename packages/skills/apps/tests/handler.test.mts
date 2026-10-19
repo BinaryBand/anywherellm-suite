@@ -258,7 +258,7 @@ test("a card's title links to the app's page: under AnythingLLM's address when i
 });
 
 test("the old names show, write, revert and open are gone, and the actions are listed", async () => {
-  for (const action of ["show", "write", "revert", "open"]) assert.match(await call("home", { action, name: "groceries" }), /^Apps: action is one of list, create, do, read, page, undo, edit, delete, dismiss, guide$/, action);
+  for (const action of ["show", "write", "revert", "open"]) assert.match(await call("home", { action, name: "groceries" }), /^Apps: action is one of list, create, do, read, page, undo, edit, delete, guide$/, action);
 });
 
 test("every page a call touches is written, and they share one key for pages", async () => {
@@ -279,6 +279,6 @@ test("every page a call touches is written, and they share one key for pages", a
 
 test("a parameter given as null is one left out", async () => {
   await make("home", "nulls", "Nulls");
-  assert.match(await call("home", { action: "do", name: "nulls", ev: "add", patch: [{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }], ask: null, workspace: null }), /^Done: add on nulls\./);
+  assert.match(await call("home", { action: "do", name: "nulls", ev: "add", patch: [{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }], workspace: null }), /^Done: add on nulls\./);
   assert.match(await call("home", { action: "undo", name: "nulls", file: null }), /^Took back add/);
 });

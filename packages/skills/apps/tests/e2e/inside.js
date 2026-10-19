@@ -3,8 +3,8 @@
 // agent would, and drives it against the real server: a page published into AnythingLLM's public
 // folder and served by AnythingLLM itself, with its state file; a tap posted to the real
 // browser-extension upload, written by the real collector and applied by the skill's folder watch
-// with no call; an event without the app's secret refused; Comment picking in the collector's
-// real Chrome and its ask reaching the app; the page check in its worker on the image's own Node; a
+// with no call; an event without the app's secret refused; Comment in the collector's real Chrome,
+// absent without AnywhereLLM's channel and handing its comment to a stand-in one; the page check in its worker on the image's own Node; a
 // delete that leaves its page saying so. Prints "ok" or throws.
 const assert = require("assert");
 const fs = require("fs");
@@ -79,14 +79,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const saved = JSON.parse(fs.readFileSync(path.join(STORAGE_DIR, HUB_ID, "home", "groceries.json"), "utf8"));
   assert.equal(saved.history.filter((h) => h.by === "page").length, 1, "the tap sent twice applies once");
 
-  // Comment, in a real Chrome (the collector's): a tap while picking picks, never presses; the picks
-  // and the one text about them go to the app as an ask, apart from its data.
+  // Comment, in a real Chrome (the collector's): none without AnywhereLLM's channel; with a stand-in,
+  // a tap while picking picks, never presses, and the picks and the one text about them go to the
+  // channel, and the tray closes once AnywhereLLM says it went.
   const habits = await call("home", { action: "create", name: "reading", title: "Reading", starter: "tracker" });
   const readingUrl = habits.match(linkTo("Reading"))[1];
   const puppeteer = require("/app/collector/node_modules/puppeteer");
   const chrome = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-dev-shm-usage"] });
   try {
+    const bare = await chrome.newPage();
+    await bare.goto(readingUrl, { waitUntil: "load" });
+    assert.equal(await bare.evaluate(() => [...document.querySelectorAll("div")].some((d) => d.shadowRoot)), false, "no Comment outside AnywhereLLM");
     const tab = await chrome.newPage();
+    await tab.evaluateOnNewDocument(() => (window.AnywhereLLMApps = { postMessage: (m) => (window.posted = m) }));
     await tab.goto(readingUrl, { waitUntil: "load" });
     const inTray = (sel) =>
       tab.evaluate((s) => {
@@ -105,10 +110,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       t.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
     });
     await inTray('[data-a="send"]');
-    const askUntil = Date.now() + 40_000;
-    const asks = () => JSON.parse(fs.readFileSync(path.join(STORAGE_DIR, HUB_ID, "home", "reading.json"), "utf8")).asks || [];
-    while (Date.now() < askUntil && !asks().length) await sleep(200);
-    assert.deepEqual(asks().map((a) => [a.text, a.picks.map((p) => [p.part, p.ref])]), [["Make the plus bigger", [["counter", "more"]]]]);
+    const { comment } = JSON.parse(await tab.evaluate(() => window.posted));
+    assert.equal(comment.workspace, "home");
+    assert.match(comment.message, /^Comment on my Reading app's page \(apps-lean app `reading`\), about what I picked there:\n1\. `button[^\n]*part `counter`, data-ref `more`[^\n]*\n\nMake the plus bigger$/);
+    await tab.evaluate(() => window.dispatchEvent(new CustomEvent("anywherellm-comment", { detail: { ok: true } })));
+    await sleep(100);
     await tab.click('[data-ref="more"]');
     await sleep(300);
     assert.equal(await tab.evaluate(() => App.data.count), count + 1, "once sent, taps press again");
@@ -122,7 +128,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   let news = "";
   while (Date.now() < landed && !news.includes("on reading")) news = await call("home", { action: "list" });
   assert.match(news, /Changes made on app pages since the last call[^\n]*\n- [^\n]* on reading/, news);
-  assert.match(await call("home", { action: "read", name: "reading" }), /"Make the plus bigger"\n  1\. counter more button[^\n]*; find "<button type=\\"button\\" class=\\"primary\\" data-ref=\\"more\\"/);
 
   // The page check, in its worker on this Node.
   const refused = await call("home", { action: "edit", name: "groceries", file: "page.html", find: "<!--scripts-->", text: "<script>App.onchange(draw);</script>\n<!--scripts-->" });

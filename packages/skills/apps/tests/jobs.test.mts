@@ -17,7 +17,6 @@ test("a job works in its own workspace as a chat would, but deletes nothing", as
   assert.match(await asJob({ action: "do", name: "digest", ev: "add", patch: add("Item") }), /^Done: add on digest\./);
   assert.equal(store.read("_jobs", "digest").history.at(-1).by, "job");
   assert.match(await asJob({ action: "delete", name: "digest" }), /^Apps: a scheduled job can't delete:/);
-  assert.match(await asJob({ action: "dismiss", name: "digest", ask: "a1" }), /^Apps: a scheduled job can't dismiss:/);
   assert.ok(store.read("_jobs", "digest"));
 });
 

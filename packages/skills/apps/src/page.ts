@@ -47,7 +47,7 @@ export function render(app: Json, workspace: string, key: string, version = vers
   if (!app.page) return null;
   const lean = {
     ...stateOf(app, version), workspace, app: app.name, secret: app.secret ?? null, title: app.title, card: app.card || {}, key, eventTitle: TITLE,
-    log: logOf(app), picks: store.PICKS, words: store.ASK_TEXT,
+    log: logOf(app),
   };
   const libs = libraries();
   const inline: Record<string, string> = {
@@ -124,14 +124,11 @@ export function unpublish(app: Json): void {
 export interface Result {
   workspace?: string;
   app?: string;
-  kind: "change" | "ask";
   ev: string;
   fields?: Json;
   ok: boolean;
   duplicate?: boolean;
   why?: string;
-  /** The id an ask from the page was kept under. */
-  ask?: string;
   /** Put back to be tried again: it met something passing, such as its app's lock held too long. */
   again?: boolean;
 }
@@ -160,63 +157,50 @@ function again(event: Json, error: unknown): boolean {
 interface Row {
   workspace: string;
   app: string;
-  said: Pick<Result, "kind" | "ev" | "fields">;
   /** The event as its page posted it, to put back when it met something passing. */
   event: Json;
-  change?: store.Change;
-  /** An ask: what was picked, and its own id as its page sent it, so one sent twice is kept once. */
-  ask?: store.Ask;
+  change: store.Change & { ev: string };
   answer?: Result;
 }
 
+/** What a row's event did, as its result tells it. */
+const told = ({ change }: Row): Pick<Result, "ev" | "fields"> => ({ ev: change.ev, fields: change.fields });
+
 /** Applies every waiting event, oldest first, and answers what happened to each. An event is
  *  applied only to the app whose secret it carries, so one page's link changes no other app; an app
- *  from before apps had a secret takes its page's events until it has one. A change is a patch on
- *  the data; an ask (kind "ask") is what the user picked and said with Comment. The events for one
- *  app are applied together, so the app is read and written once however many the page sent. */
+ *  from before apps had a secret takes its page's events until it has one. Each is a patch on the
+ *  data. The events for one app are applied together, so the app is read and written once however
+ *  many the page sent. */
 export async function collect(): Promise<Result[]> {
   const rows: Row[] = [];
   const byApp = new Map<string, Row[]>();
   for (const e of takeEvents(TITLE, "apps_lean_event") as Json[]) {
-    const kind = e.kind === "ask" ? "ask" : "change";
-    // Not one this skill's pages send: dropped, as the shared intake drops what isn't marked.
-    if (typeof e.workspace !== "string" || typeof e.app !== "string" || !Array.isArray(kind === "ask" ? e.picks : e.patch)) continue;
+    // Not one this skill's pages send (an older page's Comment among them): dropped, as the shared
+    // intake drops what isn't marked.
+    if (typeof e.workspace !== "string" || typeof e.app !== "string" || !Array.isArray(e.patch)) continue;
     const fields = e.fields && typeof e.fields === "object" ? e.fields : undefined;
-    const said = { kind, ev: String(e.ev || kind), fields } as const;
     const id = typeof e.id === "string" ? e.id : undefined;
-    const row: Row = { workspace: e.workspace, app: e.app, said, event: e };
-    if (kind === "ask") row.ask = { event: id, text: e.text, picks: e.picks };
-    else row.change = { patch: e.patch, ev: said.ev, fields, by: "page", id };
+    const row: Row = { workspace: e.workspace, app: e.app, event: e, change: { patch: e.patch, ev: String(e.ev || "change"), fields, by: "page", id } };
     const key = `${e.workspace}/${e.app}`;
     (byApp.get(key) ?? byApp.set(key, []).get(key)!).push(row);
     rows.push(row);
   }
   for (const waiting of byApp.values()) {
     const { workspace, app } = waiting[0];
-    const said = (row: Row, more: Partial<Result> & { ok: boolean }): Result => ({ ...row.said, workspace, app, ...more });
-    const failure = (row: Row, error: unknown): Result => ({ ...row.said, ok: false, why: firstLine(error), again: again(row.event, error) });
+    const said = (row: Row, more: Partial<Result> & { ok: boolean }): Result => ({ ...told(row), workspace, app, ...more });
+    const failure = (row: Row, error: unknown): Result => ({ ...told(row), ok: false, why: firstLine(error), again: again(row.event, error) });
     // What became of each event, once its app was read under the lock: its secret checked there.
     let answers: Map<Row, Result> | undefined;
     try {
-      // Read once and saved once: its asks, then its changes, from those that carry its secret.
+      // Read once and saved once: its changes, from those that carry its secret.
       await store.updateWith(workspace, app, async (found) => {
         answers = new Map();
         const ours = waiting.filter((row) => !found.secret || sameSecret(row.event.secret, found.secret));
-        for (const row of waiting) if (!ours.includes(row)) answers.set(row, { ...row.said, ok: false, why: "it didn't come from this app's page" });
-        let next = found;
-        for (const row of ours.filter((r) => r.ask))
-          try {
-            const added = store.askOn(next, row.ask!);
-            if (added) next = added.next;
-            answers.set(row, said(row, added ? { ok: true, ask: added.id, fields: { text: `${added.kept} picked` } } : { ok: false, duplicate: true }));
-          } catch (error) {
-            answers.set(row, said(row, { ok: false, why: firstLine(error) }));
-          }
-        const changes = ours.filter((r) => r.change);
-        if (!changes.length) return { next };
-        const made = store.changesOn(next, changes.map((row) => row.change!), MOST_AT_ONCE);
+        for (const row of waiting) if (!ours.includes(row)) answers.set(row, { ...told(row), ok: false, why: "it didn't come from this app's page" });
+        if (!ours.length) return { next: found };
+        const made = store.changesOn(found, ours.map((row) => row.change), MOST_AT_ONCE);
         // A change refused on its own was recorded as seen: final, whatever refused it.
-        changes.forEach((row, i) => {
+        ours.forEach((row, i) => {
           const { error, duplicate } = made.answers[i];
           answers!.set(row, said(row, error ? { ok: false, why: firstLine(error) } : { ok: !duplicate, duplicate: !!duplicate }));
         });
@@ -269,8 +253,7 @@ export async function upgrade(): Promise<void> {
 /** How many lines of what pages did a workspace keeps for its next chat call. */
 export const NEWS_KEPT = 20;
 const newsFile = (workspace: string): string => path.join(root(), workspace, ".news.json");
-const words = (r: Result): string =>
-  r.kind === "ask" ? (r.ok ? `ask ${r.ask} on ${r.app}: ${r.fields?.text} (read shows it)` : `an ask on ${r.app}`) : `${r.ev}${r.fields?.text ? ` ${r.fields.text}` : ""} on ${r.app}`;
+const words = (r: Result): string => `${r.ev}${r.fields?.text ? ` ${r.fields.text}` : ""} on ${r.app}`;
 
 /** Applies what pages posted, writes each changed app's page again, and keeps what happened for each
  *  workspace's next chat call. Only an event whose app was found and whose secret matched says its

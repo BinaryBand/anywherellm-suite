@@ -12,7 +12,6 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 | `undo` | takes back the newest change, to the data or a file; with `file`, that file's newest change |
 | `page` | publishes the app's page; the card's title is its link |
 | `delete` | moves the app to the trash, after AnythingLLM's approval prompt where it has one; never in a scheduled job |
-| `dismiss` | clears one of the page's asks (`ask`) without changing the app, such as a question answered in the chat; never in a scheduled job |
 | `guide` | this edition's notes, the starters, the parts and design rules; with `query`, each topic or part it names |
 
 ## Where it keeps things
@@ -32,7 +31,7 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 
 Taps reach the app as they land: the skill watches where AnythingLLM's collector writes what pages post, from its first call after AnythingLLM starts until AnythingLLM stops (not in a scheduled job, whose process ends within minutes), and each workspace's next chat call is told what its pages did. Until that first call, taps show on the device that made them and reach the app at the call. Where the folder watch doesn't see changes (Docker Desktop's bind mounts on macOS and Windows), a 30 s poll does.
 
-Each page has Comment, beside its first heading (in the top right corner of a page with none): tap it, tap up to five things on the page (taps pick then, they don't press), say one thing about them, a question or a change, and send. It reaches the chat as an ask; the agent sees it in `read`, with where each pick is in page.html. A question it answers in the chat; a change it makes only when you ask it to there. An ask that needs no change is cleared with `dismiss`. At most 10 asks wait on an app.
+A page opened in AnywhereLLM has Comment, beside its first heading (in the top right corner of a page with none): tap it, tap up to five things on the page (taps pick then, they don't press), say one thing about them, a question or a change, and send. AnywhereLLM sends it in the chat as your message, naming the app and what marks each pick in page.html, and the agent answers there. Nothing is kept: a page opened anywhere else, which has no chat to send to, has no Comment.
 
 To ask you something a chat can't show well (pick a worktop from three, with a note), the agent makes a question app from the `question` starter and its turn ends with the card; you answer on the page, and the agent reads your answer at its next call, as data. The app is kept.
 

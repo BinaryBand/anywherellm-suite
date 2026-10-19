@@ -30,7 +30,7 @@
     "file": "handler.js",
     "params": {
       "action": {
-        "description": "list, create, read, do, undo, page, edit, delete, dismiss or guide.",
+        "description": "list, create, read, do, undo, page, edit, delete or guide.",
         "type": "string"
       },
       "name": {
@@ -87,10 +87,6 @@
       },
       "find": {
         "description": "For edit: text found exactly once; none replaces the whole file.",
-        "type": "string"
-      },
-      "ask": {
-        "description": "edit or do: the page's ask it does, cleared once done; dismiss: the ask to clear.",
         "type": "string"
       },
       "query": {

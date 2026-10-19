@@ -91,15 +91,6 @@ export async function updateWith<R extends object>(workspace: string, name: unkn
   return { app, ...more };
 }
 
-/** `app` with the ask `id` cleared, for a change made for it; throws, so nothing is saved, when the
- *  app has no such ask. No `id`: `app` as it is. */
-function cleared(app: Json, id: unknown): Json {
-  if (id === undefined) return app;
-  const asks: Json[] = app.asks || [];
-  if (!asks.some((a) => a.id === id)) throw new AppError(`${app.name} has no ask ${JSON.stringify(id)}${asks.length ? `; its asks are ${asks.map((a) => a.id).join(", ")}` : ""}: nothing was changed`);
-  return { ...app, asks: asks.filter((a) => a.id !== id) };
-}
-
 /** `app`'s history with each change's line, for changes from before changes kept theirs: worked out
  *  back from the app's line, which is right only while none in the history has its own, so done at
  *  the first write that adds one. */
@@ -217,8 +208,6 @@ export interface Change {
   thread?: number;
   by?: string;
   id?: string;
-  /** The page's ask this change is made for, cleared with it. */
-  ask?: string;
   /** Refuse it unless the app takes changes from scheduled jobs (app.json's "jobs": true). */
   jobsOnly?: boolean;
 }
@@ -245,13 +234,11 @@ function applyChange(app: Json, { patch, ev, fields, thread, by, id }: Change): 
   return id ? seenWith(next, id) : next;
 }
 
-/** The app with `patch` applied to its data, checked against its schema and saved, and the ask it
- *  was made for, if any, cleared. */
+/** The app with `patch` applied to its data, checked against its schema and saved. */
 export async function change(workspace: string, name: unknown, opts: Change): Promise<Json> {
   return update(workspace, name, (app) => {
     if (opts.jobsOnly && app.jobs !== true) throw new AppError(`${name} doesn't take changes from scheduled jobs: the user lets it from a chat, where its app.json gets "jobs": true`);
-    const next = applyChange(app, opts);
-    return next === app ? app : cleared(next, opts.ask);
+    return applyChange(app, opts);
   });
 }
 
@@ -374,19 +361,18 @@ async function withFile(app: Json, file: string, text: Json): Promise<Json> {
   return checked({ ...next, changed: now() }, earlier, "saved", file === "page.html");
 }
 
-/** `app` with one file replaced, the file as it was kept for undo when it changed, and the ask it was
- *  changed for, if any, cleared. */
-async function withVersion(app: Json, file: string, text: Json, ask?: unknown): Promise<Json> {
+/** `app` with one file replaced, and the file as it was kept for undo when it changed. */
+async function withVersion(app: Json, file: string, text: Json): Promise<Json> {
   const before = fileText(app, file);
-  const next = cleared(await withFile(app, file, text), ask);
+  const next = await withFile(app, file, text);
   if (fileText(next, file) !== before) next.versions = [...(app.versions || []), { n: app.line || 0, t: next.changed, file, before }].slice(-VERSIONS);
   return next;
 }
 
 /** The app with one file replaced, and the file as it was kept for undo when it changed. */
-export async function writeFile(workspace: string, name: unknown, file: unknown, text: Json, ask?: unknown): Promise<Json> {
+export async function writeFile(workspace: string, name: unknown, file: unknown, text: Json): Promise<Json> {
   readableCheck(file);
-  return update(workspace, name, (app) => withVersion(app, file, text, ask), file === "page.html");
+  return update(workspace, name, (app) => withVersion(app, file, text), file === "page.html");
 }
 
 /** `app` with its version `at` (of app.json or page.html) put back, and that version. */
@@ -423,54 +409,13 @@ function edited(app: Json, file: string, find: unknown, text: unknown): string {
 }
 
 /** The app with `find` in one file replaced, once, with `text`. */
-export async function editFile(workspace: string, name: unknown, file: unknown, find: unknown, text: unknown, ask?: unknown): Promise<Json> {
+export async function editFile(workspace: string, name: unknown, file: unknown, find: unknown, text: unknown): Promise<Json> {
   readableCheck(file);
-  return update(workspace, name, (app) => withVersion(app, file, edited(app, file, find, text), ask), file === "page.html");
+  return update(workspace, name, (app) => withVersion(app, file, edited(app, file, find, text)), file === "page.html");
 }
 
 /** The app with `fields` outside its data and history set, such as its page's token. */
 export const mark = (workspace: string, name: unknown, fields: Json): Promise<Json> => update(workspace, name, (app) => ({ ...app, ...fields }));
-
-/** How many asks from an app's page wait for the chat, how many picks one holds, and how long its
- *  words may be. */
-const ASKS_WAITING = 10;
-export const PICKS = 5;
-export const ASK_TEXT = 500;
-
-/** An ask from a page, as it sent it: its own id (`event`), what the user said and what they picked. */
-export interface Ask {
-  event?: string;
-  text?: unknown;
-  picks: Json;
-}
-
-/** `app` with an ask from its page kept, unsaved, and the id it's kept under: what the user picked
- *  on it ("Comment") and what they say about them, in one text (an older page sent a text per pick,
- *  still kept), kept apart from the data and its history until the agent clears it. Null for an ask
- *  seen before: a page may send one twice, and it's kept once, as a change is. Refused when it's
- *  malformed, or when ASKS_WAITING already wait. */
-export function askOn(app: Json, ask: Ask): { next: Json; id: string; kept: number } | null {
-  const picks = Array.isArray(ask.picks) ? ask.picks.slice(0, PICKS) : [];
-  const clip = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : undefined);
-  const text = clip(ask.text, ASK_TEXT);
-  const clean = picks
-    .map((p: Json) => ({ id: clip(p?.id, 80), ref: clip(p?.ref, 80), part: clip(p?.part, 80), at: clip(p?.at, 200), figure: clip(p?.figure, 40), tag: clip(p?.tag, 20), cls: clip(p?.cls, 60), shown: clip(p?.shown, 80), text: clip(p?.text, ASK_TEXT) }));
-  const kept = text ? clean : clean.filter((p: Json) => p.text);
-  if (!kept.length) throw new AppError("an ask says what the user wants of something picked on the page");
-  if (isSeen(app, ask.event)) return null;
-  const asks: Json[] = app.asks || [];
-  if (asks.length >= ASKS_WAITING) throw new AppError(`${ASKS_WAITING} asks are waiting already: the chat has to catch up first`);
-  const seq = (app.askSeq || 0) + 1;
-  const next = { ...app, askSeq: seq, asks: [...asks, { id: `a${seq}`, t: now(), ...(text ? { text } : {}), picks: kept }] };
-  return { next: ask.event ? seenWith(next, ask.event) : next, id: `a${seq}`, kept: kept.length };
-}
-
-/** The app with the ask `id` cleared and nothing else changed: a question answered in the chat, or a
- *  comment the user withdrew. Throws, so nothing is saved, when the app has no such ask. */
-export const dismissAsk = (workspace: string, name: unknown, id: unknown): Promise<Json> => {
-  if (typeof id !== "string" || !id) throw new AppError("dismiss needs ask: the id of the ask to clear");
-  return update(workspace, name, (app) => cleared(app, id));
-};
 
 /** `app` with a secret for its page's events, made now for an app from before apps had one. */
 export const secretOn = (app: Json): Json => (app.secret ? app : { ...app, secret: newSecret() });
