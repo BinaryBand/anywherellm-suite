@@ -16,8 +16,9 @@ import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, st
 // the sign-in link asked for it) and rotates refresh tokens, and an API that wants the current access
 // token.
 // For the device flow: whether the user agreed (or declined), whether the next ask is told to slow
-// down, how long a code lasts, and how many times the token address was asked.
-const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expires: 900, asks: 0 });
+// down or that the code ran out, how long a code lasts, how many codes it gave (each a new one), and
+// how many times the token address was asked.
+const fresh = () => ({ challenge: "", refreshes: 0, access: "", refresh: "", lifetime: 3600, spent: new Set<string>(), basic: false, agreed: false, declined: false, slow: false, expired: false, expires: 900, asks: 0, codes: 0 });
 const provider = fresh();
 const server = http.createServer((req, res) => {
   let body = "";
@@ -27,12 +28,14 @@ const server = http.createServer((req, res) => {
     const form = new URLSearchParams(body);
     if (req.url === "/device/code") {
       if (form.get("client_id") !== "client-1") return json(401, { error: "invalid_client" });
-      return json(200, { device_code: "dev-secret-1", user_code: "WDJB-MJHT", verification_uri: "https://example.com/login/device", expires_in: provider.expires, interval: 0 });
+      const n = ++provider.codes;
+      return json(200, { device_code: `dev-secret-${n}`, user_code: n === 1 ? "WDJB-MJHT" : `CODE-000${n}`, verification_uri: "https://example.com/login/device", expires_in: provider.expires, interval: 0 });
     }
     if (req.url === "/token" && form.get("grant_type") === "urn:ietf:params:oauth:grant-type:device_code") {
       provider.asks++;
-      if (form.get("client_id") !== "client-1" || form.get("device_code") !== "dev-secret-1") return json(400, { error: "invalid_grant" });
+      if (form.get("client_id") !== "client-1" || form.get("device_code") !== `dev-secret-${provider.codes}`) return json(400, { error: "invalid_grant" });
       if (provider.slow) return (provider.slow = false), json(400, { error: "slow_down" });
+      if (provider.expired) return json(400, { error: "expired_token" });
       if (provider.declined) return json(400, { error: "access_denied" });
       if (!provider.agreed) return json(400, { error: "authorization_pending" });
       provider.access = `at-${crypto.randomUUID()}`;
@@ -263,4 +266,101 @@ test("a preset is the suite's own client, and an unknown one names the presets",
   // Once it's registered, secret would ask GitHub itself for a code.
   if (registered) return t.skip("the suite's GitHub client is registered");
   assert.match(await call({ action: "secret", kind: "oauth", preset: "github", scopes: "repo" }), /the suite's github client isn't registered yet/);
+});
+
+// The device flow, asked again: a second call while a code waits must never make a new one, since the
+// user may be entering the first.
+
+/** Forgets what this process kept of the device flow (when to ask, the loop), as a restart of
+ *  AnythingLLM does; the vault keeps the code. */
+function restart(): void {
+  for (const key of ["schedule", "loop", "asking"]) delete (globalThis as Record<symbol, unknown>)[Symbol.for(`anythingllm-suite.library-lean.device.${key}`)];
+}
+
+const sameCode = /^The code shown before still waits, and no new one was made: show it again\. Show the user this code in a code block of its own, so they can copy it:\n\n```\nWDJB-MJHT\n```\n/;
+
+test("asked for the code again while it waits, secret shows the same one and makes no other", async () => {
+  await code();
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), sameCode);
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev", definition: deviceDef }), sameCode, "the same definition again changes nothing");
+  assert.equal(provider.codes, 1);
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.equal(devStatus(), "signed in");
+});
+
+test("the user agreed before the first ask: library finds it signed in", async () => {
+  await code();
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.equal(devStatus(), "signed in");
+  assert.equal(provider.asks, 1);
+});
+
+test("the user agreed after several asks: secret called again finds it signed in, not a new code", async () => {
+  await code();
+  for (let i = 0; i < 3; i++) await call({ action: "library" });
+  assert.ok(provider.asks >= 3, "asked while the user hadn't agreed");
+  assert.equal(devStatus(), "waiting for the user to enter its code");
+  provider.agreed = true;
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /^"dev" is signed in already: start no new sign-in\./);
+  await call({ action: "library" }); // the Vault's state is written again
+  assert.equal(devStatus(), "signed in");
+  assert.equal(provider.codes, 1);
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /signed in already/, "and stays so");
+  assert.equal(provider.codes, 1);
+});
+
+test("a code the provider says ran out ends the sign-in, and the next secret makes a new one", async () => {
+  await code();
+  provider.expired = true;
+  await call({ action: "library" });
+  assert.equal(devStatus(), "its last sign-in didn't finish: the code ran out before the user entered it: start the sign-in again");
+  provider.expired = false;
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), /^Show the user this code[^]*CODE-0002/);
+  assert.equal(provider.codes, 2);
+});
+
+test("a restart between the code and the user agreeing: the same code shows, and it finishes", async () => {
+  await code();
+  restart();
+  assert.match(await call({ action: "secret", kind: "oauth", label: "dev" }), sameCode);
+  restart();
+  provider.agreed = true;
+  await call({ action: "library" });
+  assert.equal(devStatus(), "signed in");
+  assert.equal(provider.codes, 1);
+});
+
+test("two chats asking for the code at once get one code", async () => {
+  await call({ action: "secret", kind: "oauth", label: "dev", definition: deviceDef });
+  giveClient("dev");
+  const [a, b] = await Promise.all([call({ action: "secret", kind: "oauth", label: "dev" }, "work"), call({ action: "secret", kind: "oauth", label: "dev" }, "other")]);
+  assert.equal(provider.codes, 1);
+  for (const said of [a, b]) assert.match(said, /```\nWDJB-MJHT\n```/);
+});
+
+/** secrets.ts's saveSignIn and oauth.ts's define, bundled as the handler is (src imports without
+ *  extensions, which Node alone doesn't resolve). */
+async function fromSrc(): Promise<{ saveSignIn: (site: string, label: string, oauth: unknown, shared?: string) => Promise<void>; define: (given: Record<string, unknown>) => unknown }> {
+  const { build } = await import("esbuild");
+  const outfile = path.join(storage, "..", "from-src.mjs");
+  await build({ stdin: { contents: 'export { saveSignIn } from "./secrets"; export { define } from "./oauth";', resolveDir: path.join(skillDir, "src"), loader: "ts" }, bundle: true, platform: "node", format: "esm", outfile, logLevel: "silent" });
+  return import(outfile);
+}
+
+test("a preset's sign-in takes no definition: the code waiting stays, and so do the tokens", async () => {
+  // A preset's sign-in, as presetOf saves one, but at the stand-in provider rather than GitHub.
+  const { saveSignIn, define } = await fromSrc();
+  await saveSignIn("127.0.0.1", "gh", define(deviceDef), "client-1");
+  assert.match(await call({ action: "secret", kind: "oauth", label: "gh" }), /```\nWDJB-MJHT\n```/);
+  const redefined = await call({ action: "secret", kind: "oauth", label: "gh", definition: { ...deviceDef, scopes: ["repo", "read:user", "workflow"], client_auth: "basic" } });
+  assert.match(redefined, /"gh" signs in with a preset, the suite's own client: don't give it a definition\./);
+  assert.equal(provider.codes, 1);
+  provider.agreed = true;
+  await call({ action: "library" });
+  const gh = () => vaultState().secrets.find((s: { label: string }) => s.label === "gh");
+  assert.equal(gh().status, "signed in");
+  assert.match(await call({ action: "secret", kind: "oauth", label: "gh", definition: deviceDef }), /signs in with a preset/);
+  assert.equal(gh().status, "signed in", "a refused definition drops no tokens");
 });

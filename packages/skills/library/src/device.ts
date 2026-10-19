@@ -52,11 +52,20 @@ export async function startDevice(given: Readonly<SignIn>, log: Log): Promise<De
   await vault.update((v) => {
     const found = v.entries.find((e) => e.id === given.id) as SignIn | undefined;
     if (!found) throw new LibraryError(`there's no sign-in "${given.user}"`);
-    Object.assign(found, { device: { code: String(device_code), interval: every, until: Date.now() + seconds * 1000 }, error: null });
+    Object.assign(found, { device: { code: String(device_code), interval: every, until: Date.now() + seconds * 1000, user_code: String(user_code), link }, error: null });
   });
   schedule().set(String(device_code), { next: Date.now() + every * 1000, interval: every });
   keepAsking(log);
   return { user_code: String(user_code), link, minutes: Math.max(1, Math.round(seconds / 60)) };
+}
+
+/** The code `signIn` showed the user that still waits, with the minutes it has left; null when
+ *  none waits, it ran out, or it was kept before the vault kept what the user is shown. */
+export function waitingCode(signIn: Readonly<SignIn>): DeviceCode | null {
+  const d = signIn.device;
+  const left = d ? d.until - Date.now() : 0;
+  if (!d?.user_code || !d.link || left <= 0) return null;
+  return { user_code: d.user_code, link: d.link, minutes: Math.max(1, Math.round(left / 60_000)) };
 }
 
 /** What the token address said: tokens, wait (asking `interval` seconds apart), or stop with why. */

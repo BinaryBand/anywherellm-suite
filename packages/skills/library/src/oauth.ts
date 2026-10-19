@@ -60,11 +60,14 @@ interface Pending {
 }
 
 /** A device-flow sign-in waiting for the user to enter its code: the provider's device code, how
- *  many seconds apart it said to ask for the tokens, and when the code runs out. */
+ *  many seconds apart it said to ask for the tokens, when the code runs out, and what the user was
+ *  shown (the code they enter and where), so a second call shows the same. */
 export interface DeviceWait {
   code: string;
   interval: number;
   until: number;
+  user_code?: string;
+  link?: string;
 }
 
 /** An OAuth sign-in as the vault keeps it. */

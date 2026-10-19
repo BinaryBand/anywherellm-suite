@@ -116,19 +116,20 @@ export async function saveKey(site: string, label: string, value: string): Promi
 }
 
 /** Saves how a sign-in signs in; one of the same name keeps its client (or takes `sharedClient`,
- *  the suite's own from a preset), and its tokens while how it signs in and its client are
- *  unchanged. One sign-in per provider: a new name for a provider signed in at already is refused,
- *  naming the one there. */
+ *  the suite's own from a preset), and its tokens and the code it waits on while how it signs in
+ *  and its client are unchanged. One sign-in per provider: a new name for a provider signed in at
+ *  already is refused, naming the one there, and so is a definition for a preset's sign-in. */
 export async function saveSignIn(site: string, label: string, oauth: Definition, sharedClient?: string): Promise<void> {
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;
     const other = v.entries.find((e) => isSignIn(e) && !named(label)(e) && new URL(e.oauth.authorize_url).host === host) as SignIn | undefined;
-    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${status(other)}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, give the definition again with that label. For another account, the user deletes it on the Vault first`);
+    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${status(other)}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with kind "oauth" and label "${other.user}"; to change its scopes, ${other.shared ? "give its preset again with the scopes" : "give the definition again with that label"}. For another account, the user deletes it on the Vault first`);
     const same = v.entries.find(named(label));
     const kept = same && isSignIn(same) ? same : null;
+    if (kept?.shared && !sharedClient) throw new LibraryError(`"${label}" signs in with a preset, the suite's own client: don't give it a definition. To change its scopes, call secret with kind "oauth", its preset and the scopes; to see whether it signed in, call library`);
     const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };
     const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth) && kept.client_id === client.client_id;
-    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, tokens: unchanged ? kept.tokens : null, pending: null, device: null, error: null });
+    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, tokens: unchanged ? kept.tokens : null, pending: null, device: unchanged ? (kept.device ?? null) : null, error: null });
   });
 }
 

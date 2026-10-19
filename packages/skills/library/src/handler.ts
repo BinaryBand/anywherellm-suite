@@ -10,13 +10,13 @@
 //
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
-import { baseUrlOf as baseOf, push, pushTo, workspaceOf } from "#shared/anythingllm";
+import { baseUrlOf as baseOf, push, pushTo, serial, workspaceOf } from "#shared/anythingllm";
 import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
 import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
-import { askDevices, startDevice } from "./device";
+import { askDevices, startDevice, waitingCode } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
 import { LOOPBACK, define, redirectFor, start as startSignIn } from "./oauth";
@@ -116,7 +116,7 @@ function listingLines(saved: Saved): string[] {
  *  answered. */
 async function secret(args: Args, self: HandlerContext): Promise<string> {
   const kind = clean(args.kind).toLowerCase() || "key";
-  if (kind === "oauth") return signIn(args, self);
+  if (kind === "oauth") return serial("library-lean.sign-in", () => signIn(args, self)); // two chats at once share one code
   if (kind !== "key") throw new LibraryError('secret\'s kind is "key" (an API key or token) or "oauth" (a sign-in)');
   const site = secrets.siteChecked(args.site);
   const label = secrets.labelOf(clean(args.label) || site);
@@ -148,8 +148,13 @@ async function signIn(args: Args, self: HandlerContext): Promise<string> {
     return `"${label}" needs the user's own OAuth client at the provider (${host}). Tell them to make one in its developer console: ${kind}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID (and its secret, if it has one) on the Vault, under Sign-ins: ${await page.showVault(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
   }
   if (found.oauth.device_url) {
-    const code = await startDevice(found, (m) => self.logger?.(m));
-    return `Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
+    const log = (m: string) => self.logger?.(m);
+    if (waitingCode(found)) await askDevices(true, log); // the user may have agreed since the last ask
+    const now = secrets.signIn(label) ?? found;
+    if (now.tokens?.access_token) return `"${label}" is signed in already: start no new sign-in. Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
+    const waits = waitingCode(now);
+    const code = waits ?? (await startDevice(now, log));
+    return `${waits ? "The code shown before still waits, and no new one was made: show it again. " : ""}Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${code.minutes} minute${code.minutes === 1 ? "" : "s"}. ${done}`;
   }
   if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
   const { url, state } = await startSignIn(found, redirect);
