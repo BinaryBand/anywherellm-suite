@@ -321,7 +321,5 @@ export async function act(page: Page, action: string, ref: string, text: string)
       return page.reload(navigation);
     case "wait":
       return new Promise((resolve) => setTimeout(resolve, Math.min(MAX_WAIT_S, Math.max(0, Number(text) || 2)) * 1000));
-    default:
-      return undefined;
   }
 }

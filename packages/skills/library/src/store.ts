@@ -312,11 +312,9 @@ export const markSeen = (id: string): void => fs.rmSync(path.join(unseenDir(), i
 
 /** The runs not shown yet, oldest first, as recorded; a mark whose run is no longer kept goes. */
 export function unseen(): RunRecord[] {
-  const files = new Map(namesIn(runsDir()).map((f) => [f.slice(0, f.indexOf(".")), f]));
   return namesIn(unseenDir()).flatMap((id) => {
-    const file = files.get(id);
-    if (!file) markSeen(id);
-    const run = file ? readRun(file) : null;
+    const run = runOf(id);
+    if (!run) markSeen(id);
     return run ? [run] : [];
   });
 }
