@@ -135,7 +135,7 @@
       },
       "kind": {
         "type": "string",
-        "description": "secret: \"key\" (an API key or token, the default) or \"oauth\" (a sign-in, guide topic secrets)."
+        "description": "secret: \"key\" (an API key or token, the default) or \"oauth\" (a sign-in, guide topic secrets); with neither kind nor site, a label that names a sign-in means that sign-in."
       },
       "definition": {
         "type": "object",

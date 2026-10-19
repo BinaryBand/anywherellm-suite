@@ -334,6 +334,17 @@ test("the user agreed after several asks: secret called again finds it signed in
   assert.equal(provider.codes, 1);
 });
 
+test("secret with a sign-in's label alone, no kind, goes to that sign-in, not to a key", async () => {
+  await code();
+  assert.match(await call({ action: "secret", label: "dev" }), sameCode);
+  assert.equal(provider.codes, 1);
+  provider.agreed = true;
+  assert.match(await call({ action: "secret", label: "dev" }), /^"dev" is signed in already/);
+  assert.equal(provider.codes, 1);
+  assert.match(await call({ action: "secret", label: "nope" }), /a key needs site/, "a label that names no sign-in is a key's");
+  assert.doesNotMatch(await call({ action: "secret", label: "dev", site: "api.example.com" }), /signed in already/, "a site means a key");
+});
+
 test("a code the provider says ran out ends the sign-in, and the next secret makes a new one", async () => {
   await code();
   provider.expired = true;

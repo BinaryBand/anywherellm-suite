@@ -115,7 +115,8 @@ function listingLines(saved: Saved): string[] {
  *  on the Vault, sealed on their device: AnythingLLM's question card would show it in the chat once
  *  answered. */
 async function secret(args: Args, self: HandlerContext): Promise<string> {
-  const kind = clean(args.kind).toLowerCase() || "key";
+  const named = clean(args.label);
+  const kind = clean(args.kind).toLowerCase() || (named && !clean(args.site) && secrets.signIn(named) ? "oauth" : "key"); // the label of a sign-in, alone, means it
   if (kind === "oauth") return serial("library-lean.sign-in", () => signIn(args, self)); // two chats at once share one code
   if (kind !== "key") throw new LibraryError('secret\'s kind is "key" (an API key or token) or "oauth" (a sign-in)');
   const site = secrets.siteChecked(args.site);
