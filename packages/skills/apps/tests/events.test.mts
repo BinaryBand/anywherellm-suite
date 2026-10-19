@@ -40,7 +40,7 @@ test("events that no longer apply or break the schema are skipped and said; one 
   post({}, "not json at all");
   const results = await collect();
   assert.deepEqual(results.map((r) => r.ok), [false, false, false]);
-  assert.match(results[0].why!, /test \/items\/0\/text failed/);
+  assert.match(results[0].why!, /test \/items\/0\/text: Test operation failed/);
   assert.match(results[1].why!, /breaks the app's schema/);
   assert.match(results[2].why!, /no app named nope/);
   assert.equal(store.read("home", "groceries").history.length, 2);
@@ -76,7 +76,7 @@ test("the events waiting for one app are applied together: the app is written on
     ["batch", "Milk again", false, true],
     ["batch", "Bread", true, false],
   ]);
-  assert.match(results[3].why!, /test \/items\/0\/text failed/);
+  assert.match(results[3].why!, /test \/items\/0\/text: Test operation failed/);
   const batch = store.read("home", "batch");
   assert.deepEqual(batch.data.items.map((i: any) => i.text), ["Eggs", "Jam", "Milk", "Bread"]);
   assert.deepEqual(batch.history.map((h: any) => h.fields.text), ["Jam", "Milk", "Bread"]);

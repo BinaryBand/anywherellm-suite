@@ -34,6 +34,7 @@ const here = path.dirname(self);
  *  decision (docs/notes/README.md): library bundles QuickJS, the engine its functions run in.
  *  @type {Record<string, string[]>} */
 const VENDORED = {
+  apps: ["node_modules/fast-json-patch/"],
   library: ["node_modules/quickjs-emscripten-core/", "node_modules/@jitl/quickjs-ffi-types/", "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/"],
   browser: ["node_modules/puppeteer-core/", "node_modules/@puppeteer/browsers/", "node_modules/ws/", "node_modules/debug/", "node_modules/ms/", "node_modules/semver/"],
 };
@@ -77,17 +78,28 @@ const stubs = (patterns) => ({
 export const vendoredVersions = (name) =>
   (VENDORED[name] || []).map((prefix) => `${prefix.slice("node_modules/".length, -1)}@${JSON.parse(fs.readFileSync(path.join(here, prefix, "package.json"), "utf8")).version}`).join(" ");
 
-/** The text of every file under `dir`, by its path there with forward slashes; {} with no `dir`.
+/** Files from node_modules that a skill's pages carry (the browser can't import them), by the name
+ *  they have in STATIC_FILES, for the skill's folder name.
+ *  @type {Record<string, Record<string, string>>} */
+const PAGE_LIBRARIES = { apps: { "fast-json-patch.js": "node_modules/fast-json-patch/dist/fast-json-patch.min.js" } };
+
+/** The text of every file under `dir` (a skill's static/), by its path there with forward slashes,
+ *  and the skill's PAGE_LIBRARIES; {} with no `dir`.
  *  @param {string} dir
+ *  @param {string} [skill] the skill's folder name, for its PAGE_LIBRARIES
  *  @returns {Record<string, string>} */
-export function staticFiles(dir) {
+export function staticFiles(dir, skill = "") {
   if (!fs.existsSync(dir)) return {};
   const names = fs
     .readdirSync(dir, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(dir, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"))
     .sort();
-  return Object.fromEntries(names.map((name) => [name, fs.readFileSync(path.join(dir, name), "utf8")]));
+  const read = (/** @type {string} */ file) => fs.readFileSync(file, "utf8");
+  return Object.fromEntries([
+    ...names.map((name) => [name, read(path.join(dir, name))]),
+    ...Object.entries(PAGE_LIBRARIES[skill] || {}).map(([name, from]) => [name, read(path.join(here, from))]),
+  ]);
 }
 
 /**
@@ -176,7 +188,7 @@ async function buildSkills(names) {
       entry: path.join(dir, "src", "handler.ts"),
       outfile: path.join(out, entrypoint.file),
       target: "node18",
-      define: { STATIC_FILES: JSON.stringify(staticFiles(path.join(dir, "static"))), VENDORED_VERSIONS: JSON.stringify(vendoredVersions(name)) },
+      define: { STATIC_FILES: JSON.stringify(staticFiles(path.join(dir, "static"), name)), VENDORED_VERSIONS: JSON.stringify(vendoredVersions(name)) },
       loader: { ".html": "text" }, // shared/vault.html, the Vault's page, which each skill that keeps secrets serves
       allowed: [`skills/${name}/src/`, "shared/", ...(VENDORED[name] || [])],
       label: name,

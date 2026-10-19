@@ -26,9 +26,9 @@ test("a page is rendered with this skill's stand-in for a server", () => {
   const outside = html.replace(/<script[^>]*>[\s\S]*?<\/script>|<style>[\s\S]*?<\/style>/g, "");
   assert.ok(!outside.includes('src="app.js"') && !outside.includes('href="app.css"'), "every library is inline");
   assert.ok(html.indexOf("var AppsLean") < html.indexOf("const App = (() =>"), "the stand-in comes before the runtime");
-  // The app's data, the stand-in, app.js, the template's script and item-list's: no inlined text
-  // ends a script early.
-  assert.equal(html.split("</script>").length - 1, 5);
+  // The app's data, the stand-in, the patch library, app.js, the template's script and item-list's:
+  // no inlined text ends a script early.
+  assert.equal(html.split("</script>").length - 1, 6);
   assert.equal(render({ ...groceries(), page: undefined }, "home", "k"), null, "an app with no page has none to render");
 });
 
@@ -85,7 +85,7 @@ test("with no key for the pages, page says how to set one, and a page already th
 const browsers: (() => void)[] = [];
 afterEach(() => browsers.splice(0).forEach((close) => close()));
 
-/** Runs a rendered page's scripts (the stand-in and app.js) against a small stand-in for a browser,
+/** Runs a rendered page's scripts (the stand-in, the patch library and app.js) against a small stand-in for a browser,
  *  with `served` as what reading the page's state file gives. */
 function browser(html: string, { stored = null, served = () => "{}", typing = false }: { stored?: unknown; served?: () => string; typing?: boolean } = {}) {
   const lean = html.match(/<script id="apps-lean" type="application\/json">(.*?)<\/script>/)![1];
@@ -118,7 +118,7 @@ function browser(html: string, { stored = null, served = () => "{}", typing = fa
   ctx.self = ctx;
   vm.createContext(ctx);
   // The stand-in, then app.js; the app is started as the template does, with what changed seen.
-  vm.runInContext(scripts[0] + "\n" + scripts[1].replace("const App =", "var App ="), ctx);
+  vm.runInContext(scripts[0] + "\n" + scripts[1] + "\n" + scripts[2].replace("const App =", "var App ="), ctx);
   vm.runInContext("var changes = []; App.start(AppsLean.app()); App.onchange((d) => changes.push(JSON.parse(JSON.stringify(d))));", ctx);
   const close = () => void (open = false);
   browsers.push(close);

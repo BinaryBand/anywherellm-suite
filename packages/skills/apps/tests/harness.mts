@@ -28,7 +28,7 @@ process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 
 // The static/ folder as build.mjs inlines it, for the modules a test imports from src.
-(globalThis as unknown as { STATIC_FILES: Record<string, string> }).STATIC_FILES = staticFiles(path.join(skillDir, "static"));
+(globalThis as unknown as { STATIC_FILES: Record<string, string> }).STATIC_FILES = staticFiles(path.join(skillDir, "static"), "apps");
 
 const bundle = path.join(skillDir, "build", "apps-lean", "handler.js");
 export type Handler = (this: unknown, args: Record<string, unknown>) => Promise<string>;

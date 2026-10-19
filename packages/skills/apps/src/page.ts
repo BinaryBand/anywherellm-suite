@@ -31,9 +31,11 @@ const inlineStyle = (source: string): string => "<style>" + source.replace(/<\//
 
 const sha = (text: string): string => crypto.createHash("sha256").update(text).digest("base64url");
 let shared: string | null = null;
-/** What every page holds besides its own page.html and data, hashed once per load: the runtime and
- *  the libraries, as shipped or tuned. */
-const partsDigest = (): string => (shared ??= sha([file("runtime-lean.js"), ...Object.entries(libraries()).flat()].join("\0")));
+/** The scripts the skill puts ahead of app.js in every page: the stand-in for a server, then the patch library. */
+const HOST_SCRIPTS = ["runtime-lean.js", "fast-json-patch.js"];
+/** What every page holds besides its own page.html and data, hashed once per load: the host's scripts
+ *  and the libraries, as shipped or tuned. */
+const partsDigest = (): string => (shared ??= sha([...HOST_SCRIPTS.map((name) => file(name)), ...Object.entries(libraries()).flat()].join("\0")));
 
 /** What a page is made of besides its data. A page whose version isn't this was written by an older
  *  skill or from older parts. */
@@ -51,7 +53,7 @@ export function render(app: Json, workspace: string, key: string, version = vers
   };
   const libs = libraries();
   const inline: Record<string, string> = {
-    [RUNTIME_TAG]: `<script id="apps-lean" type="application/json">${embed(lean)}</script>` + inlineScript(file("runtime-lean.js")) + inlineScript(libs["app.js"]),
+    [RUNTIME_TAG]: `<script id="apps-lean" type="application/json">${embed(lean)}</script>` + HOST_SCRIPTS.map((name) => inlineScript(file(name))).join("") + inlineScript(libs["app.js"]),
     [tag("app.css")]: inlineStyle(libs["app.css"]),
     [tag("parts.js")]: inlineScript(libs["parts.js"]),
   };

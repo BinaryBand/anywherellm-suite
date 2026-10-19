@@ -56,87 +56,31 @@ const App = (() => {
   const onstatus = [];
 
   const clone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
-  // As JSON values: an object's keys in any order
-  function equal(a, b) {
-    if (a === b) return true;
-    if (typeof a !== typeof b || a === null || b === null || typeof a !== "object") return false;
-    if (Array.isArray(a) !== Array.isArray(b)) return false;
-    if (Array.isArray(a)) return a.length === b.length && a.every((x, i) => equal(x, b[i]));
-    const keys = Object.keys(a);
-    return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && equal(a[k], b[k]));
-  }
   const sleep = (ms) => new Promise((go) => setTimeout(go, ms));
 
-  // --- JSON Patch, as the host applies it (src/patch.ts); "" is the data as a whole ---
+  // --- JSON Patch: fast-json-patch, inlined before this (bound now, so a page can't replace it, and a missing one fails here); worded as the host's src/patch.ts words it ---
+  const { applyPatch, getValueByPointer } = jsonpatch;
+  const refusal = (o) =>
+    o && o.op === "remove" && o.path === "" ? "remove: can't remove the whole document" : o && o.op === "move" && o.path.startsWith(o.from + "/") ? `move ${o.from}: into itself` : null;
 
-  function pointer(path) {
-    if (typeof path !== "string" || (path && !path.startsWith("/"))) throw new Error(`bad path ${path}`);
-    if (!path) return ["root"];
-    return ["root", ...path.slice(1).split("/").map((t) => t.replace(/~1/g, "/").replace(/~0/g, "~"))];
-  }
-  function index(list, token, path, appending) {
-    if (appending && token === "-") return list.length;
-    if (!/^(0|[1-9][0-9]*)$/.test(token)) throw new Error(`${path}: ${token} isn't an index`);
-    const i = Number(token);
-    if (i > list.length || (i === list.length && !appending)) throw new Error(`${path}: there's no item ${i}`);
-    return i;
-  }
-  // The container the path's last token is in, that token, and how deep the path goes
-  function slot(doc, path) {
-    const parts = pointer(path);
-    let where = doc;
-    for (const token of parts.slice(0, -1)) {
-      if (Array.isArray(where)) where = where[index(where, token, path, false)];
-      else if (where && typeof where === "object" && Object.hasOwn(where, token)) where = where[token];
-      else throw new Error(`${path}: there's nothing at ${token}`);
-    }
-    return [where, parts[parts.length - 1], parts.length];
-  }
+  // The value at a JSON pointer; throws when there is none
   function at(doc, path) {
-    const [where, last] = slot(doc, path);
-    if (Array.isArray(where)) return where[index(where, last, path, false)];
-    if (where && typeof where === "object" && Object.hasOwn(where, last)) return where[last];
-    throw new Error(`${path}: there's nothing there`);
+    let value;
+    try {
+      value = getValueByPointer(doc, path); // throws for a missing parent, answers undefined for a missing last key
+    } catch {}
+    if (value === undefined) throw new Error(`${path}: there's nothing there`);
+    return value;
   }
-  function remove(doc, path) {
-    const [where, last, depth] = slot(doc, path);
-    if (depth === 1) throw new Error("the data as a whole can't be removed");
-    if (Array.isArray(where)) return where.splice(index(where, last, path, false), 1)[0];
-    if (where && typeof where === "object" && Object.hasOwn(where, last)) {
-      const value = where[last];
-      delete where[last];
-      return value;
-    }
-    throw new Error(`${path}: there's nothing there`);
-  }
-  function add(doc, path, value) {
-    const [where, last] = slot(doc, path);
-    if (Array.isArray(where)) where.splice(index(where, last, path, true), 0, value);
-    else if (where && typeof where === "object") where[last] = value;
-    else throw new Error(`${path}: its parent isn't an object or a list`);
-  }
+  // `data` with `ops` applied, as a new value. The ops are cloned: the library puts their values into the result
   function apply(data, ops) {
-    const doc = { root: clone(data) };
-    for (const step of ops) {
-      const { op, path } = step;
-      if ((op === "add" || op === "replace") && !("value" in step)) throw new Error(`${op} needs a value`);
-      if (op === "add") add(doc, path, clone(step.value));
-      else if (op === "remove") remove(doc, path);
-      else if (op === "replace") {
-        at(doc, path);
-        const [where, last] = slot(doc, path);
-        where[Array.isArray(where) ? Number(last) : last] = clone(step.value);
-      } else if (op === "test") {
-        if (!equal(at(doc, path), step.value)) throw new Error(`${path} isn't what the patch expected`);
-      } else if (op === "move" || op === "copy") {
-        const origin = pointer(step.from);
-        const target = pointer(path);
-        if (op === "move" && target.length > origin.length && origin.every((t, i) => t === target[i]))
-          throw new Error(`${step.from} can't move into itself`);
-        add(doc, path, op === "move" ? remove(doc, step.from) : clone(at(doc, step.from)));
-      } else throw new Error("op must be one of: add, remove, replace, move, copy, test");
+    const refused = Array.isArray(ops) ? ops.map(refusal).find(Boolean) : null;
+    if (refused) throw new Error(refused);
+    try {
+      return applyPatch(data, clone(ops), true, false).newDocument;
+    } catch (e) {
+      throw new Error((e.operation ? `${e.operation.op} ${e.operation.path}: ` : "") + e.message.split("\n")[0]);
     }
-    return doc.root;
   }
 
   // --- state ---
@@ -354,7 +298,7 @@ const App = (() => {
   const drawers = new WeakMap(); // a mounted element: its draw
   const lookup = (path) => {
     try {
-      return at({ root: app.data }, path);
+      return at(app.data, path);
     } catch {
       return undefined;
     }
@@ -426,7 +370,7 @@ const App = (() => {
       return app.line;
     },
     get(path) {
-      return at({ root: app.data }, path);
+      return at(app.data, path);
     },
     patch(ops, event) {
       if (!Array.isArray(ops) || !ops.length) throw new Error("a patch is a list of operations");
@@ -438,13 +382,7 @@ const App = (() => {
       return promise;
     },
     set(path, value, event) {
-      let there = true;
-      try {
-        at({ root: app.data }, path);
-      } catch {
-        there = false;
-      }
-      return this.patch([{ op: there ? "replace" : "add", path, value }], event);
+      return this.patch([{ op: lookup(path) !== undefined ? "replace" : "add", path, value }], event);
     },
     async log(since = 0) {
       const [code, reply] = await post(app.sync, { since, wait: false });

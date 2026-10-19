@@ -1,5 +1,8 @@
-// JSON Patch (RFC 6902) and JSON Pointer (RFC 6901) on plain JSON values. apply() never changes its
-// input: it answers the patched copy, or throws a PatchError naming the operation that failed.
+// JSON Patch (RFC 6902, by fast-json-patch) and JSON Pointer (RFC 6901) on plain JSON values. apply()
+// never changes its input: it answers the patched copy, or throws a PatchError naming the operation
+// that failed. The page's apply (static/app.js) is the same library worded the same way.
+
+import jsonpatch from "fast-json-patch";
 
 /** A JSON value as the skill handles it: data, schemas and app files, read from JSON and checked by
  *  the schema at run time rather than by types. */
@@ -42,79 +45,18 @@ export function equal(a: Json, b: Json): boolean {
   return ka.length === kb.length && ka.every((k) => Object.hasOwn(b, k) && equal(a[k], b[k]));
 }
 
-/** The container the pointer's last token is in, and that token; throws when there is none. */
-function parentOf(doc: Json, pointer: string, op: string): { parent: Json; last: string } {
-  const last = tokens(pointer).pop()!;
-  const parent = get(doc, pointer.slice(0, pointer.lastIndexOf("/")));
-  if (parent === null || typeof parent !== "object") throw new PatchError(`${op} ${pointer}: no such place`);
-  return { parent, last };
-}
+/** Why the library can't be left to refuse `o`: it answers null for removing the whole document, and fails with a TypeError for moving a place into itself. */
+const refusal = (o: Json): string | null =>
+  o?.op === "remove" && o.path === "" ? "remove: can't remove the whole document" : o?.op === "move" && o.path.startsWith(o.from + "/") ? `move ${o.from}: into itself` : null;
 
-function add(doc: Json, pointer: string, value: Json): Json {
-  if (pointer === "") return value;
-  const { parent, last } = parentOf(doc, pointer, "add");
-  if (Array.isArray(parent)) {
-    if (last === "-") parent.push(value);
-    else if (isIndex(last) && Number(last) <= parent.length) parent.splice(Number(last), 0, value);
-    else throw new PatchError(`add ${pointer}: no such place in the list`);
-  } else parent[last] = value;
-  return doc;
-}
-
-/** Takes the value the pointer names out of `doc`, in place, and answers it. */
-function remove(doc: Json, pointer: string): Json {
-  if (pointer === "") throw new PatchError("remove: can't remove the whole document");
-  const { parent, last } = parentOf(doc, pointer, "remove");
-  if (Array.isArray(parent)) {
-    if (!isIndex(last) || Number(last) >= parent.length) throw new PatchError(`remove ${pointer}: no such item`);
-    return parent.splice(Number(last), 1)[0];
-  }
-  if (!Object.hasOwn(parent, last)) throw new PatchError(`remove ${pointer}: no such key`);
-  const value = parent[last];
-  delete parent[last];
-  return value;
-}
-
-/** `doc` with `patch` applied, as a new value. */
+/** `doc` with `patch` applied, as a new value. The patch is cloned: the library puts its values into the
+ *  result, where a later operation would change them in the patch kept in the history. */
 export function apply(doc: Json, patch: Json): Json {
-  if (!Array.isArray(patch)) throw new PatchError("a patch is a list of operations");
-  let out = clone(doc);
-  patch.forEach((o: Json, i: number) => {
-    const where = `operation ${i + 1}`;
-    if (!o || typeof o !== "object" || typeof o.path !== "string") throw new PatchError(`${where}: needs op and path`);
-    switch (o.op) {
-      case "add":
-        if (!("value" in o)) throw new PatchError(`${where}: add needs a value`);
-        out = add(out, o.path, clone(o.value));
-        break;
-      case "remove":
-        remove(out, o.path);
-        break;
-      case "replace":
-        if (!("value" in o)) throw new PatchError(`${where}: replace needs a value`);
-        if (get(out, o.path) === undefined) throw new PatchError(`replace ${o.path}: nothing there`);
-        if (o.path === "") out = clone(o.value);
-        else {
-          remove(out, o.path);
-          out = add(out, o.path, clone(o.value));
-        }
-        break;
-      case "move":
-        if (o.path.startsWith(o.from + "/")) throw new PatchError(`move ${o.from}: into itself`);
-        out = add(out, o.path, remove(out, o.from));
-        break;
-      case "copy": {
-        const value = get(out, o.from);
-        if (value === undefined) throw new PatchError(`copy ${o.from}: nothing there`);
-        out = add(out, o.path, clone(value));
-        break;
-      }
-      case "test":
-        if (!equal(get(out, o.path), o.value)) throw new PatchError(`test ${o.path} failed: it holds ${JSON.stringify(get(out, o.path))}`);
-        break;
-      default:
-        throw new PatchError(`${where}: unknown op ${JSON.stringify(o.op)}`);
-    }
-  });
-  return out;
+  const refused = Array.isArray(patch) ? patch.map(refusal).find(Boolean) : null;
+  if (refused) throw new PatchError(refused);
+  try {
+    return jsonpatch.applyPatch(doc, clone(patch), true, false).newDocument;
+  } catch (e: any) {
+    throw new PatchError((e.operation ? `${e.operation.op} ${e.operation.path}: ` : "") + e.message.split("\n")[0]);
+  }
 }
