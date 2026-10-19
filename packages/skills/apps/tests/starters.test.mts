@@ -25,7 +25,7 @@ for (const name of names) {
     assert.deepEqual(await parts.pageProblems(s.page), []);
     assert.ok(s.definition.schema.required.length, "the components ask for keys");
     assert.deepEqual(problems(s.data, s.definition.schema), []);
-    assert.equal((await store.create("home", name, { ...s.definition, data: s.data, page: s.page }, undefined)).name, name, "the store takes it whole");
+    assert.equal((await store.create("home", name, { ...s.definition, data: s.data, page: s.page })).name, name, "the store takes it whole");
     // A group's components share its list's items; the page's own share the top.
     const keysOf = (names: string[]) => names.flatMap((p) => Object.keys(parts.parts()[p].header.schema?.properties || {}));
     for (const names of [s.parts.filter((e): e is string => typeof e === "string"), ...s.parts.filter((e) => typeof e !== "string").map((g) => g.parts)]) {

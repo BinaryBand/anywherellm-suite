@@ -73,7 +73,7 @@ const ACTIONS = {
       : ["This workspace has no apps yet."];
     return [...listed, "", ...MAKING()].join("\n");
   },
-  create: async ({ workspace, thread }, p, self) => {
+  create: async ({ workspace }, p, self) => {
     // A starter (or a template named like one) makes a working app; else a template with the
     // components in parts composed in, their schemas merged and their first data; text (app.json)
     // adds to or replaces what those give. Every problem comes back at once, so one more call can
@@ -120,7 +120,6 @@ const ACTIONS = {
       workspace,
       name,
       { card: {}, ...base?.definition, ...definition, title: p.title || definition.title || base?.definition.title || name, data, page: base?.page, ...(plan ? { plan } : {}) },
-      thread,
       problems,
     );
     const how =
@@ -148,10 +147,10 @@ const ACTIONS = {
       ...cardBlock(made, url),
     ].join("\n");
   },
-  do: async ({ workspace, thread, job, named }, p, self) => {
+  do: async ({ workspace, job, named }, p, self) => {
     const patch = asJson(p.patch, "patch");
     const fields = asJson(p.fields, "fields");
-    const app = await store.change(workspace, p.name, { patch, ev: p.ev, fields, thread, by: job ? "job" : undefined, jobsOnly: named });
+    const app = await store.change(workspace, p.name, { patch, ev: p.ev, fields, by: job ? "job" : undefined, jobsOnly: named });
     return [`Done: ${app.history[app.history.length - 1].ev} on ${app.name}.`, ...cardOf(self, app)].join("\n");
   },
   read: ({ workspace }, p, self) => {

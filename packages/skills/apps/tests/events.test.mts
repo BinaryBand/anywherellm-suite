@@ -20,7 +20,7 @@ const waiting = () => (fs.existsSync(eventsDir) ? fs.readdirSync(eventsDir).filt
 
 test("page events apply in order, once each, as changes by the page, and their files go", async () => {
   const data = { items: [{ text: "Eggs", done: false }] };
-  await store.create("home", "groceries", { ...definitionFor("list", { title: "Groceries" }), data }, undefined);
+  await store.create("home", "groceries", { ...definitionFor("list", { title: "Groceries" }), data });
   const tick = { id: "e1", ev: "tick", fields: { text: "Eggs" }, patch: [{ op: "test", path: "/items/0/text", value: "Eggs" }, { op: "replace", path: "/items/0/done", value: true }] };
   from("home", "groceries", tick);
   from("home", "groceries", { id: "e2", ev: "add", fields: { text: "Jam" }, patch: [{ op: "add", path: "/items/-", value: { text: "Jam", done: false } }] });
@@ -55,8 +55,8 @@ test("other documents in the folder are left alone", async () => {
 });
 
 test("the events waiting for one app are applied together: the app is written once", async (t) => {
-  await store.create("home", "batch", { ...definitionFor("list", { title: "Batch" }), data: { items: [{ text: "Eggs", done: false }] } }, undefined);
-  await store.create("home", "other", { ...definitionFor("list", { title: "Other" }), data: { items: [] } }, undefined);
+  await store.create("home", "batch", { ...definitionFor("list", { title: "Batch" }), data: { items: [{ text: "Eggs", done: false }] } });
+  await store.create("home", "other", { ...definitionFor("list", { title: "Other" }), data: { items: [] } });
   const add = (app: string, id: string, text: string) => from("home", app, { id, ev: "add", fields: { text }, patch: [{ op: "add", path: "/items/-", value: { text, done: false } }] });
   add("batch", "b1", "Jam");
   add("other", "o1", "Tea");

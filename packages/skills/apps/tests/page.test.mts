@@ -56,7 +56,7 @@ test("where the public folder can't be written there is no address", async () =>
   const was = process.env.ANYTHINGLLM_PUBLIC_DIR;
   process.env.ANYTHINGLLM_PUBLIC_DIR = path.join(blocker, "public");
   try {
-    await store.create("home", "nowhere", { ...definitionFor("list", { title: "Nowhere" }), page: listPage() }, undefined);
+    await store.create("home", "nowhere", { ...definitionFor("list", { title: "Nowhere" }), page: listPage() });
     assert.equal(await publish(store.read("home", "nowhere"), "home"), null);
     assert.equal(store.read("home", "nowhere").pageToken, undefined);
   } finally {

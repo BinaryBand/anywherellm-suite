@@ -4,7 +4,7 @@
 /** `this` in the handler, as AnythingLLM's agent sets it up. */
 export interface HandlerContext {
   super?: {
-    handlerProps?: { invocation?: { workspace?: { slug?: string } | null; thread_id?: number | string | null } };
+    handlerProps?: { invocation?: { workspace?: { slug?: string } | null } };
   };
   /** The skill's settings (plugin.json's setup_args), as the user set them in AnythingLLM. */
   runtimeArgs?: Record<string, string | undefined>;

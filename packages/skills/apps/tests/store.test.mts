@@ -7,7 +7,7 @@ import * as store from "../src/store.ts";
 const add = (text: string) => [{ op: "add", path: "/items/-", value: { text, done: false } }];
 
 test("an app is made, changed, undone and kept apart by workspace", async () => {
-  await store.create("home", "groceries", definitionFor("list", { title: "Groceries" }), 7);
+  await store.create("home", "groceries", definitionFor("list", { title: "Groceries" }));
   await store.change("home", "groceries", { patch: add("Eggs"), ev: "add" });
   const app = await store.change("home", "groceries", { patch: add("Milk"), ev: "add" });
   assert.deepEqual(app.data.items.map((i: any) => i.text), ["Eggs", "Milk"]);
@@ -39,7 +39,7 @@ test("names, workspaces, duplicates and definitions are checked", async () => {
   await assert.rejects(store.create("home", "Bad Name", definitionFor("list")), /lowercase/);
   assert.throws(() => store.list("../etc"), /not a workspace/);
   await assert.rejects(store.create("home", "groceries", definitionFor("list")), /already has/);
-  await assert.rejects(store.create("home", "odd", { title: "Odd", rules: [], schema: { oneOf: [] }, card: {}, data: {} }, undefined), /schema\/oneOf/);
+  await assert.rejects(store.create("home", "odd", { title: "Odd", rules: [], schema: { oneOf: [] }, card: {}, data: {} }), /schema\/oneOf/);
   await assert.rejects(store.writeFile("home", "groceries", "app.json", JSON.stringify({ data: {} })), /change the data with do/);
   await assert.rejects(store.writeFile("home", "groceries", "app.json", JSON.stringify({ title: "Food", rules: [], schema: { type: "array" }, card: {} })), /data \/: should be array/);
   const json = JSON.parse(store.readFile("home", "groceries", "app.json")!);
@@ -48,7 +48,7 @@ test("names, workspaces, duplicates and definitions are checked", async () => {
 });
 
 test("delete removes the app", async () => {
-  await store.create("home", "gone", definitionFor("calendar"), undefined);
+  await store.create("home", "gone", definitionFor("calendar"));
   await store.remove("home", "gone");
   assert.ok(!store.list("home").some((a) => a.name === "gone"));
 });
@@ -63,7 +63,7 @@ test("a file in the workspace's folder that isn't an app's, such as a lock or a 
 
 test("edit replaces text found exactly once, and changes advance the line", async () => {
   const page = '<script src="app.js"></script><script>App.start(/*APP*/null)</script><b>x</b><b>x</b>';
-  await store.create("home", "edited", { ...definitionFor("list", { title: "Edited" }), page }, undefined);
+  await store.create("home", "edited", { ...definitionFor("list", { title: "Edited" }), page });
   await assert.rejects(store.editFile("home", "edited", "page.html", "<b>x</b>", "y"), /more than once/);
   await assert.rejects(store.editFile("home", "edited", "page.html", "nope", "y"), /doesn't hold that text\. It is now:\n<script src="app\.js"><\/script>/);
   await assert.rejects(store.editFile("home", "edited", "app.js", "a", "b"), /isn't one of the app's files/);
@@ -76,7 +76,7 @@ test("edit replaces text found exactly once, and changes advance the line", asyn
 
 test("write and edit keep each file as it was, and revert puts back the newest change, one at a time", async () => {
   const page = (b: number) => `<script src="app.js"></script><script>App.start(/*APP*/null)</script><b>${b}</b>`;
-  await store.create("home", "kept", { ...definitionFor("list", { title: "Kept" }), page: page(1) }, undefined);
+  await store.create("home", "kept", { ...definitionFor("list", { title: "Kept" }), page: page(1) });
   await store.writeFile("home", "kept", "page.html", page(2));
   await store.editFile("home", "kept", "page.html", "<b>2</b>", "<b>3</b>");
   await store.writeFile("home", "kept", "app.json", JSON.stringify({ ...JSON.parse(store.readFile("home", "kept", "app.json")!), title: "Kept well" }));
@@ -94,7 +94,7 @@ test("write and edit keep each file as it was, and revert puts back the newest c
 });
 
 test("an app keeps its last ten versions, and a revert its data no longer fits is refused", async () => {
-  await store.create("home", "many-pages", definitionFor("list", { title: "Many" }), undefined);
+  await store.create("home", "many-pages", definitionFor("list", { title: "Many" }));
   for (let i = 0; i < 12; i++) await store.writeFile("home", "many-pages", "page.html", `<script src="app.js"></script><script>App.start(/*APP*/null)</script>${i}`);
   assert.equal(store.read("home", "many-pages").versions.length, store.VERSIONS);
 
@@ -106,7 +106,7 @@ test("an app keeps its last ten versions, and a revert its data no longer fits i
 });
 
 test("changesOn makes the changes one after another, as change does", async () => {
-  const make = (name: string) => store.create("home", name, { ...definitionFor("list", { title: name }), data: { items: [] } }, undefined);
+  const make = (name: string) => store.create("home", name, { ...definitionFor("list", { title: name }), data: { items: [] } });
   await make("many-a");
   await make("many-b");
   const add = (text: string, id?: string) => ({ ev: "add", id, by: "page", patch: [{ op: "add", path: "/items/-", value: { text, done: false } }] });
@@ -121,7 +121,7 @@ test("changesOn makes the changes one after another, as change does", async () =
 });
 
 test("two changes to one app at once both land: each waits for the other's lock", async () => {
-  await store.create("home", "busy", definitionFor("list", { title: "Busy" }), undefined);
+  await store.create("home", "busy", definitionFor("list", { title: "Busy" }));
   await Promise.all(["a", "b", "c", "d"].map((t) => store.change("home", "busy", { patch: add(t) })));
   assert.deepEqual(store.read("home", "busy").data.items.map((i: any) => i.text).sort(), ["a", "b", "c", "d"]);
 });
@@ -137,7 +137,7 @@ test("each change keeps the line it made, so an undo between changes leaves thei
 });
 
 test("undo takes back the newest change, data or file, told apart by the line each was made at", async () => {
-  await store.create("home", "close", definitionFor("list", { title: "Close" }), undefined);
+  await store.create("home", "close", definitionFor("list", { title: "Close" }));
   const page = (b: number) => `<script src="app.js"></script><script>App.start(/*APP*/null)</script><b>${b}</b>`;
   await store.change("home", "close", { patch: add("Eggs"), ev: "add" });
   await store.writeFile("home", "close", "page.html", page(1));
@@ -149,7 +149,7 @@ test("undo takes back the newest change, data or file, told apart by the line ea
 });
 
 test("undo refuses data its app.json no longer fits, and an app with no history has nothing to undo", async () => {
-  await store.create("home", "narrowed", definitionFor("list", { title: "Narrowed" }), undefined);
+  await store.create("home", "narrowed", definitionFor("list", { title: "Narrowed" }));
   await store.change("home", "narrowed", { patch: [{ op: "add", path: "/extra", value: 1 }] });
   const json = JSON.parse(store.readFile("home", "narrowed", "app.json")!);
   await store.writeFile("home", "narrowed", "app.json", JSON.stringify({ ...json, schema: { ...json.schema, required: [...(json.schema.required || []), "extra"] } }));
@@ -166,7 +166,7 @@ test("undo refuses data its app.json no longer fits, and an app with no history 
 });
 
 test("a page is checked before its app's lock is taken, so other changes don't wait on the check", async () => {
-  await store.create("home", "slow-check", definitionFor("list", { title: "Slow" }), undefined);
+  await store.create("home", "slow-check", definitionFor("list", { title: "Slow" }));
   // A script that never ends keeps the check going for its whole time.
   const start = Date.now();
   const writing = store.writeFile("home", "slow-check", "page.html", `<script src="app.js"></script><script>App.start(/*APP*/null)</script><script>for (;;) {}</script>`);

@@ -1,9 +1,8 @@
 // A workspace's apps on disk. One app is one JSON file, <root>/<workspace>/<name>.json: what
 // app.json holds (title, about, rules, schema, card, icon), its page.html (built from the parts),
-// its data, its line (how many changes it has had), when it was made and last changed, the thread
-// it was made in (AnythingLLM's id for it), its newest changes, each with the data as it was before
-// and the thread it came from, so undo can step back, and its earlier app.json and page.html, so
-// undo with a file can. Every write goes to a temporary file renamed over the app, so an app is
+// its data, its line (how many changes it has had), when it was made and last changed, its newest
+// changes, each with the data as it was before, so undo can step back, and its earlier app.json and
+// page.html, so undo with a file can. Every write goes to a temporary file renamed over the app, so an app is
 // never half written, and every read-change-write holds the app's lock (#shared/atomic), since a
 // scheduled job runs in a process of its own.
 
@@ -62,38 +61,36 @@ export function read(workspace: string, name: unknown): Json {
   });
 }
 
-/** Reads the app, changes it with `fn` and saves what `fn` answers, all under the app's lock; an
- *  answer that is the app itself is saved for none. With `pageFirst`,
- *  for a change that may write page.html, `fn` is tried first on the app as it is, outside the lock,
- *  so the page it writes is checked (the slow part) before the lock is taken, and found checked
- *  under it; `fn` must change nothing but what it answers. */
-async function update(workspace: string, name: unknown, fn: (app: Json) => Json | Promise<Json>, pageFirst = false): Promise<Json> {
+/** Reads the app, changes it with `fn` and saves the `next` app `fn` answers, all under the app's lock;
+ *  a `next` that is the app itself is saved for none. Answers the saved app and the more `fn` answered
+ *  besides. With `pageFirst`, for a change that may write page.html, `fn` is tried first on the app as
+ *  it is, outside the lock, so the page it writes is checked (the slow part) before the lock is taken,
+ *  and found checked under it; `fn` must change nothing but what it answers. */
+export async function updateWith<R extends object>(workspace: string, name: unknown, fn: (app: Json) => Promise<{ next: Json } & R>, pageFirst = false): Promise<{ app: Json } & R> {
   if (pageFirst)
     try {
       await fn(read(workspace, name));
     } catch {} // said by the try under the lock
   return withLock(workspace, name, async () => {
     const app = read(workspace, name);
-    const next = await fn(app);
+    const { next, ...rest } = await fn(app);
     if (next !== app) save(workspace, next);
-    return next;
+    return { app: next, ...rest } as { app: Json } & R;
   });
 }
 
-/** update for `fn` that answers the next app with more besides: the saved app and that more. */
-export async function updateWith<R extends object>(workspace: string, name: unknown, fn: (app: Json) => Promise<{ next: Json } & R>, pageFirst = false): Promise<{ app: Json } & R> {
-  let more!: R;
-  const app = await update(workspace, name, async (app) => {
-    const { next, ...rest } = await fn(app);
-    more = rest as unknown as R;
-    return next;
-  }, pageFirst);
-  return { app, ...more };
-}
+/** updateWith for `fn` that answers just the next app: the saved app. */
+const update = async (workspace: string, name: unknown, fn: (app: Json) => Json | Promise<Json>, pageFirst = false): Promise<Json> =>
+  (await updateWith(workspace, name, async (app) => ({ next: await fn(app) }), pageFirst)).app;
 
-/** `app` remembering the page event `id`, so one sent twice applies once. */
-const seenWith = (app: Json, id: string): Json => ({ ...app, seen: [...(app.seen || []), id].slice(-SEEN) });
 const isSeen = (app: Json, id: string | undefined): boolean => !!id && (app.seen || []).includes(id);
+/** `app` remembering the page event `id` as seen, so one sent twice applies once; with `why`, as
+ *  refused too, so its page stops showing it and can say so. An event with no id, or seen already, is
+ *  left as it is. */
+function remember(app: Json, id: string | undefined, why?: string): Json {
+  if (!id || isSeen(app, id)) return app;
+  return { ...app, seen: [...(app.seen || []), id].slice(-SEEN), ...(why === undefined ? {} : { refused: [...(app.refused || []), { id, why }].slice(-REFUSED) }) };
+}
 
 // The page check runs a page's scripts in a worker, which is slow next to a lock that should be held
 // for milliseconds: the newest pages' problems are kept, by a hash of their text, so a page checked
@@ -175,14 +172,14 @@ export function freeName(workspace: string, title: unknown): string {
 
 /** A new app: `definition` is app.json's keys and `data`, its first data; `page` its page.html.
  *  `earlier` are problems the caller found, reported with the app's own. */
-export async function create(workspace: string, name: unknown, definition: Json, thread?: number, earlier: string[] = []): Promise<Json> {
+export async function create(workspace: string, name: unknown, definition: Json, earlier: string[] = []): Promise<Json> {
   const make = async () => {
     const found = [...earlier];
     const why = nameProblem(name);
     if (why) found.push(why);
     else if (fs.existsSync(fileOf(workspace, name))) found.push(`this workspace already has an app named ${name}`);
     const t = now();
-    const app = await checked({ name, rules: [], ...definition, line: 0, made: t, changed: t, ...(thread !== undefined ? { thread } : {}), history: [], secret: newSecret() }, found, "made");
+    const app = await checked({ name, rules: [], ...definition, line: 0, made: t, changed: t, history: [], secret: newSecret() }, found, "made");
     save(workspace, app);
     return app;
   };
@@ -196,7 +193,6 @@ export interface Change {
   patch: Json;
   ev?: string;
   fields?: Json;
-  thread?: number;
   by?: string;
   id?: string;
   /** Refuse it unless the app takes changes from scheduled jobs (app.json's "jobs": true). */
@@ -206,7 +202,7 @@ export interface Change {
 /** `app` with `patch` applied to its data and checked against its schema, unsaved. `by` names who
  *  changed it (the agent unless said); a change with an `id` already seen is skipped, and the app
  *  itself comes back. */
-function applyChange(app: Json, { patch, ev, fields, thread, by, id }: Change): Json {
+function applyChange(app: Json, { patch, ev, fields, by, id }: Change): Json {
   if (isSeen(app, id)) return app;
   let data;
   try {
@@ -220,9 +216,9 @@ function applyChange(app: Json, { patch, ev, fields, thread, by, id }: Change): 
   const line = (app.line || 0) + 1;
   // Each change keeps the line it made: an undo also takes a line, so the newest changes' lines
   // can't be worked out from where they stand in the history.
-  const entry = { n: line, t: now(), by: by || "agent", ev: ev || "change", ...(fields ? { fields } : {}), ...(thread !== undefined ? { thread } : {}), patch, before: app.data };
+  const entry = { n: line, t: now(), by: by || "agent", ev: ev || "change", ...(fields ? { fields } : {}), patch, before: app.data };
   const next = { ...app, data, line, changed: entry.t, history: [...(app.history || []), entry].slice(-KEEP) };
-  return id ? seenWith(next, id) : next;
+  return remember(next, id);
 }
 
 /** The app with `patch` applied to its data, checked against its schema and saved. */
@@ -239,36 +235,23 @@ export interface Answer {
   error?: Error;
 }
 
-/** `app` remembering the page events `ids` as seen and refused, for `why`, so their page stops
- *  showing them and can say so. */
-function refusedWith(app: Json, ids: (string | undefined)[], why: string): Json {
-  const fresh = [...new Set(ids)].filter((id): id is string => !!id && !isSeen(app, id));
-  if (!fresh.length) return app;
-  return { ...app, seen: [...(app.seen || []), ...fresh].slice(-SEEN), refused: [...(app.refused || []), ...fresh.map((id) => ({ id, why }))].slice(-REFUSED) };
-}
-
 /** `app` with several changes applied, in order, unsaved: one answer for each (the others still
  *  apply when one doesn't). Those past the first `most` are refused untried, so a flood can't push the
  *  app's changes out of its history. */
 export function changesOn(first: Json, changes: Change[], most = Infinity): { next: Json; answers: Answer[] } {
   let app = first;
-  const answers = changes.slice(0, most).map((opts): Answer => {
+  const answers = changes.map((opts, i): Answer => {
     try {
+      if (i >= most) throw new AppError(`more than ${most} changes at once`);
       const next = applyChange(app, opts);
       if (next === app) return { duplicate: true };
       app = next;
       return {};
     } catch (error) {
-      app = refusedWith(app, [opts.id], (error as Error).message.split("\n")[0]);
+      app = remember(app, opts.id, (error as Error).message.split("\n")[0]);
       return { error: error as Error };
     }
   });
-  const over = changes.slice(most);
-  if (over.length) {
-    const error = new AppError(`more than ${most} changes at once`);
-    app = refusedWith(app, over.map((c) => c.id), error.message);
-    answers.push(...over.map(() => ({ error })));
-  }
   return { next: app, answers };
 }
 

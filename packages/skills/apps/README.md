@@ -41,7 +41,7 @@ A page posts each change with its app's secret, and the skill applies it to that
 
 ## What it needs of AnythingLLM
 
-The storage folder; the public folder, which AnythingLLM serves without a sign-in; the browser-extension upload its pages post to, with the key install keeps (`#shared/pages`); the invocation's workspace and thread; and `requestToolApproval` for `delete`. Each is listed in `docs/.scratch/TODO.md`.
+The storage folder; the public folder, which AnythingLLM serves without a sign-in; the browser-extension upload its pages post to, with the key install keeps (`#shared/pages`); the invocation's workspace; and `requestToolApproval` for `delete`. Each is listed in `docs/.scratch/TODO.md`.
 
 ## Check
 
