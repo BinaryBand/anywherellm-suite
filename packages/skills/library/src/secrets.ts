@@ -149,8 +149,8 @@ export async function saveSignIn(site: string, label: string, oauth: Definition,
     if (kept?.shared && !sharedClient) throw new LibraryError(`"${label}" signs in with a preset, the suite's own client: don't give it a definition. To change its scopes, call secret with kind "oauth", its preset and the scopes; to see whether it signed in, call library`);
     const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };
     const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth) && kept.client_id === client.client_id;
-    const flow = unchanged ? { tokens: kept.tokens, pending: kept.pending ?? null, device: kept.device ?? null } : { tokens: null, pending: null, device: null };
-    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, ...flow, error: null });
+    const flow = unchanged ? { tokens: kept.tokens, pending: kept.pending ?? null, device: kept.device ?? null, error: kept.error ?? null } : { tokens: null, pending: null, device: null, error: null };
+    put(v, { kind: "oauth", site, user: label, oauth, ...client, shared: !!sharedClient, ...flow });
   });
 }
 

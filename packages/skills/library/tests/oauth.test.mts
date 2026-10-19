@@ -178,6 +178,8 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   post({ ev: "oauth-code", state: q.state, error: "access_denied" });
   await call({ action: "library" });
   assert.match(JSON.stringify(vaultState().secrets), /"status":"its last sign-in didn't finish: the provider didn't give a code: access_denied"/, "and why a sign-in didn't finish is shown");
+  const again = await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM });
+  assert.match(again, /^Its last sign-in didn't finish \(the provider didn't give a code: access_denied\), so this is a new one\./, "the definition given again keeps why");
 });
 
 test("with ANYTHINGLLM_URL unset, the address the Vault was opened at is learned with the client", async () => {
