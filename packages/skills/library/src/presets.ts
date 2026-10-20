@@ -15,7 +15,7 @@ export interface Preset {
   client_id: string;
 }
 
-const PRESETS: Record<string, Preset> = {
+export const PRESETS: Record<string, Preset> = {
   github: {
     site: "api.github.com",
     definition: { authorize_url: "https://github.com/login/oauth/authorize", token_url: "https://github.com/login/oauth/access_token", device_url: "https://github.com/login/device/code", pkce: false },

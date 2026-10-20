@@ -12,9 +12,10 @@
 // signs in through device.ts.
 
 import crypto from "node:crypto";
+import { isIP } from "node:net";
 import { objectOf } from "#shared/answer";
 import { perProcess } from "#shared/anythingllm";
-import { hostOf, secureFor } from "#shared/fence";
+import { bareHost, hostOf, onSite, secureFor } from "#shared/fence";
 import * as net from "#shared/net";
 import { newSecret } from "#shared/pages";
 import * as vault from "#shared/vault";
@@ -99,8 +100,32 @@ function secureUrl(value: unknown, what: string): string {
   return url.href;
 }
 
-/** A sign-in as the agent worked it out from the docs, checked. */
-export function define(given: Record<string, unknown>): Definition {
+/** The domain `host` stands for, as where a sign-in's client may go: the host less its first label
+ *  (accounts.google.com: google.com), so a token address may sit beside the sign-in page or the
+ *  site, as Google's oauth2.googleapis.com sits beside www.googleapis.com. An IP address, a host of
+ *  two labels (github.com), and one whose parent is a registry's rather than a company's (two labels,
+ *  a country's two letters after at most three: co.uk, com.au), are their own domain. No list of
+ *  every registry: hosts under the few that let anyone have a name (github.io) can still reach
+ *  their neighbours, which is why the Vault shows where the client goes. */
+function domainOf(host: string): string {
+  const parent = host.slice(host.indexOf(".") + 1);
+  return isIP(host) || !parent.includes(".") || /^[a-z]{1,3}\.[a-z]{2}$/.test(parent) ? host : parent;
+}
+
+/** `url`, the definition's `what`, when it's on the domain of authorize_url or of `site`: the
+ *  client's secret, the code and the refresh token go there, so only to the provider the user signs
+ *  in at or the site its tokens go to already. Anywhere else, an agent steered by what it read could
+ *  have the user's code traded at an address of its own. */
+function onOwnDomain(url: string, what: string, authorize: string, site: string): string {
+  const hostIn = (u: string) => bareHost(new URL(u)).replace(/\.+$/, ""); // github.com. is github.com
+  const host = hostIn(url);
+  const domains = [...new Set([hostIn(authorize), site].map(domainOf))];
+  if (!domains.some((d) => onSite(host, d))) throw new LibraryError(`${what} is at ${host}, but the client and the code go only to authorize_url's or the site's domain (${domains.join(", ")}): give the provider's own address from its docs`);
+  return url;
+}
+
+/** A sign-in as the agent worked it out from the docs, for its tokens to go to `site`, checked. */
+export function define(given: Record<string, unknown>, site: string): Definition {
   const scopes = Array.isArray(given.scopes) ? given.scopes.join(" ") : String(given.scopes ?? "").trim();
   if (scopes.length > 1000) throw new LibraryError("scopes are at most 1000 characters");
   const params = objectOf(given.params, "params");
@@ -111,8 +136,10 @@ export function define(given: Record<string, unknown>): Definition {
   }
   const clientAuth = String(given.client_auth ?? "body");
   if (clientAuth !== "body" && clientAuth !== "basic") throw new LibraryError('client_auth is "body" (the client\'s secret sent in the form) or "basic" (in an Authorization header)');
-  const device = given.device_url ? { device_url: secureUrl(given.device_url, "device_url") } : {};
-  return { authorize_url: secureUrl(given.authorize_url, "authorize_url"), token_url: secureUrl(given.token_url, "token_url"), scopes, pkce: given.pkce !== false, params: params as Record<string, string>, client_auth: clientAuth, ...device };
+  const authorize = secureUrl(given.authorize_url, "authorize_url");
+  const own = (what: string) => onOwnDomain(secureUrl(given[what], what), what, authorize, site);
+  const device = given.device_url ? { device_url: own("device_url") } : {};
+  return { authorize_url: authorize, token_url: own("token_url"), scopes, pkce: given.pkce !== false, params: params as Record<string, string>, client_auth: clientAuth, ...device };
 }
 
 /** The redirect address to register for the client, for AnythingLLM's address `base`; null while

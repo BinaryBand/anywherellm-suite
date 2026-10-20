@@ -146,10 +146,11 @@ async function signIn(args: Args, label: string, base: string | null): Promise<s
   const redirect = redirectFor(page.baseFor(base));
   if (args.preset !== undefined) {
     const p = presetOf(args.preset, args.scopes);
-    await secrets.saveSignIn(p.site, label, define(p.definition), p.client_id);
+    await secrets.saveSignIn(p.site, label, define(p.definition, p.site), p.client_id);
   } else if (args.definition !== undefined) {
     const def = objectOf(args.definition, "definition");
-    await secrets.saveSignIn(secrets.siteChecked(def.site ?? args.site), label, define(def));
+    const site = secrets.siteChecked(def.site ?? args.site);
+    await secrets.saveSignIn(site, label, define(def, site));
   }
   const saved = secrets.signIn(label);
   if (!saved) throw new LibraryError(`there's no sign-in "${label}": give its definition { site, authorize_url, token_url, scopes, params }, or a preset (guide topic secrets)`);

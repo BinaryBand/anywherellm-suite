@@ -222,7 +222,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
       const details = el("details", { open: needed },
         el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.authorize}${o.scopes ? " · " + o.scopes : ""}` })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
         el("div", { className: "body" },
-          el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status }), el("dt", { textContent: "Tokens from" }), el("dd", { textContent: o.token }), el("dt", { textContent: "Tokens go to" }), el("dd", { textContent: o.site }), el("dt", { textContent: "Client" }), el("dd", { textContent: o.shared ? "the suite's own" : o.device ? "yours, with a code" : "yours" })),
+          el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status }), el("dt", { textContent: "Tokens go to" }), el("dd", { textContent: o.site }), el("dt", { textContent: "Client" }), el("dd", { textContent: o.shared ? "the suite's own" : o.device ? "yours, with a code" : "yours" }), el("dt", { textContent: "Client goes to" }), el("dd", { textContent: o.client })),
           o.shared ? null : clientForm(o, ks.redirect), del, box));
       return details;
     });

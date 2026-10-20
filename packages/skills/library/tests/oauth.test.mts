@@ -79,7 +79,7 @@ const definition = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, toke
 const LLM = "https://llm.example.com";
 
 /** The secret `label` as the Vault shows it now; undefined when there's none. */
-const secretIn = (label: string): { status: string; token?: string; tag?: { text: string; ok: boolean } } | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label);
+const secretIn = (label: string): { status: string; tag?: { text: string; ok: boolean }; client?: string } | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label);
 
 /** The sign-in `label`'s status as the Vault shows it now; undefined when there's none. */
 const statusIn = (label: string): string | undefined => secretIn(label)?.status;
@@ -250,7 +250,7 @@ test("a sign-in with the user's client can't be moved to another site: its token
 test("the user's client can't be sent to another token or device address; before the user gives one, the definition may change", async () => {
   await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, token_url: `${OTHER}/token` } }, { base: LLM });
   await link(); // the agent fixes its token_url while there's no client yet
-  assert.equal(secretIn("demo")?.token, new URL(BASE).host, "the Vault shows where the client goes");
+  assert.equal(secretIn("demo")?.client, new URL(BASE).host, "the Vault shows where the client goes");
   for (const def of [{ ...definition, token_url: `${OTHER}/token` }, { ...definition, device_url: `${OTHER}/device/code` }, { ...definition, authorize_url: `${BASE}/elsewhere` }]) {
     assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition: def }, { base: LLM }), moved);
   }
@@ -456,19 +456,24 @@ test("two chats asking for the code at once get one code", async () => {
   for (const said of [a, b]) assert.match(said, /```\nWDJB-MJHT\n```/);
 });
 
-/** secrets.ts's saveSignIn and oauth.ts's define, bundled as the handler is (src imports without
- *  extensions, which Node alone doesn't resolve). */
-async function fromSrc(): Promise<{ saveSignIn: (site: string, label: string, oauth: unknown, shared?: string) => Promise<void>; define: (given: Record<string, unknown>) => unknown }> {
+/** secrets.ts's saveSignIn, oauth.ts's define and the presets, bundled as the handler is (src imports
+ *  without extensions, which Node alone doesn't resolve). */
+async function fromSrc(): Promise<{
+  saveSignIn: (site: string, label: string, oauth: unknown, shared?: string) => Promise<void>;
+  define: (given: Record<string, unknown>, site: string) => unknown;
+  PRESETS: Record<string, { site: string }>;
+  presetOf: (name: string, scopes: string) => { site: string; definition: Record<string, unknown> };
+}> {
   const { build } = await import("esbuild");
   const outfile = path.join(storage, "..", "from-src.mjs");
-  await build({ stdin: { contents: 'export { saveSignIn } from "./secrets"; export { define } from "./oauth";', resolveDir: path.join(skillDir, "src"), loader: "ts" }, bundle: true, platform: "node", format: "esm", outfile, logLevel: "silent" });
+  await build({ stdin: { contents: 'export { saveSignIn } from "./secrets"; export { define } from "./oauth"; export { PRESETS, presetOf } from "./presets";', resolveDir: path.join(skillDir, "src"), loader: "ts" }, bundle: true, platform: "node", format: "esm", outfile, logLevel: "silent" });
   return import(pathToFileURL(outfile).href);
 }
 
 test("a preset's sign-in takes no definition: the code waiting stays, and so do the tokens", async () => {
   // A preset's sign-in, as presetOf saves one, but at the stand-in provider rather than GitHub.
   const { saveSignIn, define } = await fromSrc();
-  await saveSignIn("127.0.0.1", "gh", define(deviceDef), "client-1");
+  await saveSignIn("127.0.0.1", "gh", define(deviceDef, "127.0.0.1"), "client-1");
   assert.match(await call({ action: "secret", kind: "oauth", label: "gh" }), /```\nWDJB-MJHT\n```/);
   const redefined = await call({ action: "secret", kind: "oauth", label: "gh", definition: { ...deviceDef, scopes: ["repo", "read:user", "workflow"], client_auth: "basic" } });
   assert.match(redefined, /"gh" signs in with a preset, the suite's own client: don't give it a definition\./);
@@ -479,8 +484,43 @@ test("a preset's sign-in takes no definition: the code waiting stays, and so do 
   assert.equal(gh(), "signed in");
   assert.match(await call({ action: "secret", kind: "oauth", label: "gh", definition: deviceDef }), /signs in with a preset/);
   assert.equal(gh(), "signed in", "a refused definition drops no tokens");
-  await saveSignIn("127.0.0.1", "gh", define(deviceDef), "client-1");
+  await saveSignIn("127.0.0.1", "gh", define(deviceDef, "127.0.0.1"), "client-1");
   assert.equal(await statusOf("gh"), "signed in", "the preset given again keeps them");
+});
+
+// Where a sign-in's client and code go: only to the provider's domain or the site's, so an agent
+// steered by what it read can't have the user's code traded at an address of its own.
+
+test("a token or device address away from the provider and the site is refused, and the sign-in saved before stays", async () => {
+  const away = "https://attacker.example";
+  assert.match(await call({ action: "secret", kind: "oauth", label: "x", definition: { ...definition, token_url: `${away}/token` } }), /^Library: token_url is at attacker\.example, but the client and the code go only to authorize_url's or the site's domain \(127\.0\.0\.1\): give the provider's own address from its docs/);
+  assert.match(await call({ action: "secret", kind: "oauth", label: "x", definition: { ...deviceDef, device_url: `${away}/device/code` } }), /^Library: device_url is at attacker\.example, but/);
+  assert.equal(await statusOf("x"), undefined, "neither is saved");
+  const first = await link();
+  assert.equal(secretIn("demo")?.client, new URL(BASE).host, "the Vault shows where the client goes");
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, token_url: `${away}/token` } }, { base: LLM }), /^Library: token_url is at attacker\.example/);
+  post({ ev: "oauth-code", state: first.searchParams.get("state"), code: "good-code" });
+  assert.equal(await statusOf("demo"), "signed in", "the code went to the address saved before");
+});
+
+test("every preset, and definitions shaped as Google's, Microsoft's, GitHub's and Dropbox's, pass; look-alike addresses don't", async () => {
+  const { define, PRESETS, presetOf } = await fromSrc();
+  for (const name of Object.keys(PRESETS)) {
+    const p = presetOf(name, "");
+    define(p.definition, p.site);
+  }
+  const google = { authorize_url: "https://accounts.google.com/o/oauth2/v2/auth", token_url: "https://oauth2.googleapis.com/token", device_url: "https://oauth2.googleapis.com/device/code" };
+  for (const site of ["googleapis.com", "www.googleapis.com", "gmail.googleapis.com"]) define(google, site);
+  const microsoft = "https://login.microsoftonline.com/common/oauth2/v2.0";
+  define({ authorize_url: `${microsoft}/authorize`, token_url: `${microsoft}/token`, device_url: `${microsoft}/devicecode` }, "graph.microsoft.com");
+  define({ authorize_url: "https://github.com/login/oauth/authorize", token_url: "https://github.com/login/oauth/access_token", device_url: "https://github.com/login/device/code" }, "api.github.com");
+  define({ authorize_url: "https://www.dropbox.com/oauth2/authorize", token_url: "https://api.dropboxapi.com/oauth2/token" }, "api.dropboxapi.com");
+  define({ authorize_url: "https://login.example.co.uk/authorize", token_url: "https://api.example.co.uk/token" }, "api.example.co.uk");
+  const refused = (token_url: string, site: string, authorize_url: string) => assert.throws(() => define({ authorize_url, token_url }, site), /token_url is at /, token_url);
+  for (const away of ["https://attacker.example/token", "https://oauth2.googleapis.com.attacker.example/token", "https://googleapis.com.attacker.example/token"]) refused(away, "gmail.googleapis.com", google.authorize_url);
+  refused("https://attacker.com/token", "api.github.com", "https://github.com/login/oauth/authorize"); // com is no one's domain
+  refused("https://attacker.com./token", "api.github.com", "https://github.com./login/oauth/authorize"); // nor is com.
+  refused("https://attacker.co.uk/token", "example.co.uk", "https://example.co.uk/authorize"); // nor is co.uk
 });
 
 test("a device sign-in whose token ran out with nothing to renew it signs in again with a new code", async () => {

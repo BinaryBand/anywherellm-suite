@@ -30,11 +30,11 @@ export interface Secret {
   status: string;
   /** Where a sign-in is (stateOf), for the Vault's tag. */
   at?: SignInState["at"];
-  /** A sign-in's scopes, the host it signs in at, and the host it gets its tokens from (where the
-   *  user's client goes). */
+  /** A sign-in's scopes, the host it signs in at, and the hosts its client and code go to (token_url's
+   *  and device_url's). */
   scopes?: string;
   authorize?: string;
-  token?: string;
+  client?: string;
   /** Whether a sign-in signs in with a code the user enters (no redirect), and whether its client
    *  is the suite's own, which the user doesn't give. */
   device?: boolean;
@@ -98,7 +98,8 @@ function statusText(state: SignInState): string {
 /** A sign-in as the agent and the pages see it. */
 function signInSecret(e: Readonly<SignIn>): Secret {
   const state = stateOf(e);
-  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), at: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, token: new URL(e.oauth.token_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
+  const client = [...new Set([e.oauth.token_url, e.oauth.device_url].flatMap((u) => (u ? [new URL(u).host] : [])))].join(", ");
+  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), at: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, client, device: !!e.oauth.device_url, shared: !!e.shared };
 }
 
 /** The saved secrets, without their values. */
