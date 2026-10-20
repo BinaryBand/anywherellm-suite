@@ -21,7 +21,7 @@ import { act, checkAct, element, isPassword, notTyped, reachable, settle, settle
 import { existing, load, tab, through } from "./browser";
 import { BrowserError } from "./errors";
 import type { HandlerContext } from "./host";
-import { card, caughtUp } from "./page";
+import { card, caughtUp, settlePages } from "./page";
 import * as research from "./research";
 import { type Scope, scopeOf } from "./scope";
 import { type Read, type Snap, asksCode, asksPassword, fieldAt, readPage } from "./snapshot";
@@ -257,6 +257,9 @@ export const runtime = {
     const fn = ACTIONS[action];
     if (!fn) return `The browser's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
+      // The Vault's names follow the links switch on every call (a scheduled job's too): the first call
+      // with the switch on replaces the ones the agent may have been given.
+      await settlePages().catch((e) => this.logger?.(`browser-lean couldn't settle the Vault page: ${firstLine(e)}`));
       // What the user did on a tab's page since the last call.
       if (workspaceOf(this)) await caughtUp().catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
       const scope = scopeOf(this);

@@ -25,9 +25,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { mask } from "#shared/answer";
 import { updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
-import { inTurn, newSecret, pageHtml, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { inTurn, listPublic, newSecret, pageHtml, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import { linksHidden, noteLink } from "#shared/page-links";
 import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
@@ -129,20 +130,55 @@ const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.j
 /** Writes the Library page and its state into AnythingLLM's public folder, watches for its events
  *  for a while, and answers its address (absolute when AnythingLLM's address, `base`, is known). */
 export async function show(base: string | null): Promise<string> {
-  await settle(base);
-  return write(base);
+  const rotated = await settle(base);
+  return write(base, rotated);
 }
 
-/** show without settle: what a drain calls, being in its turn already (settle waits for the turn). */
-async function write(base: string | null): Promise<string> {
-  const kept = read();
-  const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
-  putPublic(`${p.token}.html`, await pageHtml(template(), { token: p.token, secret: p.secret, title: TITLE }));
-  writeState(p, base);
-  watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
-  // A hint for whoever shows the page to the user: a failure is only logged.
-  await noteLink("library", `/${pub(`${p.token}.html`)}`).catch((e) => console.error(`library-lean couldn't keep the page's link: ${(e as Error).message}`));
-  return `${base ?? ""}/${pub(`${p.token}.html`)}`;
+/** What every library call does before its own work, with or without a page to show: the page's names
+ *  made to fit the switch (settle), so that the links the agent held go dead at the first call after
+ *  the switch went on, not at the next one that shows the page. A page replaced is written again at
+ *  once, so the link kept for whoever shows it is a page that is there. */
+export async function settleNow(base: string | null): Promise<void> {
+  if (await settle(base)) await write(base, true);
+  else {
+    const kept = read();
+    if (kept) sweep(kept.token); // a crash between new names and the old files' removal is repaired here
+  }
+}
+
+/** Removes the page folder's page files that aren't under `token`: <token>.html and <token>.json of
+ *  an earlier token, left by a crash or by a writer that read the names before a rotation. Anything
+ *  else in the folder (the targets' reach-*.txt) stays. */
+function sweep(token: string): void {
+  for (const name of listPublic("library-lean")) {
+    const m = /^([\w-]{12,})\.(html|json)$/.exec(name);
+    if (m && m[1] !== token) removePublic(pub(name));
+  }
+}
+
+/** show without settle: what a drain calls, being in its turn already (settle waits for the turn).
+ *  `rotated` says the token was just replaced, which the links file records. A writer that read the
+ *  names before another process replaced them would publish the old token's files again, and note
+ *  their link: after writing it looks again, and if the token moved on it removes what it wrote and
+ *  writes under the new one. */
+async function write(base: string | null, rotated = false): Promise<string> {
+  for (let tries = 0; tries < 3; tries++) {
+    const kept = read();
+    const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
+    putPublic(`${p.token}.html`, await pageHtml(template(), { token: p.token, secret: p.secret, title: TITLE }));
+    writeState(p, base);
+    if (read()?.token !== p.token) {
+      removePublic(pub(`${p.token}.html`));
+      removePublic(pub(`${p.token}.json`));
+      continue;
+    }
+    watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
+    sweep(p.token);
+    // A hint for whoever shows the page to the user: a failure is only logged.
+    await noteLink("library", `/${pub(`${p.token}.html`)}`, rotated ? { rotated: true } : undefined).catch((e) => console.error(`library-lean couldn't keep the page's link: ${(e as Error).message}`));
+    return `${base ?? ""}/${pub(`${p.token}.html`)}`;
+  }
+  throw new LibraryError("the Library page was replaced while it was written: call again");
 }
 
 /** Gives the page a new token and secret and removes the old one's files, if `when` still holds
@@ -167,13 +203,13 @@ async function rotatePage(when: (p: PageFile) => boolean = () => true): Promise<
  *  their link, so what waits under the old secret is applied (a scheduled job's process doesn't
  *  drain by itself), then the names are replaced, once: the check is repeated under the lock, so
  *  two processes at once end in one rotation. */
-async function settle(base: string | null): Promise<void> {
+async function settle(base: string | null): Promise<boolean> {
   const want = linksHidden();
   const kept = read();
-  if (!kept || (kept.hidden === true) === want) return;
-  if (!want) return void (await change((p) => void delete p.hidden));
+  if (!kept || (kept.hidden === true) === want) return false;
+  if (!want) return void (await change((p) => void delete p.hidden)), false;
   await inTurn(TITLE, () => drain(base));
-  await rotatePage((p) => p.hidden !== true);
+  return rotatePage((p) => p.hidden !== true);
 }
 
 /** Writes the Vault with its keys section, watches for the section's events for a while, and
@@ -278,11 +314,26 @@ async function applyKeys(e: Record<string, unknown>): Promise<string | null> {
   }
 }
 
+/** The Vault's names made to fit the switch, its keys section's queued events (which this skill's
+ *  drain applies) first; with no page to write. */
+export const settleVault = (): Promise<void> => vaultPage.settleVault("keys", drainKeys);
+
 /** Applies what both pages posted, for a call, each in its turn with its watch's (#shared/pages inTurn). */
 export const caughtUp = async (base: string | null): Promise<void> => {
   await inTurn(TITLE, () => drain(base));
   await vaultPage.inTurnFor("keys", drainKeys);
 };
+
+/** `text` fit to go back to the agent: while the links are kept from it, the pages' tokens and secrets
+ *  and any page path with a token in it (a Node file error names its path, and a failed rename the
+ *  new token) are hidden; as it is otherwise. */
+export function plain(text: string): string {
+  if (!linksHidden()) return text;
+  const mine = read();
+  const link = vaultPage.linkOf(null); // "/vault-lean/<token>.html" where the Vault has a page
+  const known = [...(mine ? [mine.token, mine.secret] : []), ...(link ? [link.replace(/^.*\/|\.html$/g, "")] : [])];
+  return mask(text, known).replace(/\b((?:library|vault)-lean\/)[\w-]{12,}/g, "$1•••");
+}
 
 /** Applies every event the Library page posted since the last time, in order, then writes its state
  *  again (or a new page, after a rotate). One the skill refuses is skipped, and its words go to the
@@ -316,7 +367,7 @@ async function drain(base: string | null): Promise<void> {
   if (met.size) await change((p) => void (p.needs = p.needs.filter((n) => !met.has(needId(n.kind, n.label)))));
   if (rotate) {
     await rotatePage();
-    await write(base);
+    await write(base, true);
   } else if (result || applied.some(Boolean)) writeState(read() ?? page, base);
   // A sign-in takes up to 20 s: tried after the turn, so neither the page nor the agent waits on it.
   const checks = new Set(applied.flatMap((a) => (a?.check ? [a.check] : [])));

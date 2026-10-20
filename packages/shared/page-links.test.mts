@@ -61,3 +61,25 @@ test("a damaged file is replaced, and what it held is not trusted", async () => 
   fs.writeFileSync(linksFile(), JSON.stringify({ library: 7, vault: "/vault-lean/x.html", extra: "/other" }));
   assert.deepEqual(readLinks(), { vault: "/vault-lean/x.html" }, "only the two paths, only strings");
 });
+
+test("a rotation is stamped beside the link, for that page only, and a plain note never stamps", async () => {
+  await noteLink("vault", "/vault-lean/aaa.html");
+  assert.equal(readLinks().rotated, undefined);
+  await noteLink("vault", "/vault-lean/aaa.html", { rotated: true });
+  const first = readLinks().rotated?.vault;
+  assert.match(first ?? "", /^\d{4}-\d\d-\d\dT[\d:.]+Z$/, "stamped even when the link is the same: the token was replaced and is the same by chance only");
+  assert.equal(readLinks().rotated?.library, undefined);
+  await noteLink("library", "/library-lean/bbb.html", { rotated: true });
+  assert.deepEqual(Object.keys(readLinks().rotated ?? {}).sort(), ["library", "vault"]);
+  await noteLink("vault", "/vault-lean/ccc.html");
+  assert.equal(readLinks().rotated?.vault, first, "a plain note keeps the stamp as it was");
+  assert.equal(readLinks().vault, "/vault-lean/ccc.html");
+});
+
+test("only strings are read back, stamps included", () => {
+  fs.mkdirSync(path.dirname(linksFile()), { recursive: true });
+  fs.writeFileSync(linksFile(), JSON.stringify({ library: "/library-lean/x.html", vault: 5, rotated: { library: "2026-10-21T00:00:00Z", vault: 3, other: "x" }, extra: 1 }));
+  assert.deepEqual(readLinks(), { library: "/library-lean/x.html", rotated: { library: "2026-10-21T00:00:00Z" } });
+  fs.writeFileSync(linksFile(), JSON.stringify({ rotated: "yes", vault: "/vault-lean/y.html" }));
+  assert.deepEqual(readLinks(), { vault: "/vault-lean/y.html" });
+});

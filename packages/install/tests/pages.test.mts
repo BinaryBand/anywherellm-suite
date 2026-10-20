@@ -125,21 +125,64 @@ test("--hide makes the switch once, leaves its time alone the next time, and the
   assert.doesNotMatch(out(), /made before the switch/, "links not older than the switch");
 });
 
-test("links made before the switch are said to change at the agent's next call", () => {
+const iso = (offsetMs: number) => new Date(Date.now() + offsetMs).toISOString();
+
+test("each page's link is said to be old or not on its own: a Vault-only rotation doesn't hide the Library's warning", () => {
   keep(BOTH);
-  const past = new Date(Date.now() - 3_600_000);
-  fs.utimesSync(linksFile(), past, past);
   run({ hide: true });
-  assert.match(out(), /They were made before the switch: they change at the agent's next library call or browser step\./);
+  const switchedAt = fs.statSync(switchFile()).mtimeMs;
+  const at = (offset: number) => new Date(switchedAt + offset).toISOString();
+  // Only the Vault was replaced after the switch.
+  keep({ ...BOTH, rotated: { vault: at(5_000) } });
+  printed.length = 0;
+  run();
+  assert.match(out(), /^Library page: its link was made before the switch: it changes at the agent's next library call\.$/m);
+  assert.doesNotMatch(out(), /^Vault: its link was made before/m);
+  // Both replaced after it: nothing to warn of.
+  keep({ ...BOTH, rotated: { library: at(1_000), vault: at(5_000) } });
+  printed.length = 0;
+  run();
+  assert.doesNotMatch(out(), /made before the switch|unknown whether/);
+  // The Library replaced after it, the Vault before.
+  keep({ ...BOTH, rotated: { library: at(1_000), vault: at(-60_000) } });
+  printed.length = 0;
+  run();
+  assert.match(out(), /^Vault: its link was made before the switch: it changes at the agent's next library call or browser step\.$/m);
+  assert.doesNotMatch(out(), /^Library page: its link was made before/m);
 });
 
-test("--hide warns of page events that wait to be applied, and counts only the pages'", () => {
+test("a links file that records no rotations can't say, and says so for each page it has a link for", () => {
+  keep({ library: BOTH.library });
+  run({ hide: true });
+  assert.match(out(), /^Library page: unknown whether its link was made after the switch/m);
+  assert.doesNotMatch(out(), /^Vault: unknown/m, "no Vault link, so nothing to say of it");
+  assert.doesNotMatch(out(), /made before the switch/);
+});
+
+test("with the switch off no age is said", () => {
+  keep({ ...BOTH, rotated: { library: iso(-3_600_000) } });
+  run();
+  assert.doesNotMatch(out(), /made before the switch|unknown whether/);
+});
+
+test("rotation times that aren't times are refused, saying how the file is made again", () => {
+  for (const rotated of ["yesterday", [], { vault: "not a time" }, { library: 5 }]) {
+    keep({ ...BOTH, rotated });
+    assert.throws(() => run(), /rotation/, JSON.stringify(rotated));
+  }
+});
+
+test("--hide warns of page events that wait to be applied, by section, and counts only the pages'", () => {
   keep(BOTH);
   const docs = path.join(storage, "documents", "custom-documents");
   fs.mkdirSync(docs, { recursive: true });
-  for (const name of ["raw-library-lean-event-1.json", "raw-library-lean-event-2.json", "raw-vault-lean-keys-3.json", "raw-something-else-4.json", "other.json"]) fs.writeFileSync(path.join(docs, name), "{}");
+  for (const name of ["raw-library-lean-event-1.json", "raw-library-lean-event-2.json", "raw-vault-lean-keys-3.json", "raw-vault-lean-logins-4.json", "raw-vault-lean-logins-5.json", "raw-vault-lean-other-6.json", "raw-something-else-7.json", "other.json"]) fs.writeFileSync(path.join(docs, name), "{}");
   run({ hide: true });
-  assert.match(out(), /3 page events wait to be applied: ask the agent to call library and open a tab first, or they're dropped when the links change/);
+  assert.match(out(), /5 page events wait to be applied \(Vault keys: 1, Vault logins: 2, Library page: 2\): ask the agent to call library and open a tab first, or they're dropped when the links change/);
+  printed.length = 0;
+  for (const name of fs.readdirSync(docs)) if (/^raw-vault-lean-logins/.test(name)) fs.rmSync(path.join(docs, name));
+  run({ hide: true });
+  assert.match(out(), /3 page events wait to be applied \(Vault keys: 1, Library page: 2\)/, "a section with none isn't listed");
   printed.length = 0;
   for (const name of fs.readdirSync(docs)) if (/^raw-(library|vault)/.test(name)) fs.rmSync(path.join(docs, name));
   run({ hide: true });
@@ -194,13 +237,13 @@ test("health says which way the links go, and fails on a links file that isn't s
   ctx.host = { sshDir: path.join(home, "no-ssh"), interfaces: { eth0: [{ address: "192.0.2.10" }] as never }, hostname: "stand-in" };
   keep(BOTH);
   await health(ctx, { storage });
-  assert.match(out(), /ok +the pages' links: given to the agent too \(pages --hide keeps them from it\)/);
+  assert.match(out(), /ok +the pages' links: switch off: given to the agent too \(pages --hide keeps them from it\)/);
   run({ hide: true });
   printed.length = 0;
   await health(ctx, { storage });
-  assert.match(out(), /ok +the pages' links: kept from the agent/);
+  assert.match(out(), /ok +the pages' links: switch on since \d{4}-\d\d-\d\dT[\d:]+Z: kept from the agent/);
   keep("{not json");
   printed.length = 0;
   assert.equal(await health(ctx, { storage }), false);
-  assert.match(out(), /FAIL the pages' links: .*isn't JSON.*\(kept from the agent\)/);
+  assert.match(out(), /FAIL the pages' links: .*isn't JSON.*\(switch on since .*: kept from the agent\)/);
 });

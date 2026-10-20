@@ -102,7 +102,9 @@ test("the first show after the switch goes on replaces the old form's names once
   assert.equal(fs.readFileSync(inPublic(`${now.token}-logins.json`), "utf8"), "old oldtoken-logins.json", "the other section's state moved under the new name");
   assert.equal(fs.readFileSync(inPublic(`${now.token}-keys.json`), "utf8"), JSON.stringify({ keys: [] }), "this section's state is written under the new name");
   assert.ok(fs.existsSync(inPublic(`${now.token}.html`)));
-  assert.deepEqual(readLinks(), { vault: `/vault-lean/${now.token}.html` });
+  assert.equal(readLinks().vault, `/vault-lean/${now.token}.html`);
+  assert.match(readLinks().rotated?.vault ?? "", /^\d{4}-\d\d-\d\dT[\d:.]+Z$/, "the rotation is stamped beside the link");
+  assert.equal(readLinks().rotated?.library, undefined, "and only for the page that was replaced");
   assert.equal(fs.statSync(linksFile()).mode & 0o777, 0o600);
 });
 
@@ -145,13 +147,17 @@ test("switch on, off, on: the links went out while it was off, so the second on 
   const off = names();
   assert.equal(off.token, first.token, "off doesn't rotate");
   assert.equal(off.hidden, undefined, "off drops the mark: the link is given out again");
-  assert.deepEqual(readLinks(), { vault: `/vault-lean/${first.token}.html` });
+  assert.equal(readLinks().vault, `/vault-lean/${first.token}.html`);
+  const stamped = readLinks().rotated?.vault;
+  assert.ok(stamped, "the first rotation is stamped, and an off show doesn't change the stamp");
   hide(true);
+  await new Promise((r) => setTimeout(r, 5));
   await show(async () => {});
   const second = names();
   assert.notEqual(second.token, first.token);
   assert.equal(second.hidden, true);
-  assert.deepEqual(readLinks(), { vault: `/vault-lean/${second.token}.html` });
+  assert.equal(readLinks().vault, `/vault-lean/${second.token}.html`);
+  assert.notEqual(readLinks().rotated?.vault, stamped, "the second rotation is stamped again");
 });
 
 test("with the switch off the old names stay, unmarked, and the link is noted", async () => {
@@ -214,11 +220,121 @@ test("the page's own rotate keeps the mark of the switch and moves the link", as
   const after = names();
   assert.notEqual(after.token, before.token);
   assert.equal(after.hidden, true);
-  assert.deepEqual(readLinks(), { vault: `/vault-lean/${after.token}.html` });
+  assert.equal(readLinks().vault, `/vault-lean/${after.token}.html`);
+  assert.ok(readLinks().rotated?.vault, "the page's own rotate is stamped too");
   assert.equal(fs.existsSync(inPublic(`${before.token}.html`)), false);
   assert.equal(fs.existsSync(inPublic(`${after.token}.html`)), true);
   hide(false);
   await vaultPage.rotate();
   assert.equal(names().hidden, undefined);
   assert.equal(SUITE_DIR, "anywherellm-suite");
+});
+
+test("settleVault replaces the names without a page shown: the page is written under the new ones and the link stamped", async () => {
+  seedOld();
+  hide(true);
+  await vaultPage.settleVault("logins", async () => {});
+  const now = names();
+  assert.notEqual(now.token, "oldtoken");
+  assert.equal(now.hidden, true);
+  assert.equal(fs.existsSync(inPublic("oldtoken.html")), false);
+  assert.equal(fs.existsSync(inPublic("oldtoken-logins.json")), false);
+  assert.ok(fs.existsSync(inPublic(`${now.token}.html`)), "the page is there for the link the user is given");
+  assert.equal(readLinks().vault, `/vault-lean/${now.token}.html`);
+  assert.ok(readLinks().rotated?.vault);
+  await vaultPage.settleVault("logins", async () => {});
+  assert.equal(names().token, now.token, "once");
+});
+
+test("settleVault with no Vault does nothing, and makes none", async () => {
+  hide(true);
+  await vaultPage.settleVault("logins", async () => {});
+  assert.equal(fs.existsSync(namesFile()), false);
+  assert.equal(fs.existsSync(linksFile()), false);
+});
+
+/** Makes fs.renameSync fail as a full disk does, naming the paths, for the length of `fn`. */
+async function renamesFail(fn: () => Promise<void>) {
+  const was = fs.renameSync;
+  fs.renameSync = ((from: fs.PathLike, to: fs.PathLike) => {
+    throw Object.assign(new Error(`ENOSPC: no space left on device, rename '${from}' -> '${to}'`), { code: "ENOSPC" });
+  }) as typeof fs.renameSync;
+  try {
+    await fn();
+  } finally {
+    fs.renameSync = was;
+  }
+}
+
+test("with the switch on a failed write says nothing of a token; with it off the error is as it was", async () => {
+  const logged: string[] = [];
+  const log = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args.join(" "));
+  try {
+    seedOld();
+    hide(true);
+    let failure: Error | null = null;
+    await renamesFail(() => vaultPage.settleVault("logins", async () => {}).catch((e) => void (failure = e)));
+    const now = names(); // the names were replaced before the move failed
+    assert.ok(failure, "the failure is told");
+    assert.equal((failure as unknown as Error).message, "the Vault page couldn't be written");
+    assert.ok(!(failure as unknown as Error).message.includes(now.token));
+    assert.ok(logged.length > 0 && logged.every((l) => !l.includes(now.token) && !l.includes(now.secret)), `logged detail is masked: ${logged.join(" | ")}`);
+    // the next show repairs what the failed move left: the old page is swept
+    await show(async () => {});
+    assert.ok(!fs.existsSync(inPublic("oldtoken.html")), "the old page is removed by the next show");
+    // switch off: the error is the Node one, as before
+    hide(false);
+    fs.writeFileSync(path.join(publicDir, "vault-lean", `${names().token}-keys.json`), "{}");
+    let plain: Error | null = null;
+    await renamesFail(() => vaultPage.rotate().catch((e) => void (plain = e)));
+    assert.match((plain as unknown as Error)?.message ?? "", /ENOSPC/);
+  } finally {
+    console.error = log;
+  }
+});
+
+test("a show removes every page file that isn't under the current token, and keeps what isn't a page file", async () => {
+  await show(async () => {});
+  const token = names().token;
+  // what a rotation that died between its steps, or a writer that read the names too early, left
+  for (const f of ["stalestalestale.html", "stalestalestale-keys.json", "stalestalestale-logins.json"]) fs.writeFileSync(inPublic(f), "stale");
+  for (const f of ["notes.txt", "index.html", "short-keys.json"]) fs.writeFileSync(inPublic(f), "not a page of the Vault's");
+  await show(async () => {});
+  for (const f of ["stalestalestale.html", "stalestalestale-keys.json", "stalestalestale-logins.json"]) assert.equal(fs.existsSync(inPublic(f)), false, f);
+  for (const f of ["notes.txt", "index.html", "short-keys.json"]) assert.equal(fs.existsSync(inPublic(f)), true, f);
+  assert.ok(fs.existsSync(inPublic(`${token}.html`)) && fs.existsSync(inPublic(`${token}-keys.json`)));
+  // and a call that shows no page (settleVault) clears them too
+  fs.writeFileSync(inPublic("leftoverleftover.html"), "stale");
+  await vaultPage.settleVault("logins", async () => {});
+  assert.equal(fs.existsSync(inPublic("leftoverleftover.html")), false);
+});
+
+test("a show and the page's own rotate at once leave only the current token's files and its link", async () => {
+  for (let i = 0; i < 5; i++) {
+    hide(true);
+    await Promise.all([show(async () => {}), vaultPage.rotate(), show(async () => {}), vaultPage.rotate()]);
+    const token = names().token;
+    const pages = fs.readdirSync(path.join(publicDir, "vault-lean")).filter((f) => /^[\w-]{8,}\.html$/.test(f));
+    assert.deepEqual(pages, [`${token}.html`], `round ${i}`);
+    assert.equal(readLinks().vault, `/vault-lean/${token}.html`, `round ${i}`);
+  }
+});
+
+test("take reads the events before it reads the names", () => {
+  const order: string[] = [];
+  const f = fs as unknown as Record<string, (...args: unknown[]) => unknown>;
+  const stat = f.statSync;
+  const read = f.readFileSync;
+  f.statSync = (p, ...rest) => (String(p).endsWith(path.join("documents", "custom-documents")) && order.push("events"), stat(p, ...rest));
+  f.readFileSync = (p, ...rest) => (String(p).endsWith("vault-page.json") && order.push("names"), read(p, ...rest));
+  try {
+    fs.mkdirSync(path.join(storage, "documents", "custom-documents"), { recursive: true });
+    vaultPage.take("keys");
+  } finally {
+    f.statSync = stat;
+    f.readFileSync = read;
+  }
+  assert.ok(order.indexOf("events") >= 0, order.join(","));
+  assert.ok(order.indexOf("names") < 0 || order.indexOf("events") < order.indexOf("names"), order.join(","));
 });

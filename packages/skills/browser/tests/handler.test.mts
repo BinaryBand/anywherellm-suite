@@ -187,6 +187,31 @@ test("with the links kept from the agent, the tab's state carries no Vault link,
   assert.equal(tabState("vaulthidden").vault, `/vault-lean/${vaultNames().token}.html`, "given again once the switch is off");
 });
 
+test("the first call after the links switch goes on replaces the Vault's names, even a scheduled job's that draws no page", async () => {
+  const call = inWorkspace("vaultsettle");
+  await call({ action: "open", url: "https://shop.example/" });
+  const before = vaultNames();
+  const oldPage = path.join(publicDir, "vault-lean", `${before.token}.html`);
+  assert.ok(fs.existsSync(oldPage), "the Vault page was made while the links went to the agent");
+  hideLinks(true);
+  try {
+    // a job's call: no workspace, and guide draws nothing
+    assert.match(await called({ action: "guide" }, { workspace: null }), /Browser/i);
+    const after = vaultNames();
+    assert.notEqual(after.token, before.token, "replaced by a call that shows no page");
+    assert.notEqual(after.secret, before.secret);
+    assert.equal(fs.existsSync(oldPage), false, "the old page is gone");
+    assert.ok(fs.existsSync(path.join(publicDir, "vault-lean", `${after.token}.html`)), "and the new one is written");
+    await called({ action: "guide" }, { workspace: null });
+    assert.equal(vaultNames().token, after.token, "once");
+    const { readLinks } = await import("#shared/page-links");
+    assert.equal(readLinks(storage).vault, `/vault-lean/${after.token}.html`);
+    assert.ok(readLinks(storage).rotated?.vault, "stamped as rotated");
+  } finally {
+    hideLinks(false);
+  }
+});
+
 test("guide gives the overview, each topic it lists, and names the topics when one isn't there", async () => {
   const overview = await called({ action: "guide" }, { workspace: "guide" });
   const topics = [...overview.matchAll(/^- `(\w+)`/gm)].map((m) => m[1]);

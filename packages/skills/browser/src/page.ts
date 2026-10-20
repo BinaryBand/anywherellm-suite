@@ -238,6 +238,11 @@ export const caughtUp = async (): Promise<void> => {
   await vaultPage.inTurnFor("logins", drainLogins);
 };
 
+/** Brings the Vault's names in line with the links switch (#shared/page-links) at the start of a call,
+ *  a chat's or a scheduled job's, whether or not the call draws a page: with the switch on, the first
+ *  call replaces the names the agent may have been given. Nothing without a Vault. */
+export const settlePages = (): Promise<void> => vaultPage.settleVault("logins", drainLogins);
+
 /** The saved logins and passkeys, as the Vault's logins section shows them: never a password or a key. */
 const loginsState = () => ({ logins: logins.list() });
 

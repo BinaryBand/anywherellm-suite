@@ -105,7 +105,7 @@ async function pageLine(self: HandlerContext): Promise<string> {
     if (linksHidden()) return `The Vault (every key, sign-in and browser login, by name) and the Library page (the toolkits and runs) are the user's own pages: they open them ${OPEN_PAGES}. You are never given their links: don't ask the user for them, and never fetch them.`;
     return `The Vault, the user's own view of every key, sign-in and browser login, by name: ${vault}\nThe Library page, the user's own view of the toolkits and runs: ${library}`;
   } catch (e) {
-    return `The Vault and the Library page aren't available here: ${(e as Error).message}.`;
+    return `The Vault and the Library page aren't available here: ${page.plain((e as Error).message)}.`;
   }
 }
 
@@ -169,7 +169,7 @@ async function secret(args: Args, self: HandlerContext): Promise<string> {
   secrets.assertKeyName(label);
   await page.need(label, site);
   const vault = await page.showVault(baseOf(self));
-  return `${linksHidden() ? `The user gives the key on the Vault, at the top of Keys (they open it ${OPEN_PAGES}).` : `The user gives the key on the Vault: ${vault}`}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
+  return `${linksHidden() ? `The user gives the key on the Vault (they open it ${OPEN_PAGES}).` : `The user gives the key on the Vault: ${vault}`}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
 }
 
 /** Asks the user to register a target, a machine the library's functions run commands on: its
@@ -358,9 +358,14 @@ const ACTIONS: Record<string, (args: Args, self: HandlerContext) => Promise<stri
  *  scheduled job's leaves it to the chat's watch). With no public folder where AnythingLLM runs,
  *  there's no page and nothing to apply. */
 async function fromPage(self: HandlerContext): Promise<void> {
-  if (!workspaceOf(self)) return;
   try {
-    await page.caughtUp(baseOf(self));
+    const base = baseOf(self);
+    // Every call, a chat's or a job's, makes the pages' names fit the switch first: with it on, the
+    // links the agent held go dead at the first call after, not at one that happens to show a page.
+    await page.settleNow(base);
+    await page.settleVault();
+    if (!workspaceOf(self)) return;
+    await page.caughtUp(base);
   } catch (e) {
     self.logger?.(`library-lean couldn't apply the Library page's events: ${(e as Error)?.message || e}`);
   }
@@ -378,9 +383,9 @@ export const runtime = {
       // In a chat in AnywhereLLM, the agent's own call asks the user for a host the fence refuses.
       return await runAs(this, "Library", action === "call" ? (o) => `Send a request to ${o}` : undefined, () => act(args, this));
     } catch (e) {
-      if (e instanceof Told) return `Library: ${e.message}.`;
+      if (e instanceof Told) return `Library: ${page.plain(e.message)}.`;
       this.logger?.(`library-lean ${action} failed: ${(e as Error)?.stack || e}`);
-      return `Library ${action} failed: ${(e as Error)?.message || e}. Tell the user what went wrong; don't retry on your own.`;
+      return `Library ${action} failed: ${page.plain(String((e as Error)?.message || e))}. Tell the user what went wrong; don't retry on your own.`;
     } finally {
       // Whatever the call changed (a save, a run's end, runs shown), even one that failed partway.
       listing.refresh(this.logger);

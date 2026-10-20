@@ -4,10 +4,10 @@
 // (shared/page-links.mts); with ANYTHINGLLM_URL set they print as full addresses.
 
 import fs from "node:fs";
-import { hiddenFile, linksFile } from "#shared/page-links";
+import { hiddenFile } from "#shared/page-links";
 import { Told } from "#shared/errors";
 import { storageFor, type Ctx } from "./install.mts";
-import { hidden, hide, readKept, show, waitingEvents } from "./pagelinks.mts";
+import { hidden, hide, readKept, show, waitingEvents, type Kept } from "./pagelinks.mts";
 
 export interface PagesOptions {
   storage?: string;
@@ -29,6 +29,20 @@ function baseOf(ctx: Ctx): string | null {
   }
 }
 
+/** Per page, whether its link was made before the switch (so the agent was given it, and it changes
+ *  at the agent's next call): said for that page alone, from when the links file says it was last
+ *  replaced. A file that records no rotations at all can't say. */
+function staleLines(links: Kept, switchedAt: number): string[] {
+  const names = { library: "Library page", vault: "Vault" } as const;
+  const lines: string[] = [];
+  for (const kind of ["library", "vault"] as const) {
+    if (!links[kind]) continue;
+    if (!links.rotated) lines.push(`${names[kind]}: unknown whether its link was made after the switch (the links file records no rotations yet).`);
+    else if ((links.rotated[kind] ?? 0) < switchedAt) lines.push(`${names[kind]}: its link was made before the switch: it changes at the agent's next ${kind === "library" ? "library call" : "library call or browser step"}.`);
+  }
+  return lines;
+}
+
 /** Prints the links and which way they go; 0, or 1 when there is nothing to show yet. */
 export function pages(ctx: Ctx, opts: PagesOptions = {}): number {
   if (opts.hide && opts.show) throw new Told("--hide and --show together: choose one");
@@ -37,7 +51,14 @@ export function pages(ctx: Ctx, opts: PagesOptions = {}): number {
   if (opts.hide) {
     ctx.print(hide(storage) ? `kept the pages' links from the agent: ${hiddenFile(storage)}` : `unchanged: the pages' links are kept from the agent already (${hiddenFile(storage)})`);
     const waiting = waitingEvents(storage);
-    if (waiting) ctx.print(`${waiting} page event${waiting === 1 ? " waits" : "s wait"} to be applied: ask the agent to call library and open a tab first, or they're dropped when the links change`);
+    if (waiting.total) {
+      const where = [
+        waiting.keys && `Vault keys: ${waiting.keys}`,
+        waiting.logins && `Vault logins: ${waiting.logins}`,
+        waiting.library && `Library page: ${waiting.library}`,
+      ].filter(Boolean);
+      ctx.print(`${waiting.total} page event${waiting.total === 1 ? " waits" : "s wait"} to be applied (${where.join(", ")}): ask the agent to call library and open a tab first, or they're dropped when the links change`);
+    }
   } else if (opts.show) {
     ctx.print(show(storage) ? `gave the pages' links to the agent again: removed ${hiddenFile(storage)}` : `unchanged: the pages' links are not kept from the agent (no ${hiddenFile(storage)})`);
   }
@@ -53,7 +74,7 @@ export function pages(ctx: Ctx, opts: PagesOptions = {}): number {
   if (!base) ctx.print("(root-relative: set ANYTHINGLLM_URL to AnythingLLM's address to print full ones)");
   if (hidden(storage)) {
     ctx.print("The agent isn't given these links.");
-    if (fs.statSync(linksFile(storage)).mtimeMs < fs.statSync(hiddenFile(storage)).mtimeMs) ctx.print("They were made before the switch: they change at the agent's next library call or browser step.");
+    for (const line of staleLines(links, fs.statSync(hiddenFile(storage)).mtimeMs)) ctx.print(line);
   } else {
     ctx.print("The agent is given these links too (pages --hide keeps them from it).");
   }

@@ -21,7 +21,9 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { readJson, updateJson } from "./atomic.mts";
+import { mask } from "./answer.mts";
+import { locked, readJson, updateJson } from "./atomic.mts";
+import { Told } from "./errors.mts";
 import { linksHidden, noteLink } from "./page-links.mts";
 import { inTurn, listPublic, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "./pages.mts";
 import { vaultDir } from "./vault.mts";
@@ -43,9 +45,28 @@ interface Names {
   hidden?: true;
 }
 
-/** Keeps the Vault's link in the links file; a failure (a file that can't be written) is logged and
- *  never reaches the page or the answer that shows it. */
-const keepLink = (rel: string): Promise<void> => noteLink("vault", rel).catch((e) => console.error(`vault-lean couldn't keep the page's link: ${(e as Error).message}`));
+/** Keeps the Vault's link in the links file (`rotated`: its token was just replaced); a failure (a
+ *  file that can't be written) is logged and never reaches the page or the answer that shows it. */
+const keepLink = (rel: string, rotated = false): Promise<void> =>
+  noteLink("vault", rel, rotated ? { rotated: true } : {}).catch((e) => console.error(`vault-lean couldn't keep the page's link: ${(e as Error).message}`));
+
+/** Runs a write of the page's files. While the links are kept from the agent, a failure says nothing
+ *  of a path (a Node file error names the page's token, even the new one): the detail is logged with
+ *  the names masked, and the agent is told the page couldn't be written. */
+async function quiet<T>(what: string, fn: () => Promise<T> | T): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof Told || !linksHidden()) throw e;
+    let names: string[] = [];
+    try {
+      const n = readNames();
+      if (n) names = [n.token, n.secret];
+    } catch {}
+    console.error(`vault-lean couldn't ${what}: ${mask(String((e as Error)?.message ?? e), names)}`);
+    throw new Told("the Vault page couldn't be written");
+  }
+}
 
 const namesFile = () => path.join(vaultDir(), "vault-page.json");
 const fresh = (): Names => ({ token: newSecret(), secret: newSecret(), ...(linksHidden() ? { hidden: true as const } : {}) });
@@ -67,27 +88,67 @@ async function writePage(names: Names): Promise<void> {
   if (there <= VERSION) writePublic(pub(`${names.token}.html`), await pageHtml(template, { token: names.token, secret: names.secret, version: VERSION }));
 }
 
+/** A file of the Vault's pages in the public folder: <token>.html or <token>-<section>.json, the
+ *  token being at least 8 base64url characters. Its token, or null for any other file. */
+function tokenOf(file: string): string | null {
+  const found = /^([A-Za-z0-9_-]{8,})\.html$/.exec(file) ?? /^([A-Za-z0-9_-]{8,})-(?:logins|keys)\.json$/.exec(file);
+  return found ? found[1] : null;
+}
+
+/** Removes every page file of the Vault's that isn't under `token`: what a rotation left when it died
+ *  between writing the new names and removing the old files, or what a writer put back. Other files stay. */
+function sweep(token: string): void {
+  for (const file of listPublic(pub(""))) {
+    const there = tokenOf(file);
+    if (there !== null && there !== token) removePublic(pub(file));
+  }
+}
+
+const namesLock = () => `${namesFile()}.lock`;
+
+/** Writes the page under the names as they are under their lock, so that no rotation can slip in
+ *  between reading the names and writing under them, then `write`s the section's files, keeps the
+ *  link (`rotated`: the token was just replaced) and sweeps what isn't under the token. */
+async function publish(write: (names: Names) => void | Promise<void>, rotated = false): Promise<Names> {
+  const seen = readNames() ?? (await updateJson(namesFile(), fresh, (n) => n));
+  return locked(namesLock(), "the Vault's page", async () => {
+    const names = readNames() ?? seen;
+    await writePage(names);
+    await write(names);
+    await keepLink(`/${pub(`${names.token}.html`)}`, rotated);
+    sweep(names.token);
+    return names;
+  });
+}
+
 /** Brings the names in line with the switch (#shared/page-links). Switch off: the mark goes, since
  *  the links go out again. Switch on, names not marked: what the section's page posted under the old
- *  secret is applied first, then the names are replaced, so the link the agent may have is dead. */
+ *  secret is applied first, then the names are replaced, so the link the agent may have is dead, and
+ *  the page is written under the new ones. Then whatever isn't under the current token goes. */
 async function settle(section: Section, drain: () => Promise<void>): Promise<void> {
   const names = readNames();
-  if (!names || !!names.hidden === linksHidden()) return;
-  if (!linksHidden()) return void (await updateJson(namesFile(), fresh, (n) => void delete n.hidden));
-  await inTurn(titleOf(section), drain);
-  await rotateNames((n) => !n.hidden);
+  if (!names) return;
+  if (!!names.hidden !== linksHidden()) {
+    if (!linksHidden()) await updateJson(namesFile(), fresh, (n) => void delete n.hidden);
+    else {
+      await inTurn(titleOf(section), drain);
+      const { replaced } = await quiet("replace the page", () => rotateNames((n) => !n.hidden));
+      if (replaced) return void (await quiet("write the page", () => publish(() => {}, true)));
+    }
+  }
+  await quiet("clear the old page", () => locked(namesLock(), "the Vault's page", () => void (readNames() && sweep(readNames()!.token))));
 }
+
+/** Replaces the Vault's names once if the switch asks for it and a call hasn't yet (what show starts
+ *  with), without writing the section: for a skill's calls that show no page. Nothing without a Vault. */
+export const settleVault = (section: Section, drain: () => Promise<void>): Promise<void> => settle(section, drain);
 
 /** Writes the Vault's page and the section's `state` (nothing secret), and applies the section's
  *  events with `drain` as they come for a while (#shared/pages watch); answers the page's address,
  *  from AnythingLLM's address `base` (null: from the root of the host the link is opened on). */
 export async function show(section: Section, state: unknown, drain: () => Promise<void>, base: string | null): Promise<string> {
   await settle(section, drain);
-  const names = readNames() ?? (await updateJson(namesFile(), fresh, (n) => n));
-  await writePage(names);
-  writePublic(pub(`${names.token}-${section}.json`), JSON.stringify(state));
-  // A hint for whoever shows the page to the user: a failure is only logged, the page is written.
-  await keepLink(`/${pub(`${names.token}.html`)}`);
+  const names = await quiet("write the page", () => publish((n) => void writePublic(pub(`${n.token}-${section}.json`), JSON.stringify(state))));
   const until = Date.now() + WATCH_MS;
   watch(titleOf(section), drain, () => until);
   return `${base ?? ""}/${pub(`${names.token}.html`)}`;
@@ -107,16 +168,20 @@ export function refresh(section: Section, state: unknown): void {
 
 /** The section's events posted since the last time, oldest first: only those with the Vault's secret. */
 export function take(section: Section): Record<string, unknown>[] {
+  // The events first, the names after: a rotation in between leaves the names newer than the events,
+  // which are then dropped (they carry the old secret), never the other way round.
+  const events = takeEvents(titleOf(section), MARKER);
   const names = readNames();
-  return takeEvents(titleOf(section), MARKER).filter((e) => !!names && sameSecret(e.secret, names.secret));
+  return events.filter((e) => !!names && sameSecret(e.secret, names.secret));
 }
 
 /** Runs `pass` in turn with the section's watch (#shared/pages inTurn). */
 export const inTurnFor = (section: Section, pass: () => Promise<void>): Promise<void> => inTurn(titleOf(section), pass);
 
 /** New names when `due` says so of the names as they are under the lock (always, by default); the
- *  old page goes, and each section's state moves under the new name. Answers the names now. */
-async function rotateNames(due: (names: Names) => boolean = () => true): Promise<Names> {
+ *  old page goes, and each section's state moves under the new name. Answers the names now and
+ *  whether they were replaced. */
+async function rotateNames(due: (names: Names) => boolean = () => true): Promise<{ now: Names; replaced: boolean }> {
   const existed = readNames() !== null;
   let old: Names | null = null;
   const now = await updateJson(namesFile(), fresh, (n) => {
@@ -133,13 +198,11 @@ async function rotateNames(due: (names: Names) => boolean = () => true): Promise
     }
     removePublic(pub(`${token}.html`));
   }
-  return now;
+  return { now, replaced: old !== null };
 }
 
 /** A new link: new names; the old page goes, and each section's state moves under the new name. */
 export async function rotate(): Promise<void> {
-  const now = await rotateNames();
-  await writePage(now);
-  // A hint for whoever shows the page to the user: a failure is only logged, the page is written.
-  await keepLink(`/${pub(`${now.token}.html`)}`);
+  await quiet("replace the page", () => rotateNames());
+  await quiet("write the page", () => publish(() => {}, true));
 }
