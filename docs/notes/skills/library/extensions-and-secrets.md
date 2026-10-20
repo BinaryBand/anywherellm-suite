@@ -1,10 +1,10 @@
 # Extensions and computing on secrets
 
-A design for two things the library doesn't have: pre-written host functions in `kit` (extensions), and functions that use a secret without seeing it (signing, for one). Decided in the session of 2026-10-18, and **not built**: build it when a function needs it (see "When to build").
+Pre-written host functions in `kit` (extensions), and functions that use a secret without seeing it (signing, for one). Decided in the session of 2026-10-18; **built 2026-10-20** as `kit.crypto` and `kit.secret`, with signing keys on the Vault (see "As built").
 
-## Why not now
+## Why it was built
 
-Nothing calls for it yet. SSH targets were planned, built, hardened and tested on a Pi, then archived a day later because they were used much less than expected (branch `archive/ssh-targets`). The one real use of signing then was the Muse email channel: its functions signed through `kit.ssh.exec` on the Pi, with the seed on the Pi, kept from the model only by an instruction in the toolkit's notes. It stopped with the archive, by choice.
+SSH targets were planned, built, hardened and tested on a Pi, then archived a day later because they were used much less than expected (branch `archive/ssh-targets`). The one real use of signing then was the Muse email channel: its functions signed through `kit.ssh.exec` on the Pi, with the seed on the Pi, kept from the model only by an instruction in the toolkit's notes. It stopped with the archive. Muse signing was then wanted back, and was served for a while by a temporary skill outside the suite (`sshsig`, in `anythingllm-temp-skills`), which kept its key in this vault as an entry of kind `signing`. That is the "When to build" row for both, below.
 
 ## Extensions: host functions that only compute
 
@@ -19,7 +19,7 @@ The rule: **an extension only computes.** JSON in, JSON out; no network, no file
 
 An extension runs on the host, outside the sandbox's limits: not under its 32 MB or its deadline interrupt, and synchronous work blocks AnythingLLM's whole process. So each one caps its input (1 MB a call, say) and stays fast. Its refusals are `LibraryError`s, which the script sees as they are.
 
-The first one, when wanted: `kit.crypto` with `sha256`/`sha512`, `hmac` (the key given by the function), `random`, `uuid`, and Ed25519 `keypair`/`sign`/`verify` with the keys passed in. It doesn't solve key custody: a key it makes is the function's, and the only place to keep it is `kit.state`, plain JSON that any later function of the toolkit can return.
+The first one is `kit.crypto` (`src/extensions/crypto.ts`): `sha256`/`sha512`, `hmac` (the key given by the function), `random`, `uuid`, Ed25519 `keypair`/`sign`/`verify` with the keys passed in, and `sshsig.verify`, which checks an SSH signature against the public keys given. Bytes go in as text or `{ base64 }`, at most 1 MB a call. It doesn't solve key custody: a key it makes is the function's, and the only place to keep it is `kit.state`, plain JSON that any later function of the toolkit can return.
 
 ## Computing on secrets
 
@@ -46,12 +46,27 @@ kit.http({ path, sign: { key: "aws", scheme: "sigv4" } })   // computed inside t
 
 A safe sign still signs whatever the script asks. The key doesn't leak, but a script could sign a message the user never meant. That's bounded, not removed:
 
-- **A key bound to its purpose.** A vault entry of a new kind, `signing`: its algorithm, the operations it allows, the toolkits that may use it, whether a scheduled job may ("May run unattended"), and a rate. Made in the vault (`crypto.randomBytes`) or pasted on the Library page, sealed as a key is.
-- **Its own domain.** The host puts the key's fixed prefix (`muse-v1:`) before what it signs, so its signatures mean nothing anywhere else.
-- **Every use recorded:** in the run's record, beside its requests, and on the Library page.
-- **Approval in `policy.ts`**, as an `Op` of its own, when guardrails come.
+- **A key bound to its purpose.** A vault entry of a new kind, `signing`: `{ user: its name, site: its namespace, algorithm: "ed25519", seed, unattended }`, the shape `sshsig` saved, so its keys are read as they are. Made on the Vault (`crypto.randomBytes`) or its seed imported there, sealed as a key is. It signs in a scheduled job only when the user lets it ("Let it sign in scheduled jobs"), and at most 60 times a minute from one process.
+- **Its own domain.** A key signs only in its own namespace, set by the user. SSHSIG signs the namespace with the data, so a signature made in one doesn't check in another. *Changed from the design:* a fixed byte prefix (`muse-v1:`) before the data would have broken SSHSIG, which peers check with `ssh-keygen -Y verify` or `sig.py`, and the namespace already separates domains. A raw Ed25519 scheme with a prefix can come when something needs one.
+- **No list of toolkits that may use it.** *Dropped from the design:* the model names and saves toolkits, so a key limited to toolkit "muse" is used by any function the model saves into "muse". What bounds a key is what the model can't change: its namespace, the unattended switch, the rate and the record.
+- **Every use recorded:** in the run's record (`signed`, beside its requests), and in what `run` answers.
+- **Approval in `policy.ts`**, as an `Op` of its own (`sign`), called on every signature; it allows everything until guardrails come, as the others do.
 
 Safe against: the model learning a key, and a script taking one out. Bounded: a script using a key for something unintended. Not covered, as for the vault as a whole: someone with the whole machine.
+
+## As built
+
+| Part | Where |
+| --- | --- |
+| The SSHSIG format: sign, check, key lines, fingerprints | `src/sshsig.ts` |
+| `kit.crypto` | `src/extensions/crypto.ts` |
+| The vault kind `signing`; the host signs | `src/signing.ts`; joined in `kitFor()` (`runs.ts`) |
+| The Vault's Signing tab (make, import, let into jobs, copy the public key, delete) | `shared/vault.html` (page version 4), its events in `page.ts` |
+| A channel's own rules (stamps, peers, how a body is normalized) | the `sshsig-channel` snippet: a function the agent saves, not host code |
+
+A toolkit no longer needs `base_urls`: one whose functions only compute or sign has none.
+
+**What's left before `sshsig` can go.** Signing is all host code: the namespace, the switch, the rate and the record. Checking isn't quite: the cryptographic check is `kit.crypto.sshsig.verify`, but the function that says `result=VALID` is one the model saved, and a prompt injection that gets the model to save it again could make it say a forged message is valid. Approval of saves in `policy.ts` (the guardrails), or pinning a toolkit's functions, closes that. Until then `sshsig`'s verify is the stronger one.
 
 ## When to build
 
@@ -61,4 +76,4 @@ Safe against: the model learning a key, and a script taking one out. Bounded: a 
 | Muse signing is wanted back, or an API needs SigV4 or a signed JWT | `kit.crypto` and `kit.secret` together, as one phase: crypto alone doesn't sign with a kept key |
 | Neither | Nothing |
 
-Sizes guessed, not measured: `kit.crypto` about 100 to 150 lines with its tests; `kit.secret.sign` about 200 to 300 (the vault kind, a page tab, purpose binding, the record, the policy op). Measure Ed25519 in QuickJS before choosing where it runs.
+Sizes guessed beforehand: `kit.crypto` about 100 to 150 lines with its tests; `kit.secret.sign` about 200 to 300. Measured as built: about 330 lines of new source (the format 111, `kit.crypto` 92, the vault kind 123), 67 of snippet, about 140 changed across the handler, the run, the pages and the guide, and 237 of tests: more than guessed, because of the Vault's tab, importing a seed and the snippet. Ed25519 runs on the host (Node's crypto), so it wasn't measured in QuickJS.
