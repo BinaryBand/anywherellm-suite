@@ -144,8 +144,7 @@ const samePlace = (signIn: Readonly<SignIn>, site: string, oauth: Definition): b
  *  the suite's own from a preset), and its tokens and the code or link it waits on while how it
  *  signs in and its client are unchanged. One sign-in per provider: a new name for a provider
  *  signed in at already is refused, naming the one there, and so is a definition for a preset's
- *  sign-in, and one that moves a sign-in holding the user's client to another site or address: the
- *  client, and the tokens it got, go only where the user gave it for. */
+ *  sign-in, and one that moves a sign-in holding the user's client to another site or address. */
 export async function saveSignIn(site: string, label: string, oauth: Definition, sharedClient?: string): Promise<void> {
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;

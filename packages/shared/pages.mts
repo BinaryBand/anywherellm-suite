@@ -32,8 +32,7 @@ export const publicDir = (): string => process.env.ANYTHINGLLM_PUBLIC_DIR || pat
 export function publicPath(rel: string): string {
   const dir = path.resolve(publicDir());
   const file = path.resolve(dir, rel);
-  const inside = path.relative(dir, file);
-  if (inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) throw new Error(`${JSON.stringify(rel)} isn't in AnythingLLM's public folder`);
+  if (file !== dir && !file.startsWith(dir + path.sep)) throw new Error(`${JSON.stringify(rel)} isn't in AnythingLLM's public folder`);
   return file;
 }
 

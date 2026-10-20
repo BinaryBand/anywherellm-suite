@@ -29,7 +29,7 @@ import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
 import { LibraryError } from "./errors";
 import * as listing from "./listing";
-import { OAUTH_PAGE, PENDING_MS, finish, isState, redirectFor, waiting, type SignInState } from "./oauth";
+import { OAUTH_PAGE, PENDING_MS, finish, redirectFor, waiting, type SignInState } from "./oauth";
 import { outcomeOf, recentRuns } from "./runs";
 import * as secrets from "./secrets";
 import * as store from "./store";
@@ -163,9 +163,14 @@ export function refresh(base: string | null): void {
 export async function oauthPage(state: string, label: string): Promise<void> {
   putPublic(path.basename(OAUTH_PAGE), template("oauth"));
   putPublic(`s-${state}.json`, JSON.stringify({ key: pageKey(), title: TITLE, label }));
+  sweepStates();
+  await change((p) => void (p.watchUntil = Math.max(p.watchUntil, Date.now() + PENDING_MS + 60 * 1000)));
+}
+
+/** Removes the files of sign-ins no longer waited for: those finished, and those that ran out. */
+function sweepStates(): void {
   const keep = new Set(waiting().map((s) => `s-${s}.json`));
   for (const old of listPublic(pub("")).filter((f) => f.startsWith("s-") && !keep.has(f))) removePublic(pub(old));
-  await change((p) => void (p.watchUntil = Math.max(p.watchUntil, Date.now() + PENDING_MS + 60 * 1000)));
 }
 
 /** Shows a need at the top of the Vault's keys: the agent asked for a key or a client the user gives there. */
@@ -178,10 +183,10 @@ const text = (v: unknown, n = 500) => String(v ?? "").trim().slice(0, n);
 
 /** A provider's redirect, as oauth.html (or the Vault's Finish a sign-in) posts it: taken only for a
  *  sign-in waiting with its state, which is the check, and the only one: anyone with the pages' key
- *  can post it. The state's file goes with the sign-in it was for. */
+ *  can post it, so the state names no file; the files of sign-ins no longer waited for go after. */
 async function oauthCode(e: Record<string, unknown>): Promise<void> {
-  const state = text(e.state, 200);
-  if (isState(state) && (await finish(state, text(e.code, 4000) || null, text(e.error) || null))) removePublic(pub(`s-${state}.json`));
+  await finish(text(e.state, 200), text(e.code, 4000) || null, text(e.error) || null);
+  sweepStates();
 }
 
 /** Applies one event the Library page (or oauth.html) posted; answers whether the functions changed,

@@ -100,22 +100,16 @@ function secureUrl(value: unknown, what: string): string {
   return url.href;
 }
 
-/** The domain `host` stands for, as where a sign-in's client may go: the host less its first label
- *  (accounts.google.com: google.com), so a token address may sit beside the sign-in page or the
- *  site, as Google's oauth2.googleapis.com sits beside www.googleapis.com. An IP address, a host of
- *  two labels (github.com), and one whose parent is a registry's rather than a company's (two labels,
- *  a country's two letters after at most three: co.uk, com.au), are their own domain. No list of
- *  every registry: hosts under the few that let anyone have a name (github.io) can still reach
- *  their neighbours, which is why the Vault shows where the client goes. */
+/** The domain `host` stands for: the host less its first label (accounts.google.com: google.com);
+ *  an IP address, a host of two labels (github.com) or one under a registry's two (co.uk) is its
+ *  own. Why, and what it can't tell apart: docs/notes/skills/library, "Where a sign-in's client goes". */
 function domainOf(host: string): string {
   const parent = host.slice(host.indexOf(".") + 1);
   return isIP(host) || !parent.includes(".") || /^[a-z]{1,3}\.[a-z]{2}$/.test(parent) ? host : parent;
 }
 
-/** `url`, the definition's `what`, when it's on the domain of authorize_url or of `site`: the
- *  client's secret, the code and the refresh token go there, so only to the provider the user signs
- *  in at or the site its tokens go to already. Anywhere else, an agent steered by what it read could
- *  have the user's code traded at an address of its own. */
+/** `url`, the definition's `what`, when it's on the domain of authorize_url or of `site`: the client's
+ *  secret and the code go there, so only to the provider or to where the tokens go already. */
 function onOwnDomain(url: string, what: string, authorize: string, site: string): string {
   const hostIn = (u: string) => bareHost(new URL(u)).replace(/\.+$/, ""); // github.com. is github.com
   const host = hostIn(url);
@@ -152,10 +146,6 @@ export const waiting = (): string[] =>
     .entries()
     .filter(isSignIn)
     .flatMap((e) => (e.pending && e.pending.until > Date.now() ? [e.pending.state] : []));
-
-/** A state as start makes it (24 random bytes, base64url): what a page posts back is taken for one
- *  only when it has that shape, since it names the sign-in's public file. */
-export const isState = (given: string): boolean => /^[\w-]{32}$/.test(given);
 
 /** Starts the sign-in `given`: answers the provider's sign-in address and the state it comes back
  *  with, which the vault keeps (with the PKCE verifier) until the code comes back or it runs out. */
@@ -298,9 +288,8 @@ const tokenRequest = async (signIn: Readonly<SignIn>, form: Record<string, strin
 
 /** After the provider sent the user back with `code` (or `error`) for `state`: takes the sign-in
  *  waiting with that state (once: a state no sign-in waits for is ignored), trades the code for
- *  tokens and keeps them, or keeps why it didn't work, for library and the page to show. Answers
- *  whether it took one. */
-export async function finish(state: string, code: string | null, error: string | null): Promise<boolean> {
+ *  tokens and keeps them, or keeps why it didn't work, for library and the page to show. */
+export async function finish(state: string, code: string | null, error: string | null): Promise<void> {
   const taken = await vault.update((v) => {
     const found = v.entries.find((e) => isSignIn(e) && e.pending?.state === state && e.pending.until > Date.now()) as SignIn | undefined;
     if (!found) return null;
@@ -308,7 +297,7 @@ export async function finish(state: string, code: string | null, error: string |
     found.pending = null;
     return copy;
   });
-  if (!taken?.pending) return false;
+  if (!taken?.pending) return;
   let outcome: { tokens: Tokens } | { error: string };
   try {
     if (error || !code) throw new LibraryError(`the provider didn't give a code${error ? `: ${error.slice(0, 200)}` : ""}`);
@@ -320,7 +309,6 @@ export async function finish(state: string, code: string | null, error: string |
     const kept = v.entries.find((e) => e.id === taken.id);
     if (kept) Object.assign(kept, "tokens" in outcome ? { tokens: outcome.tokens, error: null } : { error: outcome.error });
   });
-  return true;
 }
 
 /** The access token to send for `signIn`, renewed first when it has run out or is about to. In this
