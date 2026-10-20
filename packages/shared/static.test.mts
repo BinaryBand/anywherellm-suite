@@ -36,3 +36,12 @@ test("only plain relative names are read: nothing reaches outside the folder", (
   fs.writeFileSync(path.join(tmp, "secret.txt"), "secret");
   for (const name of ["../secret.txt", "/etc/passwd", "guide/../../secret.txt", ".hidden", "../x"]) assert.equal(files.get(name), null, name);
 });
+
+test("a file saved with Windows line endings is read with \\n, shipped or tuned", () => {
+  const dir = path.join(tmp, "d");
+  fs.mkdirSync(path.join(dir, "parts"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "parts", "tuned.html"), "<!--part\r\n{}\r\n-->\r\nbody\r\n");
+  const files = staticFiles({ "parts/shipped.html": "a\r\nb" }, dir);
+  assert.equal(files.get("parts/tuned.html")?.text, "<!--part\n{}\n-->\nbody\n");
+  assert.equal(files.get("parts/shipped.html")?.text, "a\nb");
+});

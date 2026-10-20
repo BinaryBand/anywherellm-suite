@@ -95,7 +95,7 @@ export function staticFiles(dir, skill = "") {
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(dir, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"))
     .sort();
-  const read = (/** @type {string} */ file) => fs.readFileSync(file, "utf8");
+  const read = (/** @type {string} */ file) => fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n"); // the same bundle on every OS
   return Object.fromEntries([
     ...names.map((name) => [name, read(path.join(dir, name))]),
     ...Object.entries(PAGE_LIBRARIES[skill] || {}).map(([name, from]) => [name, read(path.join(here, from))]),

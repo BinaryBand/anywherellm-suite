@@ -18,7 +18,7 @@ const KINDS: Record<string, [string, string]> = {
   components: ["component", "Components (guide topic for the code):"],
   figures: ["figure", "Figures (data, drawn by parts.js):"],
 };
-const HEADER = /^(?:<!--part|\/\*part)\n([\s\S]*?)\n(?:-->|\*\/)\n/;
+export const HEADER = /^(?:<!--part|\/\*part)\n([\s\S]*?)\n(?:-->|\*\/)\n/;
 const SLOT = "<!--slot-->";
 const SCRIPTS = "<!--scripts-->";
 export const DEFAULT_TEMPLATE = "column";

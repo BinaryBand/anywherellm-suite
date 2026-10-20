@@ -21,6 +21,9 @@ export interface StaticFiles {
   list(prefix: string): string[];
 }
 
+/** A file's lines end in \n whatever editor saved it or checkout wrote it: the parts' headers and the guides are matched on that. */
+const lf = (text: string): string => text.replace(/\r\n/g, "\n");
+
 /** Only plain relative paths: no "..", no absolute path, nothing hidden. */
 const safe = (name: string): boolean => /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i.test(name) && !name.split("/").includes("..");
 
@@ -30,9 +33,9 @@ export function staticFiles(shipped: Record<string, string>, overrideDir: string
       if (!safe(name)) return null;
       const own = path.join(overrideDir, name);
       try {
-        return { text: fs.readFileSync(own, "utf8"), tuned: own };
+        return { text: lf(fs.readFileSync(own, "utf8")), tuned: own };
       } catch {
-        return Object.hasOwn(shipped, name) ? { text: shipped[name], tuned: null } : null;
+        return Object.hasOwn(shipped, name) ? { text: lf(shipped[name]), tuned: null } : null;
       }
     },
     list(prefix) {

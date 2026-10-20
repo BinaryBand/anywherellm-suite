@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { SAMPLES } from "./harness.mts";
-import { file } from "../src/parts.ts";
+import { file, HEADER } from "../src/parts.ts";
 import { problems, schemaProblems, withDefaults } from "../src/schema.ts";
 
 /** The components static/ holds, by file name. */
@@ -36,7 +36,7 @@ test("an object's keys are counted against minProperties and maxProperties", () 
 
 test("every schema the components carry is one this checker knows every keyword of", () => {
   for (const name of components()) {
-    const head = /^<!--part\n([\s\S]*?)\n-->/.exec(file(`parts/components/${name}`))!;
+    const head = HEADER.exec(file(`parts/components/${name}`))!;
     const { schema } = JSON.parse(head[1]);
     if (schema) assert.deepEqual(schemaProblems(schema), [], name);
   }
