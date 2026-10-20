@@ -49,3 +49,7 @@ An entry that isn't an origin is skipped. A file of any other shape (an earlier 
 ## Writing
 
 Both sides change a file under its lock: a folder `<file>.lock` made with `mkdir`, held for milliseconds, and broken when older than 10 s. The new content is written to a temporary file and renamed over the old one, mode `0600`. A reader takes the file as a whole; the skills cache `allowed.json` by its inode, modification time and size.
+
+## Checked
+
+`tools/e2e-fence` runs this suite's shared code against a real bridge in one storage folder: the ask the skill writes as the bridge reads it, each decision, `allowed.json` as the fence reads it, `DELETE /allowed?origin=`, the lock taken in turn, and an expired ask. Run it after changing anything here, on either side.

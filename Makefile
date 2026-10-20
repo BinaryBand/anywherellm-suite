@@ -2,7 +2,7 @@
 # implemented here, so `make` and the scripts never disagree.
 
 .DEFAULT_GOAL := help
-.PHONY: help hooks test check e2e e2e-skill package install
+.PHONY: help hooks test check e2e e2e-skill e2e-fence package install
 
 PART    ?=# install, control or skills; empty: all
 SKILL   ?=# a skill's folder name under packages/skills
@@ -32,6 +32,9 @@ e2e: ## Install into a throwaway AnythingLLM and run the suite against it (needs
 
 e2e-skill: ## Run a skill's own check inside a throwaway AnythingLLM (SKILL=browser; empty: every skill that has one)
 	tools/e2e-skill $(SKILL)
+
+e2e-fence: ## Check the fence's asks against a real anywherellm-bridge checkout (BRIDGE=<folder>; empty: ../anywherellm-bridge)
+	tools/e2e-fence $(BRIDGE)
 
 package: ## Build and zip a skill into dist/ (SKILL=library)
 	tools/package $(SKILL)
