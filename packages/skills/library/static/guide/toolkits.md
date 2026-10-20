@@ -16,4 +16,6 @@ A toolkit is one service's API, as you found it. Save it with save, service (its
 - secrets: the keys its functions send (topic secrets); the first goes with a request unless it names another.
 - notes: what a function needs to know and the docs don't make easy to find: endpoints, paging, limits, quirks. Keep them short; you'll read them again before writing the next function.
 
+A toolkit the user locked (library marks it "locked by the user") can't be saved, changed or removed, nor its functions, and its functions run only functions of locked toolkits. The user locks one on the Library page once they've read its functions, so that nothing changes what they read. If it needs a change, say what and why, and ask them to unlock it there. Never save a copy under another name to get around it.
+
 Saving again replaces only what you give. save with remove "github" removes the toolkit and its functions (its keys stay); remove "github.list_issues" removes one function.

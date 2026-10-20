@@ -9,7 +9,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { call, idOf, library, postVault, reset, runRecord, seal, skillDir, storage, vaultState } from "./harness.mts";
+import { call, idOf, library, pageConfig, pageState, post, postVault, reset, runRecord, seal, skillDir, storage, vaultState } from "./harness.mts";
 import * as vault from "#shared/vault";
 
 const hasKeygen = spawnSync("ssh-keygen", ["-?"]).error === undefined;
@@ -203,6 +203,10 @@ test("the sshsig-channel snippet signs to a peer and checks a peer's messages, a
   assert.notEqual(source, snippet);
   const inputs = { op: { type: "string", required: true }, to: { type: "string" }, text: { type: "string", required: true } };
   assert.match(await call({ action: "save", service: "chan", toolkit: { title: "A channel" }, function: { name: "channel", description: "Signs and checks.", inputs, source } }), /Saved chan\.channel/);
+  await call({ action: "library" });
+  post({ secret: pageConfig().secret, ev: "toolkit-lock", service: "chan" }); // as the snippet asks: the user reads it and locks it
+  await call({ action: "library" });
+  assert.equal(pageState().toolkits[0].locked, true);
   const result = async (input: Record<string, string>) => {
     const record = runRecord(idOf(await call({ action: "run", name: "chan.channel", inputs: input })));
     return record.status === "ok" ? record.result : `${record.error.name}: ${record.error.message}`;

@@ -80,7 +80,7 @@ function state(base: string | null) {
     vault: vaultPage.linkOf(base),
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
-      return { service, title: kit.title, base_urls: kit.base_urls, secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
+      return { service, title: kit.title, locked: kit.locked === true, base_urls: kit.base_urls, secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
     }),
     runs: recentRuns(20).map((r) => ({ id: r.id, fn: r.fn, status: r.status, trigger: r.trigger, ended: r.ended, ms: r.ms, error: r.error ? outcomeOf(r) : null, result: r.status === "ok" ? outcomeOf(r).slice(0, 500) : null })),
   };
@@ -150,6 +150,10 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<"relis
     }
     case "toolkit-delete":
       store.removeToolkit(store.serviceOf(e.service));
+      return "relist";
+    case "toolkit-lock":
+    case "toolkit-unlock":
+      store.setLocked(store.serviceOf(e.service), e.ev === "toolkit-lock");
       return "relist";
     case "rotate":
       return "rotate";

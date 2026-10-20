@@ -81,11 +81,16 @@
     const toolkits = $("toolkits"), runs = $("runs");
     toolkits.replaceChildren(...(s.toolkits.length ? [] : [el("p", { className: "cap", textContent: "No toolkits yet." })]));
     for (const t of s.toolkits) {
+      // A locked toolkit: the agent can't change or remove it, nor this page delete in it, until it's unlocked.
+      const lock = t.locked
+        ? el("button", { className: "act quiet", type: "button", textContent: "Unlock", onclick: () => confirm("Unlock? The agent can change its functions again.") && post("toolkit-unlock", { service: t.service }) })
+        : el("button", { className: "act", type: "button", textContent: "Lock", onclick: () => post("toolkit-lock", { service: t.service }) });
       toolkits.append(el("div", { className: "card" },
-        el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: "cap", textContent: t.service })),
+        el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: t.locked ? "good" : "cap", textContent: t.locked ? `${t.service} · locked` : t.service })),
         el("p", { className: "cap", textContent: `${t.base_urls.join(", ") || "no base address"}; keys: ${t.secrets.join(", ") || "none"}` }),
-        ...t.functions.map((f) => el("details", {}, el("summary", { textContent: `${f.name}: ${f.description} (v${f.version})` }), el("pre", { textContent: f.source }), remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))),
-        remove("Delete the toolkit", "toolkit-delete", { service: t.service })));
+        ...t.functions.map((f) => el("details", {}, el("summary", { textContent: `${f.name}: ${f.description} (v${f.version})` }), el("pre", { textContent: f.source }), t.locked ? null : remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))),
+        el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can't change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can't change a locked toolkit." }),
+        lock, " ", t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service })));
     }
 
     runs.replaceChildren(...(s.runs.length ? [] : [el("p", { className: "cap", textContent: "No runs yet." })]));

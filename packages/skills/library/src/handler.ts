@@ -56,6 +56,9 @@ const runLine = (r: store.RunRecord) => `- ${r.fn}: ${r.status}${r.error ? ` (${
 
 type Saved = Map<string, secrets.Secret>;
 
+/** How a locked toolkit is marked where the agent reads it. */
+const LOCKED = " (locked by the user: it can't be changed or removed)";
+
 /** The toolkit's secrets, each as it is: saved, signed in, or not yet. */
 function keyStatus(kit: store.Toolkit, saved: Saved): string {
   const status = (label: string) => saved.get(label.toLowerCase())?.status ?? "not saved: ask for it with secret";
@@ -88,7 +91,7 @@ function toolkitLines(service: string, saved: Saved): string[] {
   if (!kit) throw new LibraryError(`there's no toolkit "${service}"; the toolkits are: ${store.services().join(", ") || "none yet"}`);
   const fns = store.functions(service);
   return [
-    `Toolkit ${service}: ${kit.title}`,
+    `Toolkit ${service}: ${kit.title}${kit.locked ? LOCKED : ""}`,
     `Base addresses: ${kit.base_urls.join(", ") || "none"}`,
     `Hosts its functions reach: ${store.hostsOf(kit).join(", ") || "none"}`,
     `Keys: ${keyStatus(kit, saved)}`,
@@ -108,7 +111,7 @@ function listingLines(saved: Saved): string[] {
   const lines = ["The library's toolkits (library with service for one in full):"];
   for (const service of services) {
     const kit = store.toolkit(service)!;
-    lines.push(`- ${service}: ${kit.title}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved)}`);
+    lines.push(`- ${service}: ${kit.title}${kit.locked ? LOCKED : ""}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved)}`);
   }
   return lines;
 }

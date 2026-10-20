@@ -182,6 +182,7 @@ function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: FnSta
       if (depth + 1 >= LIMITS.depth) throw new LibraryError(`functions run functions at most ${LIMITS.depth} deep`);
       const q = store.qualified(name);
       const next = loaded(q.service, q.name);
+      if (kit.locked && !next.kit.locked) throw new LibraryError(`${kit.service} is locked, and a locked toolkit's functions run only locked toolkits' functions: ${q.service} isn't locked`);
       const outcome = await call(next.kit, next.f, store.inputChecked(next.f, input), budget, depth + 1, signal);
       if (outcome.ok) return outcome.value;
       throw new LibraryError(`${q.service}.${q.name} failed: ${failureText(outcome.error)}`);
