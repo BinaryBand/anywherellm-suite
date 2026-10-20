@@ -1,6 +1,6 @@
-// What the library's tests share: AnythingLLM's storage, public folder and server modules standing
-// in, the built handler.js called as AnythingLLM's agent calls it, and what the Library page and the
-// Vault post, written as AnythingLLM's collector writes it.
+// What the library's tests share: AnythingLLM's storage and public folder standing in, the built
+// handler.js called as AnythingLLM's agent calls it, and what the Library page and the Vault post,
+// written as AnythingLLM's collector writes it.
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -25,7 +25,6 @@ export const publicDir = path.join(tmp, "public");
 export const library = path.join(storage, "library-lean");
 process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
-process.env.ANYTHINGLLM_SERVER_DIR = path.join(testsDir, "fixtures", "server");
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.FENCE_ALLOW = "127.0.0.1";
 
@@ -43,6 +42,9 @@ export async function until(ok: () => boolean, ms = 4000): Promise<void> {
   for (const end = Date.now() + ms; !ok() && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
   assert.ok(ok(), `not within ${ms} ms`);
 }
+
+/** The skill's settings beyond ANYTHINGLLM_URL (NTFY_URL...), for every call: a test sets what it needs. */
+export const settings: Record<string, string> = {};
 
 /** The question cards the skill showed: none, ever (a card shows its answers in the chat). */
 export const cardsShown: unknown[] = [];
@@ -68,7 +70,7 @@ export function agentRun(slug: string | null = "work", api = false): object {
  *  `base`. */
 export function call(args: Record<string, unknown>, at: Call | string | null = {}): Promise<string> {
   const { slug = "work", base, said, run } = at === null || typeof at === "string" ? { slug: at } : at;
-  const self = { super: run ?? agentRun(slug, !!said), runtimeArgs: base ? { ANYTHINGLLM_URL: base } : {}, logger: () => {}, ...(said ? { introspect: (m: string) => said.push(m) } : {}) };
+  const self = { super: run ?? agentRun(slug, !!said), runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {}, ...(said ? { introspect: (m: string) => said.push(m) } : {}) };
   return handler().call(self, args);
 }
 

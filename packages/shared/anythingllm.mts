@@ -1,9 +1,7 @@
-// Where a skill finds AnythingLLM: its storage folder, and its server's own modules, which a skill
-// requires by a path built at run time (so esbuild leaves them alone). AnythingLLM's server code is
-// not a public API: each skill types what it uses of it (its host.ts).
+// Where a skill finds AnythingLLM: its storage folder and its server folder. AnythingLLM's server
+// code is not a public API: each skill types what it uses of it (its host.ts).
 
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 /** AnythingLLM's storage folder: STORAGE_DIR, which AnythingLLM sets, else the folder three above
@@ -15,14 +13,9 @@ export function storageDir(): string {
   return path.resolve(__dirname, "..", "..", "..");
 }
 
-/** AnythingLLM's server folder, whose modules a skill can require: ANYTHINGLLM_SERVER_DIR, else
- *  the working directory AnythingLLM runs in (/app/server in its image). */
+/** AnythingLLM's server folder: ANYTHINGLLM_SERVER_DIR, else the working directory AnythingLLM runs
+ *  in (/app/server in its image). */
 export const serverDir = (): string => process.env.ANYTHINGLLM_SERVER_DIR || process.cwd();
-
-/** One of AnythingLLM's server modules, such as "utils/PushNotifications". */
-export function serverRequire<T>(what: string): T {
-  return createRequire(path.join(serverDir(), "index.js"))(path.join(serverDir(), what)) as T;
-}
 
 /** One value per process, made the first time: kept on globalThis, since AnythingLLM loads a
  *  skill's handler.js afresh for each agent run, and shared by every skill's bundled copy, and by
@@ -96,22 +89,4 @@ export const baseUrlOf = (self: { runtimeArgs?: Record<string, string | undefine
 export function jobTimeLeft(): number | null {
   if (typeof process.send !== "function") return null;
   return (Number(process.env.SCHEDULED_JOB_TIMEOUT_MS) || 5 * 60 * 1000) - process.uptime() * 1000;
-}
-
-/** Whom a push goes to: the user who called (multi-user mode), else AnythingLLM's "primary". */
-export const pushTo = (self: Invoked | undefined): string | number => self?.super?.handlerProps?.invocation?.user_id ?? "primary";
-
-/** AnythingLLM's web push (utils/PushNotifications), as far as a skill uses it. */
-interface PushService {
-  loadSubscriptions(): Promise<unknown>;
-  sendNotification(n: { to: string | number; payload: { title: string; body: string; data?: { onClickUrl?: string } } }): Promise<unknown>;
-}
-
-/** Pushes a notification to the browsers where the user switched AnythingLLM's notifications on
- *  (none when they haven't); `url` is the page it opens. Loads the subscriptions first, as a job's
- *  process does, since the service's are loaded only in the process that booted it. */
-export async function push(to: string | number, note: { title: string; body: string; url: string }): Promise<void> {
-  const { pushNotificationService: service } = serverRequire<{ pushNotificationService: PushService }>("utils/PushNotifications");
-  await service.loadSubscriptions();
-  await service.sendNotification({ to, payload: { title: note.title, body: note.body, data: { onClickUrl: note.url } } });
 }
