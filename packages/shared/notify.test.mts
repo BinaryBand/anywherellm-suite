@@ -28,11 +28,11 @@ beforeEach(() => {
 });
 
 test("posts the body to the topic with its title, click address and token", async () => {
-  await notify({ url, token: "tk_1" }, { title: "clock.slow: ok", body: '{"slept":2}', click: "https://llm.example.com/workspace/work" });
+  await notify({ url, token: "tk_1" }, { title: "Library: a background run ended", body: '{"slept":2}', click: "https://llm.example.com/workspace/work" });
   assert.equal(seen.length, 1);
   const [r] = seen;
   assert.deepEqual([r.method, r.url, r.body], ["POST", "/mine", '{"slept":2}']);
-  assert.deepEqual([r.headers.title, r.headers.click, r.headers.authorization], ["clock.slow: ok", "https://llm.example.com/workspace/work", "Bearer tk_1"]);
+  assert.deepEqual([r.headers.title, r.headers.click, r.headers.authorization], ["Library: a background run ended", "https://llm.example.com/workspace/work", "Bearer tk_1"]);
 });
 
 test("sends no click or token header when it has none", async () => {

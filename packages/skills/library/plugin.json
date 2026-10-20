@@ -26,7 +26,7 @@
         "type": "text",
         "default": "",
         "placeholder": "https://ntfy.example.com/anywherellm",
-        "hint": "Optional: an ntfy topic (ntfy.sh, or your own server) to tell when a run that went on in the background ends, with the function and how it ended, not its result. Nothing is sent without it."
+        "hint": "Optional: an ntfy topic (ntfy.sh, or your own server) to tell when a run that went on in the background ends, and only that and how it ended: not which function, not its result. Nothing is sent without it."
       }
     },
     "NTFY_TOKEN": {

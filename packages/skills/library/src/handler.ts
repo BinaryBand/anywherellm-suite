@@ -274,13 +274,16 @@ async function runNow(name: string, inputs: unknown, self: HandlerContext): Prom
   return `Still running ${running.fn} in the background (${running.id}): carry on. When it ends, ${notice}, the Library page shows it, and it's at the top of the next library or run answer. run with run_id "${running.id}" shows it now; add stop: true to stop it.`;
 }
 
+const ENDED: Partial<Record<store.RunRecord["status"], string>> = { ok: "ended", error: "failed", timeout: "timed out" };
+
 /** Tells the user, on their ntfy topic, that a run the chat stopped waiting for ended, and how: never
- *  what it returned, which a topic anyone can follow would show them. Its click opens the workspace it
- *  ran in, when AnythingLLM's address is known. */
+ *  what it returned or which function it was (the agent names those, and a topic anyone can follow
+ *  would carry out whatever an injected agent put there). Its click opens the workspace it ran in,
+ *  which AnythingLLM names, when its address is known. */
 async function notified(run: store.RunRecord, ntfy: Ntfy, base: string | null): Promise<void> {
   const click = base && run.workspace ? `${base}/workspace/${run.workspace}` : undefined;
   try {
-    await notify(ntfy, { title: `${run.fn}: ${run.status}`, body: "Its result is on the Library page.", click });
+    await notify(ntfy, { title: `Library: a background run ${ENDED[run.status] ?? run.status}`, body: "Its result is on the Library page.", click });
   } catch (e) {
     console.error(`library-lean couldn't notify of the end of ${run.id}: ${(e as Error).message}`);
   }
