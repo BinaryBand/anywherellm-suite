@@ -47,6 +47,9 @@ const server = http.createServer((req, res) => {
   // The sshd beside AnythingLLM is at 127.0.0.1 in its network namespace, which a target may not be in
   // production (it's this machine); this test says it isn't, as the unit tests do (shared/thishost.mts).
   globalThis[Symbol.for("anywherellm-suite.thishost.except")] = new Set(["127.0.0.1"]);
+  // And a host record, as the installer writes it on the host: a target is refused without one. The
+  // fingerprint is not the sshd's, so it is "some other machine".
+  globalThis[Symbol.for("anywherellm-suite.thishost.record")] = { fingerprints: ["SHA256:" + "A".repeat(43)], addresses: [], hostname: "e2e-host" };
   await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
   assert.ok(ImportedPlugin.validateImportedPluginHandler(HUB_ID), "the handler is where AnythingLLM looks");
   assert.ok(JSON.stringify(ImportedPlugin.activeImportedPlugins()).includes(HUB_ID), "AnythingLLM lists the skill as active");

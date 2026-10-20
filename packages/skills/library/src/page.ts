@@ -252,8 +252,12 @@ async function drain(base: string | null): Promise<void> {
       if (e.ev === "target-save" && done) result = { ev: "target-save", label: text(e.label, 60), error: null }; // a forgery is dropped, and says nothing
     } catch (err) {
       // The events are taken already: one that breaks (not a refusal) is logged, and the rest go on.
-      if (!(err instanceof Told)) console.error(`library-lean couldn't apply a page event (${text(e.ev, 40)}): ${(err as Error).message}`);
-      else result = { ev: text(e.ev, 40), label: text(e.label, 60), error: err.message.slice(0, 400) };
+      // Whatever breaks is told to the page: a form left waiting for an answer that never comes holds
+      // what the user typed and stops the section being drawn. A refusal says its words; anything else
+      // is only logged, with a plain line for the page.
+      const told = err instanceof Told;
+      if (!told) console.error(`library-lean couldn't apply a page event (${text(e.ev, 40)}): ${(err as Error).message}`);
+      result = { ev: text(e.ev, 40), label: text(e.label, 60), error: told ? err.message.slice(0, 400) : e.ev === "target-save" ? "couldn't save the target (see the log)" : "couldn't do that (see the log)" };
     }
   }
   const outcome = result;

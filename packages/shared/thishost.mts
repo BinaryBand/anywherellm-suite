@@ -78,6 +78,12 @@ export function thisHostFingerprints(): Set<string> {
   return new Set("host" in r ? r.host.fingerprints : []);
 }
 
+/** The host's own addresses, as recorded; none when it isn't. */
+export function thisHostAddresses(): string[] {
+  const r = recorded();
+  return "host" in r ? [...r.host.addresses] : [];
+}
+
 /** Whether the record is good enough to trust a target is another machine: it is there, it can be
  *  read, it is a record, and it holds a host key. Otherwise kit.ssh refuses every target, and the
  *  reason says what to do on the host. */

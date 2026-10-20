@@ -6,6 +6,7 @@
 // TERM reaches a command is checked against a real sshd (tests/e2e), not here.
 
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import dns from "node:dns";
 import fs from "node:fs";
@@ -15,7 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import ssh2 from "ssh2";
-import { call as called, library, pageConfig, pageState, post, publicDir, reset, storage, until } from "./harness.mts";
+import { THIS_HOST_FINGERPRINT, call as called, library, pageConfig, pageState, post, publicDir, reset, storage, until } from "./harness.mts";
 
 const { Server, utils } = ssh2;
 
@@ -23,6 +24,7 @@ const { Server, utils } = ssh2;
  *  own: the seam names them as not this machine (shared/thishost.mts). The tests of that refusal take
  *  it away for their length. */
 const THISHOST_EXCEPT = Symbol.for("anywherellm-suite.thishost.except");
+const THISHOST_RECORD = Symbol.for("anywherellm-suite.thishost.record");
 const standIns = new Set(["127.0.0.1", "127.0.0.2"]);
 (globalThis as unknown as Record<symbol, Set<string>>)[THISHOST_EXCEPT] = standIns;
 const asThisMachine = async (fn: () => Promise<void>) => {
@@ -35,6 +37,11 @@ const asThisMachine = async (fn: () => Promise<void>) => {
   }
 };
 const call = (args: Record<string, unknown>, slug: string | null = "work") => called(args, { slug });
+
+/** The longest a target's sign-in may take (src/targets.ts LIMITS.connectMs to connect, and as long to sign in, plus a margin), and the
+ *  longest looking at what it reaches may (LIMITS.checkMs): what the page and these tests wait for, on a machine as busy as it gets. */
+const SIGN_IN_MS = 25_000;
+const LOOK_MS = 30_000;
 
 /** `text` sealed as the page seals it, with the vault's public key: RSA-OAEP up to 190 bytes, and
  *  above that with a new AES-GCM key, itself sealed with RSA ("h1.<sealed key>.<iv>.<sealed>"). */
@@ -123,10 +130,35 @@ function serveFiles(sftp: ssh2.SFTPWrapper): void {
   });
 }
 
-/** What the stand-in is like to the reach check (src/targets.ts looked): whether the page it is asked
- *  to fetch is reachable (reaches), refused (blocked), not fetchable at all (none: no curl or wget) or
- *  answered oddly (odd); its hostname and user; and whether it can see the marker file in the vault's folder. */
-const machine = { reach: "blocked" as "reaches" | "blocked" | "none" | "odd", hostname: "vm-1", uid: "1001", sees: false };
+/** What the stand-in is like to the reach check (src/targets.ts looked): whether it has curl or wget
+ *  (tools), what a page it is asked to fetch answers, by address (serve: the body, or null when the
+ *  address isn't reachable); its hostname and user; and whether it can see the marker file in the
+ *  vault's folder. Its exec runs the library's fixed command in a real sh, with a curl that answers
+ *  from `serve`, so the command itself (quoting, the token compared, the addresses tried together) is tested. */
+const machine = { tools: true, serve: (_u: URL): string | null => null, hostname: "vm-1", uid: "1001", sees: false };
+/** What AnythingLLM itself serves at an address: the file the library put in its public folder. */
+const pageOf = (u: URL): string | null => (fs.existsSync(path.join(publicDir, u.pathname)) ? fs.readFileSync(path.join(publicDir, u.pathname), "utf8") : null);
+
+const shims = fs.mkdtempSync(path.join(os.tmpdir(), "targets-shims-"));
+fs.mkdirSync(path.join(shims, "bin"));
+fs.mkdirSync(path.join(shims, "empty"));
+fs.symlinkSync("/bin/sh", path.join(shims, "empty", "sh")); // the fixed command starts another sh, and nothing else is found
+fs.writeFileSync(path.join(shims, "bin", "curl"), '#!/bin/sh\nfor a; do u="$a"; done\nf="$ANSWERS/$(printf %s "$u" | sed \'s#[^A-Za-z0-9]#_#g\')"\n[ -f "$f" ] && cat "$f" || exit 7\n', { mode: 0o755 });
+test.after(() => fs.rmSync(shims, { recursive: true, force: true }));
+/** Runs a fixed reach command as the machine's shell would, its curl answering from `machine.serve`. */
+function runReach(command: string, urls: string[]): Promise<{ out: string; code: number }> {
+  const answers = fs.mkdtempSync(path.join(shims, "answers-"));
+  for (const u of urls) {
+    const body = machine.serve(new URL(u));
+    if (body !== null) fs.writeFileSync(path.join(answers, u.replace(/[^A-Za-z0-9]/g, "_")), body);
+  }
+  return new Promise((resolve) => {
+    const child = spawn("/bin/sh", ["-c", command], { env: { PATH: machine.tools ? `${path.join(shims, "bin")}:/usr/bin:/bin` : path.join(shims, "empty"), ANSWERS: answers } });
+    let out = "";
+    child.stdout.on("data", (d: Buffer) => (out += d));
+    child.on("close", (code) => resolve({ out, code: code ?? -1 }));
+  });
+}
 
 /** What the stand-in saw, for the tests to check: sign-ins tried, naps going at once, channels
  *  refused, hung commands started, and their connections closed. */
@@ -156,14 +188,11 @@ const standIn = (key: string) =>
           if (command === "unanswered") return void seen.unanswered++; // neither accepted nor refused
           const s = acceptExec();
           const done = (code: number) => (s.exit(code), s.end());
-          if (command.startsWith("if command -v curl")) {
-            // The fixed command that fetches a page of AnythingLLM: its URL is the one quoted in it.
-            const url = new URL(command.match(/'([^']+)'/)![1]);
-            seen.fetched.push(url.href);
-            if (machine.reach === "none") return done(127);
-            s.stderr.write("curl\n");
-            if (machine.reach === "reaches") return s.write(fs.readFileSync(path.join(publicDir, url.pathname), "utf8")), done(0);
-            return done(machine.reach === "odd" ? 22 : 7);
+          if (command.startsWith("sh -c ") && command.includes("library-lean/reach-")) {
+            // The fixed command that asks the machine to fetch a page of AnythingLLM from each address it may be at.
+            const urls = [...command.matchAll(/https?:\/\/[^'\s\\]+/g)].map((m) => m[0]);
+            seen.fetched.push(...urls);
+            return void runReach(command, urls).then(({ out, code }) => (s.write(out), done(code)));
           }
           if (command === "hostname; id -u") return s.write(`${machine.hostname}\n${machine.uid}\n`), done(0);
           if (command === "echo hi") return s.write("hi\n"), done(0);
@@ -208,7 +237,7 @@ async function register(fields: Record<string, unknown> = {}, pasted?: { private
   if (pasted) allowed = utils.parseKey(pasted.public) as ssh2.ParsedKey;
   post({ secret: pageConfig().secret, ev: "target-save", label: "box", host: "127.0.0.1", port: PORT, login: "sandbox", fingerprint: fingerprint(hostKey.public), private: true, sealed: pasted ? seal(pasted.private) : "", ...fields });
   await called({ action: "library" }, { slug: "work", base });
-  await until(() => boxState().status !== "not tried yet", 15_000); // past the 10 s a sign-in may take
+  await until(() => boxState().status !== "not tried yet", SIGN_IN_MS);
   const saved = boxState();
   if (saved.public) allowed = utils.parseKey(saved.public) as ssh2.ParsedKey;
   return saved;
@@ -226,7 +255,8 @@ const result = (said: string) => JSON.parse(said.match(/Result \(JSON\):\n([\s\S
 test.beforeEach(() => {
   reset();
   Object.assign(seen, { auths: 0, open: 0, most: 0, refused: [], hung: 0, closed: 0, execs: 0, unanswered: 0, authDelay: 0, fetched: [] });
-  Object.assign(machine, { reach: "blocked", hostname: "vm-1", uid: "1001", sees: false });
+  Object.assign(machine, { tools: true, serve: () => null, hostname: "vm-1", uid: "1001", sees: false });
+  (globalThis as unknown as Record<symbol, unknown>)[THISHOST_RECORD] = { fingerprints: [THIS_HOST_FINGERPRINT], addresses: [], hostname: "test-host" };
   failRemove.clear();
   stallRenames.clear();
   files.clear();
@@ -246,7 +276,7 @@ test("a target is asked for and registered on the page, with a key made there wh
   assert.deepEqual(pageState().needs, [], "the need is met");
   post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
   await call({ action: "library" });
-  await until(() => boxState().status === "signed in");
+  await until(() => boxState().status === "signed in", SIGN_IN_MS);
   const vaultText = fs.readFileSync(path.join(storage, "vault-lean", "vault.json"), "utf8");
   assert.ok(!vaultText.includes("PRIVATE KEY") && !vaultText.includes("sandbox"), "the vault holds it encrypted");
   assert.ok(!JSON.stringify(pageState()).includes("PRIVATE KEY"), "the page never shows the private half");
@@ -517,7 +547,7 @@ test("nothing is sent to the machine once the command's time is up, even when si
   assert.equal(seen.execs, 0, "the command never reached the machine");
   seen.authDelay = 0;
   seen.execs = 0;
-  assert.match(await exec({ command: "echo hi", timeout_s: 0.001 }), /in time|"killed": "timeout"/);
+  assert.match(await exec({ command: "echo hi", timeout_s: 0.001 }), /in time|"killed": "timeout"|didn't finish signing in within/);
   assert.equal(seen.execs, 0, "a time that is up before the first try sends nothing");
 });
 
@@ -654,7 +684,7 @@ test("moving a target to another host, port or account drops its key; an edit th
     post({ secret: pageConfig().secret, ev: "target-save", label: "box", host: "127.0.0.1", port: PORT, login: "sandbox", fingerprint: fingerprint(hostKey.public), private: true, sealed: "", ...fields });
     await call({ action: "library" });
     await until(() => (pageState().result?.n ?? 0) > n);
-    await until(() => boxState().status !== "not tried yet", 15_000);
+    await until(() => boxState().status !== "not tried yet", SIGN_IN_MS);
     return boxState();
   };
   const same = await edit({ unattended: true, fingerprint: fingerprint(otherHostKey.public) });
@@ -692,7 +722,7 @@ test("a target can't be this machine, however it is ticked: a literal address, a
     try {
       assert.match((await refusal("itself", "me.example")) ?? "", /me\.example resolves to 127\.0\.0\.1 is an address of this machine itself/);
       assert.equal(await refusal("rebind", "rebind.example"), null, "a name that was public when saved is saved");
-      await until(() => pageState().targets.find((t: { label: string }) => t.label === "rebind")?.status !== "not tried yet", 15_000);
+      await until(() => pageState().targets.find((t: { label: string }) => t.label === "rebind")?.status !== "not tried yet", SIGN_IN_MS);
       assert.match(pageState().targets.find((t: { label: string }) => t.label === "rebind").status, /rebind\.example:\d+ isn't reached: .*an address of this machine itself/, "the address the connection goes to is checked, at connect time, though ticked");
       assert.equal(seen.open, 0, "nothing connected");
     } finally {
@@ -707,14 +737,14 @@ const reachLeft = () => (fs.existsSync(path.join(publicDir, "library-lean")) ? f
 /** Registers "box" with a pasted key, so the first sign-in works, and waits for what it reaches to be kept. */
 async function registered(base: string | null = BASE) {
   const box = await register({}, utils.generateKeyPairSync("ed25519"), base ?? undefined);
-  await until(() => boxState().notes.length > 0 || boxState().barred !== null);
+  await until(() => boxState().notes.length > 0 || boxState().barred !== null, LOOK_MS);
   return { ...box, ...boxState() };
 }
 
 test("a target that can fetch this AnythingLLM's pages is refused, and the token file it was asked for is gone", async () => {
-  machine.reach = "reaches";
+  machine.serve = pageOf;
   const box = await registered();
-  assert.match(box.barred, /^it can fetch this AnythingLLM's pages \(http:\/\/anythingllm\.test:3001\), which carry the page secret\. Change the machine's firewall .* so it can't reach anythingllm\.test:3001, then try it again$/);
+  assert.match(box.barred, /^it can fetch this AnythingLLM's pages \(at anythingllm\.test:3001\), which carry the page secret\. Change the machine's firewall .* so it can't reach anythingllm\.test:3001, then try it again$/);
   assert.equal(seen.fetched.length, 1);
   assert.match(seen.fetched[0], /^http:\/\/anythingllm\.test:3001\/library-lean\/reach-[0-9a-f]{16}\.txt$/);
   assert.deepEqual(reachLeft(), [], "the file is removed");
@@ -725,27 +755,25 @@ test("a target that can fetch this AnythingLLM's pages is refused, and the token
   assert.match(await call({ action: "library", service: "ops" }), /Targets: box \(sandbox@127\.0\.0\.1:\d+, signed in, not used: it can fetch this AnythingLLM's pages/);
   assert.match(boxState().barred, /can fetch/, "the Targets card shows it");
   // Put right, then tried again: used.
-  machine.reach = "blocked";
+  machine.serve = () => null;
   post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
   await called({ action: "library" }, { slug: "work", base: BASE });
-  await until(() => boxState().barred === null);
+  await until(() => boxState().barred === null, LOOK_MS);
   assert.equal(result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } })).stdout, "hi\n");
 });
 
-test("a target that can't fetch the pages is used; one that can't say (no curl or wget, an odd answer) is shown, not refused", async () => {
+test("a target that can't fetch the pages is used; one that can't say (no curl or wget) is shown, not refused", async () => {
   const blocked = await registered();
   assert.equal(blocked.barred, null);
   assert.ok(!blocked.notes.some((n: string) => /reaches/.test(n)), "a refused connection says nothing more");
   await ops();
   assert.equal(result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } })).stdout, "hi\n");
-  for (const [how, why] of [["none", /it has neither curl nor wget/], ["odd", /curl ended with 22, which doesn't say/]] as const) {
-    machine.reach = how;
-    post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
-    await called({ action: "library" }, { slug: "work", base: BASE });
-    await until(() => boxState().notes.some((n: string) => why.test(n)));
-    assert.equal(boxState().barred, null, how);
-    assert.equal(result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } })).stdout, "hi\n", how);
-  }
+  machine.tools = false;
+  post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
+  await called({ action: "library" }, { slug: "work", base: BASE });
+  await until(() => boxState().notes.some((n: string) => /it has neither curl nor wget/.test(n)), LOOK_MS);
+  assert.equal(boxState().barred, null);
+  assert.equal(result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } })).stdout, "hi\n");
   assert.deepEqual(reachLeft(), []);
 });
 
@@ -758,21 +786,21 @@ test("a target that sees AnythingLLM's storage, or is this machine's account, is
   Object.assign(machine, { hostname: os.hostname(), uid: String(process.getuid!()) });
   post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
   await called({ action: "library" }, { slug: "work", base: BASE });
-  await until(() => /this machine's own account/.test(boxState().barred ?? ""));
+  await until(() => /this machine's own account/.test(boxState().barred ?? ""), LOOK_MS);
   // The same hostname alone, or the same user alone, proves nothing.
   for (const other of [{ hostname: os.hostname(), uid: String(process.getuid!() + 1) }, { hostname: `${os.hostname()}-x`, uid: String(process.getuid!()) }]) {
     Object.assign(machine, other);
     post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
     await called({ action: "library" }, { slug: "work", base: BASE });
-    await until(() => boxState().barred === null);
+    await until(() => boxState().barred === null, LOOK_MS);
   }
 });
 
 test("a target is looked at on its first use when it wasn't at its check for want of AnythingLLM's address", async () => {
-  machine.reach = "reaches";
+  machine.serve = pageOf;
   const box = await registered(null);
   assert.equal(box.barred, null);
-  assert.ok(box.notes.some((n: string) => /its address isn't known here/.test(n)));
+  assert.ok(box.notes.some((n: string) => /AnythingLLM's own address isn't known here/.test(n)));
   assert.equal(seen.fetched.length, 0);
   await ops();
   assert.match(await called({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } }, { slug: "work", base: BASE }), /the target "box" isn't used: it can fetch this AnythingLLM's pages/);
@@ -781,27 +809,135 @@ test("a target is looked at on its first use when it wasn't at its check for wan
   assert.deepEqual(reachLeft(), []);
 });
 
-test("it warns, without refusing, of an AnythingLLM with no password, the vault's key beside the vault and a storage folder others read", async () => {
+test("it warns, without refusing, of an AnythingLLM with no password, and the vault's key beside the vault", async () => {
   const answers = { results: { RequiresAuth: false, MultiUserMode: false } };
   const web = http.createServer((req, res) => res.end(req.url === "/api/setup-complete" ? JSON.stringify(answers) : "{}"));
   await new Promise<void>((resolve) => web.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${(web.address() as AddressInfo).port}`;
-  const mode = fs.statSync(storage).mode & 0o777;
   try {
-    fs.chmodSync(storage, 0o755);
     const open = await registered(base);
     assert.equal(open.barred, null);
     assert.ok(open.notes.includes("this AnythingLLM has no password: whoever reaches it is its administrator"));
     assert.ok(open.notes.some((n: string) => /the vault's key is kept beside the vault \(VAULT_KEY_FILE isn't set\)/.test(n)));
-    assert.ok(open.notes.some((n: string) => /storage folder is readable by other accounts here \(mode 755\)/.test(n)));
     answers.results.RequiresAuth = true;
-    fs.chmodSync(storage, 0o700);
     post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
     await called({ action: "library" }, { slug: "work", base });
-    await until(() => !boxState().notes.some((n: string) => /no password|readable by other/.test(n)));
+    await until(() => !boxState().notes.some((n: string) => /no password/.test(n)), LOOK_MS);
     assert.equal(boxState().barred, null);
   } finally {
-    fs.chmodSync(storage, mode);
     web.close();
+  }
+});
+
+// This machine, by what is recorded of it (shared/thishost.mts, written by the installer on the host).
+const record = (value: unknown) => ((globalThis as unknown as Record<symbol, unknown>)[THISHOST_RECORD] = value);
+const recordFile = () => path.join(storage, "anywherellm-suite", "this-host.json");
+/** Saves a target the page way and answers the refusal the page shows, or null when it was saved. */
+async function savedAs(label: string, fields: Record<string, unknown>, base?: string) {
+  const n = pageState().result?.n ?? 0;
+  post({ secret: pageConfig().secret, ev: "target-save", label, host: "127.0.0.1", port: PORT, login: "sandbox", fingerprint: fingerprint(hostKey.public), private: true, sealed: "", ...fields });
+  await called({ action: "library" }, { slug: "work", base });
+  await until(() => (pageState().result?.n ?? 0) > n);
+  return pageState().result.error as string | null;
+}
+
+test("without a good record of this machine no target is saved or used", async () => {
+  await register();
+  await ops();
+  assert.equal(result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } })).stdout, "hi\n", "with the record it is used");
+  const writeRecord = (text: string) => (fs.mkdirSync(path.dirname(recordFile()), { recursive: true }), fs.writeFileSync(recordFile(), text));
+  const cases: [string, () => void, RegExp][] = [
+    ["no file", () => fs.rmSync(recordFile(), { force: true }), /this machine isn't recorded.*isn't there.*run the installer on the host/],
+    ["a file that isn't JSON", () => writeRecord("not json"), /this machine isn't recorded.*isn't JSON/],
+    ["a file that isn't a record", () => writeRecord('{"fingerprints":"x"}'), /this machine isn't recorded.*isn't a record of this machine/],
+    ["no host key in it", () => writeRecord(JSON.stringify({ fingerprints: [], addresses: [], hostname: "h" })), /holds no SSH host key.*run the installer on the host/],
+  ];
+  for (const [what, make] of cases.map(([w, m]) => [w, m] as const)) {
+    record(undefined); // the file, as shipped code reads it
+    make();
+    const wanted = cases.find(([w]) => w === what)![2];
+    const execs = seen.execs;
+    const auths = seen.auths;
+    assert.match(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } }), wanted, `${what}: a saved target isn't used`);
+    assert.match((await savedAs("other", {})) ?? "", wanted, `${what}: nothing is saved`);
+    assert.deepEqual(pageState().targets.map((t: { label: string }) => t.label), ["box"]);
+    assert.equal(seen.execs, execs, `${what}: nothing was run`);
+    assert.equal(seen.auths, auths, `${what}: nothing was signed in to`);
+  }
+});
+
+test("a machine that shows this host's SSH host key is refused, whatever its address", async () => {
+  await call({ action: "secret", kind: "ssh", label: "twin" }); // makes the page
+  // The address is not this machine's by anything the container sees or the record holds; the key is.
+  record({ fingerprints: [fingerprint(otherHostKey.public)], addresses: [], hostname: "test-host" });
+  assert.match((await savedAs("twin", { fingerprint: fingerprint(otherHostKey.public) })) ?? "", /^SHA256:\S+ is this machine's own SSH host key: signing in there would read what AnythingLLM keeps beside it/, "refused when the user gives its fingerprint");
+  assert.deepEqual(pageState().targets, []);
+  // Saved with a fingerprint that isn't this host's, at a machine that shows this host's key: the
+  // key it shows is what is refused, before anything is sent.
+  const imposterPort = (imposter.address() as AddressInfo).port;
+  assert.equal(await savedAs("twin", { port: imposterPort }), null);
+  await until(() => pageState().targets.find((t: { label: string }) => t.label === "twin")?.status !== "not tried yet", SIGN_IN_MS);
+  assert.match(pageState().targets.find((t: { label: string }) => t.label === "twin").status, /is this machine: SHA256:\S+ is this machine's own SSH host key.*Nothing was sent/);
+  assert.equal(seen.execs, 0);
+});
+
+test("a target is asked to fetch the pages from AnythingLLM's address and from each of this host's, on each port, at once", async () => {
+  record({ fingerprints: [THIS_HOST_FINGERPRINT], addresses: ["127.0.0.1", "fe80::1", "10.1.2.3", "2001:db8::5"], hostname: "test-host" });
+  const page = (u: URL) => pageOf(u);
+  const miss = await registered();
+  assert.equal(miss.barred, null);
+  const rel = /\/library-lean\/reach-[0-9a-f]{16}\.txt$/;
+  const origins = seen.fetched.map((u) => u.replace(rel, "")).sort();
+  assert.deepEqual(origins, ["http://10.1.2.3:3001", "http://10.1.2.3:8467", "http://[2001:db8::5]:3001", "http://[2001:db8::5]:8467", "http://anythingllm.test:3001", "https://10.1.2.3:443", "https://[2001:db8::5]:443"].sort(), "loopback and link-local addresses of the host mean the machine itself, and aren't tried");
+  assert.equal(seen.execs - 1 >= 1, true);
+  // Only a page that answers with the token is a hit: another service on 3001 saying something isn't.
+  const one = seen.fetched.length;
+  machine.serve = (u) => (u.host === "10.1.2.3:8467" ? page(u) : u.host === "10.1.2.3:3001" ? "<html>hello</html>" : null);
+  post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
+  await called({ action: "library" }, { slug: "work", base: BASE });
+  await until(() => boxState().barred !== null, LOOK_MS);
+  assert.match(boxState().barred, /^it can fetch this AnythingLLM's pages \(at 10\.1\.2\.3:8467\), which carry the page secret/);
+  assert.ok(seen.fetched.length > one);
+  // Hits at two addresses are both named.
+  machine.serve = (u) => (u.host === "10.1.2.3:8467" || u.host === "anythingllm.test:3001" ? page(u) : null);
+  post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
+  await called({ action: "library" }, { slug: "work", base: BASE });
+  await until(() => /anythingllm\.test:3001/.test(boxState().barred ?? "") && /10\.1\.2\.3:8467/.test(boxState().barred ?? ""), LOOK_MS);
+  // Without AnythingLLM's own address the host's are still tried.
+  machine.serve = (u) => (u.hostname === "[2001:db8::5]" && u.protocol === "https:" ? page(u) : null);
+  post({ secret: pageConfig().secret, ev: "target-check", label: "box" });
+  await called({ action: "library" }, { slug: "work" });
+  await until(() => /2001:db8::5:443|\[?2001:db8::5\]?:443/.test(boxState().barred ?? ""), LOOK_MS);
+  assert.deepEqual(reachLeft(), []);
+});
+
+test("every save looks at what the target reaches again, not only the first", async () => {
+  const first = await registered();
+  assert.equal(first.barred, null);
+  const before = seen.fetched.length;
+  machine.serve = pageOf;
+  assert.equal(await savedAs("box", { unattended: true }, BASE), null, "saved again, only its tick changed");
+  await until(() => boxState().barred !== null, LOOK_MS);
+  assert.ok(seen.fetched.length > before, "looked at again");
+  assert.match(boxState().barred, /can fetch/);
+});
+
+test("any failure of a target save is told to the page, which would otherwise wait for it", async () => {
+  await call({ action: "secret", kind: "ssh", label: "box" });
+  const lookup = dns.lookup;
+  const logged: string[] = [];
+  const log = console.error;
+  console.error = (...a: unknown[]) => void logged.push(a.join(" "));
+  dns.lookup = ((host: string, options: unknown, cb: (...a: unknown[]) => void) => {
+    if (host === "boom.example") throw new Error("the resolver broke");
+    return (lookup as (...a: unknown[]) => void)(host, options, cb);
+  }) as typeof dns.lookup;
+  try {
+    assert.equal(await savedAs("box", { host: "boom.example" }), "couldn't save the target (see the log)");
+    assert.ok(logged.some((l) => /couldn't apply a page event \(target-save\): the resolver broke/.test(l)), "the real error is logged");
+    assert.deepEqual(pageState().targets, []);
+  } finally {
+    dns.lookup = lookup;
+    console.error = log;
   }
 });

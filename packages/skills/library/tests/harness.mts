@@ -28,6 +28,12 @@ process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.FENCE_ALLOW = "127.0.0.1";
 
+// The record of the machine the tests run on, as the installer writes it (shared/thishost.mts): a host
+// key no stand-in shows and no addresses. Without a record kit.ssh refuses every target. A test can
+// replace it, on globalThis under the same symbol.
+export const THIS_HOST_FINGERPRINT = `SHA256:${"T".repeat(43)}`;
+(globalThis as unknown as Record<symbol, unknown>)[Symbol.for("anywherellm-suite.thishost.record")] = { fingerprints: [THIS_HOST_FINGERPRINT], addresses: [], hostname: "test-host" };
+
 // The vendored packages' versions as build.mjs inlines them, for the modules a test imports from src.
 (globalThis as unknown as { VENDORED_VERSIONS: string }).VENDORED_VERSIONS = vendoredVersions("library");
 

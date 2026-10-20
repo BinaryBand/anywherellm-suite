@@ -24,7 +24,7 @@ import { perProcess, storageDir } from "#shared/anythingllm";
 import { NetError, hostRefused } from "#shared/fence";
 import { connect, send } from "#shared/net";
 import { removePublic, writePublic } from "#shared/pages";
-import { thisHostRefusal } from "#shared/thishost";
+import { thisHostAddresses, thisHostKeyRefusal, thisHostRefusal, thisHostUsable } from "#shared/thishost";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 import { countUse } from "./secrets";
@@ -162,6 +162,11 @@ export async function save(given: Given): Promise<string> {
   if (!LOGIN.test(login)) throw new LibraryError("a target needs the account to sign in as, like sandbox");
   const fingerprint = String(given.fingerprint ?? "").match(FINGERPRINT)?.[0];
   if (!fingerprint) throw new LibraryError("a target needs its host key's fingerprint, SHA256:… as ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub prints it on the machine");
+  // Without a record of this machine (the installer writes it) nothing can be told from it: no target.
+  const usable = thisHostUsable();
+  if (!usable.ok) throw new LibraryError(usable.reason);
+  const ownKey = thisHostKeyRefusal(fingerprint);
+  if (ownKey) throw new LibraryError(ownKey);
   const onNetwork = given.private === true;
   const why = hostRefused(host, new Set());
   if (why && why !== "lookup" && !onNetwork) throw new LibraryError(`${why}: tick "On my network" to reach it as this target`);
@@ -220,31 +225,69 @@ interface Found {
 
 const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
-/** Whether the machine can fetch a page of this AnythingLLM: a random token is put in a file in the
- *  library page's folder, and the machine is asked (curl or wget, a fixed command) to read it. */
-async function reaches(client: Client, base: string, until: number, signal?: AbortSignal): Promise<"yes" | "no" | string> {
+/** The ports a machine is tried on at each of this host's own addresses: AnythingLLM's, a proxy's
+ *  https, and the bridge's (the host, reached from another machine on the network, shows one of them). */
+const PROBE_PORTS = [3001, 443, 8467];
+const MAX_PROBES = 40;
+
+/** The address of an interface that a machine could reach this one by: not the machine's own loopback,
+ *  link-local or unspecified one, which on the machine means itself. */
+function outside(address: string): boolean {
+  const a = address.split("%", 1)[0];
+  if (net.isIP(a) === 4) return !/^(127\.|0\.|169\.254\.)/.test(a);
+  return net.isIP(a) === 6 && !/^(::1?|fe[89ab][0-9a-f]:)/i.test(a);
+}
+
+/** What a machine is asked to fetch `rel` from: AnythingLLM's own address as it is given (ANYTHINGLLM_URL),
+ *  and each of this host's recorded addresses on PROBE_PORTS. Each is checked against ADDRESS, so a
+ *  fixed command can carry it. */
+function probes(base: string | null, rel: string): string[] {
+  const urls = new Set<string>();
+  if (base && ADDRESS.test(base)) urls.add(`${base}/${rel}`);
+  for (const raw of thisHostAddresses()) {
+    const a = raw.split("%", 1)[0];
+    if (!outside(a)) continue;
+    for (const port of PROBE_PORTS) {
+      const origin = `${port === 443 ? "https" : "http"}://${net.isIP(a) === 6 ? `[${a}]` : a}:${port}`;
+      if (ADDRESS.test(origin)) urls.add(`${origin}/${rel}`);
+    }
+  }
+  return [...urls].slice(0, MAX_PROBES);
+}
+
+/** Which pages of this AnythingLLM the machine can fetch: a random token is put in a file in the
+ *  library page's folder, and the machine is asked, with one fixed command (curl or wget, every address
+ *  at the same time, 3 s each), to read it from each address AnythingLLM may be at (`probes`). Only a
+ *  page that answers with the token is a hit: another service answering on that port isn't. The
+ *  addresses it fetched, or why it couldn't be told. */
+async function reaches(client: Client, base: string | null, until: number, signal?: AbortSignal): Promise<{ hits: string[] } | { why: string }> {
   const rel = `library-lean/reach-${crypto.randomBytes(8).toString("hex")}.txt`;
   const token = crypto.randomBytes(16).toString("hex");
+  const urls = probes(base, rel);
+  if (!urls.length) return { hits: [] };
   try {
     writePublic(rel, token);
-    const url = quoted(`${base}/${rel}`);
-    const command = `if command -v curl >/dev/null 2>&1; then echo curl >&2; curl -fsS -m 5 ${url}; elif command -v wget >/dev/null 2>&1; then echo wget >&2; wget -qO- -T 5 ${url}; else exit 127; fi`;
-    const ran = await run(client, command, "", 4096, until, signal);
-    if (ran.stdout.trim() === token) return "yes";
-    if (ran.killed) return "its time ran out";
-    if (ran.exit === 127) return "it has neither curl nor wget";
-    const tool = ran.stderr.startsWith("wget") ? "wget" : "curl";
-    // Plain failures to connect: curl 6 (name), 7 (connect), 28 (time); wget 4 (network).
-    if (ran.exit !== null && (tool === "wget" ? ran.exit === 4 : [6, 7, 28].includes(ran.exit))) return "no";
-    return `${tool} ended with ${ran.exit ?? ran.signal}, which doesn't say`;
+    const fetch = `if command -v curl >/dev/null 2>&1; then o=$(curl -fsS -k -m 3 "$1" 2>/dev/null); elif command -v wget >/dev/null 2>&1; then o=$(wget -qO- --no-check-certificate -T 3 "$1" 2>/dev/null); else echo NOTOOL; return; fi; [ "$o" = "${token}" ] && echo "HIT $1"`;
+    const script = `p() { ${fetch}; }; ${urls.map((u) => `p ${quoted(u)} &`).join(" ")} wait`;
+    const ran = await run(client, `sh -c ${quoted(script)}`, "", 8192, until, signal);
+    if (ran.killed) return { why: "its time ran out" };
+    const lines = ran.stdout.split("\n").map((l) => l.trim());
+    if (lines.includes("NOTOOL")) return { why: "it has neither curl nor wget" };
+    return { hits: lines.flatMap((l) => (l.startsWith("HIT ") && urls.includes(l.slice(4)) ? [l.slice(4)] : [])) };
   } catch (e) {
-    return (e as Error).message;
+    return { why: (e as Error).message };
   } finally {
     try {
       removePublic(rel);
     } catch {}
   }
 }
+
+/** `host:port` of an address a machine fetched a page from. */
+const hostPort = (url: string): string => {
+  const u = new URL(url);
+  return `${u.hostname}:${u.port || (u.protocol === "https:" ? 443 : 80)}`;
+};
 
 /** Why the machine is this one's own, or what it can see of its storage; null when neither shows. A
  *  marker file in the vault's folder is looked for over SFTP at the storage's path here and in the
@@ -288,18 +331,17 @@ async function looked(client: Client, base: string | null, until: number, signal
     return null;
   });
   if (own) found.barred = `${own}, which holds the vault and the pages' secrets. Use another machine or account`;
-  if (base && ADDRESS.test(base)) {
-    found.probed = true;
-    const reach = await reaches(client, base, until, signal);
-    if (reach === "yes") found.barred ??= `it can fetch this AnythingLLM's pages (${base}), which carry the page secret. Change the machine's firewall (or the tailnet's access rules) so it can't reach ${new URL(base).host}, then try it again`;
-    else if (reach !== "no") found.notes.push(`couldn't tell whether it reaches this AnythingLLM: ${reach}`);
-    if (await openToAll(base)) found.notes.push("this AnythingLLM has no password: whoever reaches it is its administrator");
-  } else found.notes.push("couldn't tell whether it reaches this AnythingLLM: its address isn't known here (ANYTHINGLLM_URL)");
+  const known = Boolean(base && ADDRESS.test(base));
+  found.probed = known;
+  const reach = await reaches(client, known ? base : null, until, signal);
+  if ("why" in reach) found.notes.push(`couldn't tell whether it reaches this AnythingLLM: ${reach.why}`);
+  else if (reach.hits.length) {
+    const where = [...new Set(reach.hits.map(hostPort))].join(", ");
+    found.barred ??= `it can fetch this AnythingLLM's pages (at ${where}), which carry the page secret. Change the machine's firewall (or the tailnet's access rules) so it can't reach ${where}, then try it again`;
+  }
+  if (!known) found.notes.push("this AnythingLLM's own address isn't known here (ANYTHINGLLM_URL): the machine was tried only at this host's recorded addresses");
+  else if (await openToAll(base!)) found.notes.push("this AnythingLLM has no password: whoever reaches it is its administrator");
   if (!process.env.VAULT_KEY_FILE) found.notes.push("the vault's key is kept beside the vault (VAULT_KEY_FILE isn't set): a machine that can read AnythingLLM's storage reads every key");
-  try {
-    const mode = fs.statSync(storageDir()).mode;
-    if (mode & 0o044) found.notes.push(`AnythingLLM's storage folder is readable by other accounts here (mode ${(mode & 0o777).toString(8)})`);
-  } catch {}
   return found;
 }
 
@@ -310,24 +352,40 @@ const keep = (label: string, found: Found): Promise<void> =>
     if (now) Object.assign(now, { barred: found.barred, notes: found.notes, probed: found.probed });
   });
 
+/** Keeps how signing in to a target went, for the page and the agent to see. */
+const say = (label: string, status: string): Promise<void> =>
+  vault.update((v) => {
+    const now = v.entries.find(named(label));
+    if (now) now.status = status;
+  });
+
 /** Signs in to a target once, without running anything else but what shows what it can reach, and
  *  keeps how it went for the page and the agent to see. It counts as a use, with the rate and
- *  slots of one. `base` is AnythingLLM's own address, when known. */
+ *  slots of one. `base` is AnythingLLM's own address, when known. The sign-in is kept as soon as it is
+ *  known: looking at what the machine reaches takes longer (several commands, and a request to
+ *  AnythingLLM), and neither the page nor the agent waits on it to know the key works. */
 export async function check(label: string, base: string | null = null): Promise<void> {
   if (!found(label)) return;
-  let said = "signed in";
   let seen: Found | null = null;
+  let signedIn = false;
   try {
     const until = Date.now() + LIMITS.checkMs;
-    await withTarget(label, { deadline: until, job: false }, until, async (client) => void (seen = await looked(client, base ?? known().base, until)), true);
+    await withTarget(
+      label,
+      { deadline: until, job: false },
+      until,
+      async (client) => {
+        await say(label, "signed in");
+        signedIn = true;
+        seen = await looked(client, base ?? known().base, until);
+      },
+      true,
+    );
   } catch (err) {
     if (!(err instanceof NetError || err instanceof LibraryError)) throw err;
-    said = err.message;
+    if (!signedIn) await say(label, err.message);
+    else seen = { barred: null, notes: [`couldn't finish looking at what it reaches: ${err.message}`], probed: false };
   }
-  await vault.update((v) => {
-    const now = v.entries.find(named(label));
-    if (now) now.status = said;
-  });
   if (seen) await keep(label, seen);
 }
 
@@ -349,6 +407,8 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
   const label = e.user;
   const outOfTime = () => new LibraryError(`the target "${label}" (${e.site}:${e.port}) wasn't signed in to in time: the call's time ran out first`);
   const left = () => Math.min(LIMITS.connectMs, until - Date.now());
+  const usable = thisHostUsable();
+  if (!usable.ok) throw new LibraryError(usable.reason);
   if (left() <= 0) throw outOfTime();
   const sock = await connect({ host: e.site, port: e.port, allow: e.private ? [e.site] : [], timeout: left(), signal, refuse: thisHostRefusal });
   const timeout = left();
@@ -358,6 +418,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
   }
   const client = new Client();
   let seen = "";
+  let ownKey: string | null = null;
   return new Promise((resolve, reject) => {
     // Until it's signed in, a stop ends the connection; after, the command's own stop does (run).
     const onAbort = () => failed(new Error("the run stopped"));
@@ -365,6 +426,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
       signal?.removeEventListener("abort", onAbort);
       client.end();
       sock.destroy();
+      if (ownKey) return reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) is this machine: ${ownKey}. Nothing was sent`));
       if (seen && seen !== e.fingerprint) return reject(new LibraryError(`the target "${label}" showed a host key that isn't the one saved for it (saved ${e.fingerprint}, shown ${seen}): nothing was sent. If the machine was set up again, the user saves its new fingerprint on the Library page`));
       if (err.level === "client-authentication") return reject(new LibraryError(`the target "${label}" refused its key: the public line goes in ~${e.login}/.ssh/authorized_keys on the machine (the Library page shows it)`));
       if (err.level === "client-timeout") return reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) didn't finish signing in within ${Math.ceil(timeout / 1000)} s`));
@@ -378,7 +440,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
       resolve(client);
     });
     client.once("error", failed);
-    client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => (seen = fingerprintOf(key)) === e.fingerprint });
+    client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => ((seen = fingerprintOf(key)), (ownKey = thisHostKeyRefusal(seen)), !ownKey && seen === e.fingerprint) });
   });
 }
 
