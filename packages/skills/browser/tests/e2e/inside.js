@@ -221,8 +221,8 @@ const server = http.createServer((req, res) => {
   assert.match(first, /Signed in with a passkey, count \d+/, first);
   assert.match(first, /the page signed in with the passkey saved for localhost/);
   assert.match(await read10(), /Signed in with a passkey, count \d+/, "the count went forward, so the site takes it again");
-  const vault = vaultPage();
-  assert.equal(new URL(`http://x${tabPage(10).state().vault}`).pathname, `/vault-lean/${vault.token}.html`, "the tab's page links to the Vault");
+  const before = vaultPage();
+  assert.equal(new URL(`http://x${tabPage(10).state().vault}`).pathname, `/vault-lean/${before.token}.html`, "the tab's page links to the Vault");
   // With the links kept from the agent (the switch file the owner makes on the host), the state has none.
   const hidden = `${storage}/anywherellm-suite/page-links-hidden`;
   fs.mkdirSync(path.dirname(hidden), { recursive: true });
@@ -234,6 +234,11 @@ const server = http.createServer((req, res) => {
     fs.rmSync(hidden, { force: true });
   }
   await call({ action: "read" }, 10);
+  // Turning the links off the agent replaced the Vault's token once (the read above was the first page
+  // call after the switch went on); the link given again now is the new one, and the old page is gone.
+  const vault = vaultPage();
+  assert.notEqual(vault.token, before.token, "the Vault was replaced once when the switch went on");
+  assert.ok(!fs.existsSync(`${APP}/public/vault-lean/${before.token}.html`), "the old Vault page is gone");
   assert.equal(new URL(`http://x${tabPage(10).state().vault}`).pathname, `/vault-lean/${vault.token}.html`, "given again once the switch is off");
   vault.post({ ev: "login-delete", id: vault.logins().find((l) => l.kind === "passkey").id });
   assert.match(await read10(), /Passkey refused: NotAllowedError/, "deleted on the Vault, it signs in no more");
