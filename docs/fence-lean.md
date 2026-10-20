@@ -52,4 +52,4 @@ Both sides change a file under its lock: a folder `<file>.lock` made with `mkdir
 
 ## Checked
 
-`tools/e2e-fence` runs this suite's shared code against a real bridge in one storage folder: the ask the skill writes as the bridge reads it, each decision, `allowed.json` as the fence reads it, `DELETE /allowed?origin=`, the lock taken in turn, and an expired ask. Run it after changing anything here, on either side.
+Each repository's own tests cover its side. The two sides are checked against each other in the test lab, not in either repository: `npm run contract:fence` there (`contract/fence`) runs the suite's shared code against a real bridge in one storage folder: the ask the skill writes as the bridge reads it, each decision, `allowed.json` as the fence reads it, `DELETE /allowed?origin=`, the lock taken in turn, and an expired ask. Run it after changing anything here, on either side.
