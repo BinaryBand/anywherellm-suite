@@ -228,7 +228,7 @@
   async function load() {
     try {
       const res = await fetch(cfg.token + ".json", { cache: "no-cache" });
-      if (res.status === 404) return toast("This link was replaced: ask the agent for the Library page again");
+      if (res.status === 404) return toast("This link was replaced: open the page again from where you got it (the agent, AnywhereLLM Lite, or `anywherellm-suite pages`)");
       const s = JSON.parse(await res.text());
       $("vault").hidden = !s.vault;
       if (s.vault) $("vaultlink").href = s.vault;

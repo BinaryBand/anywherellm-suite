@@ -1,7 +1,7 @@
 A target is a machine the user registered for the library's functions to run commands on over SSH: a cloud VM, a Pi, a provider's sandbox. Use one for work a function's engine can't do: shell, Python, compilers, builds, files, long jobs. Calling an API stays kit.http.
 
 Asking for one:
-- Call secret with kind "ssh" and label, its short name (like "pi"). The answer is a link to the Library page: give it to the user, who registers the machine there under Targets (its address, port, account and host key's fingerprint), and adds the line the page shows to the machine's authorized_keys. Call library when they say it's done: the target shows whether it signed in.
+- Call secret with kind "ssh" and label, its short name (like "pi"). The answer says where the user registers the machine, on the Library page under Targets (a link, or where they open it): pass that on. They give the machine's address, port, account and host key's fingerprint there, and add the line the page shows to the account's authorized_keys. Call library when they say it's done: the target shows whether it signed in.
 - Never ask for a key, a password, a host or a fingerprint in the chat. The machine's address and key are the user's; a function names the target and nothing else of it.
 
 Using it:

@@ -13,7 +13,7 @@ import { updateJson } from "#shared/atomic";
 import { allowedFile } from "#shared/fence";
 import { lf } from "#shared/static";
 import { check } from "../src/sandbox.ts";
-import { agentRun, call, cardsShown, giveKey, idOf, installed, library, reset, runRecord, skillDir, storage, until } from "./harness.mts";
+import { agentRun, call, cardsShown, giveKey, hideLinks, idOf, installed, library, pageConfig, publicDir, reset, runRecord, skillDir, storage, until, vaultConfig } from "./harness.mts";
 
 const KEY = "tok-1234567890";
 
@@ -183,6 +183,40 @@ test("a toolkit saved again keeps what isn't given; a function or a toolkit is r
   assert.match(await call({ action: "save", service: "demo", remove: "list_issues" }), /^Removed demo\.list_issues\.$/);
   assert.match(await call({ action: "save", service: "demo", remove: "demo" }), /^Removed the toolkit demo and its functions\. Its keys stay saved\.$/);
   assert.match(await call({ action: "library" }), /^The library is empty: no toolkit yet\. guide says how to build one \(topic toolkits\)\.\n\nThe Vault/);
+});
+
+// With the links kept from the agent (`anywherellm-suite pages --hide`), the pages are still made and
+// watched, and the answers say where the user opens them instead of giving a link.
+
+test("with the pages' links kept from the agent, library, secret and target carry no link and no token, and the pages are still written", async () => {
+  hideLinks(true);
+  const where = /they open it in AnywhereLLM Lite, or with `anywherellm-suite pages` on the AnythingLLM host/;
+  const answers = [await call({ action: "library" }), await giveKey("demo", "https://127.0.0.1/", KEY), await call({ action: "secret", kind: "ssh", label: "box" })];
+  const [listing, key, machine] = answers;
+  assert.match(listing, /The Vault \(every key, sign-in and browser login, by name\) and the Library page \(the toolkits and runs\) are the user's own pages: they open them in AnywhereLLM Lite, or with `anywherellm-suite pages` on the AnythingLLM host\. You are never given their links: don't ask the user for them, and never fetch them\./);
+  assert.match(key, /^The user gives the key on the Vault, at the top of Keys \(/);
+  assert.match(key, where);
+  assert.match(machine, /^The user registers the target "box" on the Library page, under Targets \(/);
+  assert.match(machine, where);
+  const tokens = [pageConfig().token, vaultConfig().token];
+  for (const said of answers) {
+    assert.ok(!/library-lean\/|vault-lean\/|\.html/.test(said), `no page address in: ${said.slice(0, 120)}`);
+    for (const token of tokens) assert.ok(!said.includes(token), "no page token");
+  }
+  assert.ok(fs.existsSync(path.join(publicDir, "library-lean", `${tokens[0]}.html`)), "the Library page is written");
+  assert.ok(fs.existsSync(path.join(publicDir, "vault-lean", `${tokens[1]}.html`)), "the Vault is written");
+  assert.match(key, /Tell them to open it and enter the key for 127\.0\.0\.1 there/, "the rest of the instructions stay");
+});
+
+test("the switch is read on every call: turned off, the links are in the answers again", async () => {
+  hideLinks(true);
+  assert.ok(!/library-lean\/|vault-lean\//.test(await call({ action: "library" })));
+  hideLinks(false);
+  const open = await call({ action: "library" });
+  assert.match(open, /The Vault, the user's own view of every key, sign-in and browser login, by name: \/vault-lean\/[\w-]+\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html/);
+  assert.match(await call({ action: "secret", kind: "ssh", label: "box" }), /^The user registers the target "box" on the Library page, under Targets: \/library-lean\/[\w-]+\.html\n/);
+  hideLinks(true);
+  assert.ok(!/library-lean\/|vault-lean\//.test(await call({ action: "library" })));
 });
 
 // The guide, and the static files it's made of.

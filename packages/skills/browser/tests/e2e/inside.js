@@ -223,6 +223,18 @@ const server = http.createServer((req, res) => {
   assert.match(await read10(), /Signed in with a passkey, count \d+/, "the count went forward, so the site takes it again");
   const vault = vaultPage();
   assert.equal(new URL(`http://x${tabPage(10).state().vault}`).pathname, `/vault-lean/${vault.token}.html`, "the tab's page links to the Vault");
+  // With the links kept from the agent (the switch file the owner makes on the host), the state has none.
+  const hidden = `${storage}/anywherellm-suite/page-links-hidden`;
+  fs.mkdirSync(path.dirname(hidden), { recursive: true });
+  fs.writeFileSync(hidden, "e2e\n");
+  try {
+    await call({ action: "read" }, 10);
+    assert.equal(tabPage(10).state().vault, null, "no Vault link in the tab's state while the links are kept from the agent");
+  } finally {
+    fs.rmSync(hidden, { force: true });
+  }
+  await call({ action: "read" }, 10);
+  assert.equal(new URL(`http://x${tabPage(10).state().vault}`).pathname, `/vault-lean/${vault.token}.html`, "given again once the switch is off");
   vault.post({ ev: "login-delete", id: vault.logins().find((l) => l.kind === "passkey").id });
   assert.match(await read10(), /Passkey refused: NotAllowedError/, "deleted on the Vault, it signs in no more");
   assert.deepEqual(passkeys.log, ["registered", "registered", "signed in", "signed in"]);

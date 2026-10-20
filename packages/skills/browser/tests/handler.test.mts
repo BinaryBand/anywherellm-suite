@@ -9,7 +9,7 @@ import test from "node:test";
 import { asksDir } from "#shared/ask";
 import { updateJson } from "#shared/atomic";
 import * as logins from "#shared/logins";
-import { agentRun, call as called, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultLogins, vaultNames, world } from "./harness.mts";
+import { agentRun, call as called, hideLinks, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultLogins, vaultNames, world } from "./harness.mts";
 
 const LOGIN = "https://login.example/";
 site(LOGIN, {
@@ -163,6 +163,28 @@ test("the tab's page links to the Vault, whose logins section lists the saved lo
   await call({ action: "read" });
   assert.ok(!vaultLogins().some((l) => l.site === "vault.example"));
   assert.ok(!logins.list().some((l) => l.site === "vault.example"));
+});
+
+test("with the links kept from the agent, the tab's state carries no Vault link, and the Vault still lists and deletes the logins", async () => {
+  const call = inWorkspace("vaulthidden");
+  await logins.save("hidden.example", "ada", "pw-hidden-1");
+  hideLinks(true);
+  try {
+    await call({ action: "open", url: "https://shop.example/" });
+    assert.equal(tabState("vaulthidden").vault, null, "nothing for the agent's card or the tab's page to link to");
+    const { token } = vaultNames();
+    assert.ok(fs.existsSync(path.join(publicDir, "vault-lean", `${token}.html`)), "the Vault page is still written");
+    assert.ok(fs.readFileSync(path.join(publicDir, "vault-lean", `${token}-logins.json`), "utf8").includes("hidden.example"), "and its logins section lists the login");
+    const login = vaultLogins().find((l) => l.site === "hidden.example")!;
+    postVault({ ev: "login-delete", id: login.id });
+    await call({ action: "read" });
+    assert.ok(!vaultLogins().some((l) => l.site === "hidden.example"), "a login-delete is still applied");
+    assert.equal(tabState("vaulthidden").vault, null);
+  } finally {
+    hideLinks(false);
+  }
+  await call({ action: "read" });
+  assert.equal(tabState("vaulthidden").vault, `/vault-lean/${vaultNames().token}.html`, "given again once the switch is off");
 });
 
 test("guide gives the overview, each topic it lists, and names the topics when one isn't there", async () => {

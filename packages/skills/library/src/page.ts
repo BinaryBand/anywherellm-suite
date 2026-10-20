@@ -16,12 +16,19 @@
 // The Library page's address holds a random token, and each event it posts carries a secret:
 // anyone with the link can read what it shows and act on it, so it's shared as a signed-in session
 // would be, and rotated (a new token and secret) from the page. The Vault has names of its own.
+//
+// The owner can keep the Library page's and the Vault's links from the agent (#shared/page-links:
+// `anywherellm-suite pages --hide`). Names made while that switch was off, or before it existed,
+// may have been given to the agent, so the first time the page is shown after the switch goes on
+// they are replaced once (settle), and the page's names are marked `hidden`. Either way the page's
+// path is kept in the links file, for whoever shows it to the user.
 
 import fs from "node:fs";
 import path from "node:path";
 import { updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { inTurn, newSecret, pageHtml, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { linksHidden, noteLink } from "#shared/page-links";
 import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
 import { LibraryError } from "./errors";
@@ -58,13 +65,15 @@ interface Result {
 interface PageFile {
   token: string;
   secret: string;
+  /** Made, or replaced, while the links were kept from the agent, and not given to it since. */
+  hidden?: true;
   needs: Need[];
   watchUntil: number;
   result?: Result;
 }
 
 const pageFile = () => path.join(store.libraryDir(), "page.json");
-const fresh = (): PageFile => ({ token: newSecret(), secret: newSecret(), needs: [], watchUntil: 0 });
+const fresh = (): PageFile => ({ token: newSecret(), secret: newSecret(), ...(linksHidden() ? { hidden: true as const } : {}), needs: [], watchUntil: 0 });
 /** A file of the skill's in AnythingLLM's public folder. */
 const pub = (name: string) => `library-lean/${name}`;
 
@@ -120,12 +129,51 @@ const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.j
 /** Writes the Library page and its state into AnythingLLM's public folder, watches for its events
  *  for a while, and answers its address (absolute when AnythingLLM's address, `base`, is known). */
 export async function show(base: string | null): Promise<string> {
+  await settle(base);
+  return write(base);
+}
+
+/** show without settle: what a drain calls, being in its turn already (settle waits for the turn). */
+async function write(base: string | null): Promise<string> {
   const kept = read();
   const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
   putPublic(`${p.token}.html`, await pageHtml(template(), { token: p.token, secret: p.secret, title: TITLE }));
   writeState(p, base);
   watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
+  // A hint for whoever shows the page to the user: a failure is only logged.
+  await noteLink("library", `/${pub(`${p.token}.html`)}`).catch((e) => console.error(`library-lean couldn't keep the page's link: ${(e as Error).message}`));
   return `${base ?? ""}/${pub(`${p.token}.html`)}`;
+}
+
+/** Gives the page a new token and secret and removes the old one's files, if `when` still holds
+ *  under the lock; the names carry the mark of the switch as it is now. Answers whether it did. */
+async function rotatePage(when: (p: PageFile) => boolean = () => true): Promise<boolean> {
+  const old = await change((p) => {
+    if (!when(p)) return null;
+    const was = p.token;
+    Object.assign(p, { token: newSecret(), secret: newSecret() });
+    if (linksHidden()) p.hidden = true;
+    else delete p.hidden;
+    return was;
+  });
+  if (old === null) return false;
+  removePublic(pub(`${old}.html`));
+  removePublic(pub(`${old}.json`));
+  return true;
+}
+
+/** Makes the page's names fit the switch before the page is shown. Off: a mark is dropped, with no
+ *  rotation, since the links go out again. On, with names not made under it: the agent may hold
+ *  their link, so what waits under the old secret is applied (a scheduled job's process doesn't
+ *  drain by itself), then the names are replaced, once: the check is repeated under the lock, so
+ *  two processes at once end in one rotation. */
+async function settle(base: string | null): Promise<void> {
+  const want = linksHidden();
+  const kept = read();
+  if (!kept || (kept.hidden === true) === want) return;
+  if (!want) return void (await change((p) => void delete p.hidden));
+  await inTurn(TITLE, () => drain(base));
+  await rotatePage((p) => p.hidden !== true);
 }
 
 /** Writes the Vault with its keys section, watches for the section's events for a while, and
@@ -267,10 +315,8 @@ async function drain(base: string | null): Promise<void> {
   if (applied.some((a) => a?.relist)) listing.refresh();
   if (met.size) await change((p) => void (p.needs = p.needs.filter((n) => !met.has(needId(n.kind, n.label)))));
   if (rotate) {
-    await change((p) => void Object.assign(p, { token: newSecret(), secret: newSecret() }));
-    removePublic(pub(`${page.token}.html`));
-    removePublic(pub(`${page.token}.json`));
-    await show(base);
+    await rotatePage();
+    await write(base);
   } else if (result || applied.some(Boolean)) writeState(read() ?? page, base);
   // A sign-in takes up to 20 s: tried after the turn, so neither the page nor the agent waits on it.
   const checks = new Set(applied.flatMap((a) => (a?.check ? [a.check] : [])));

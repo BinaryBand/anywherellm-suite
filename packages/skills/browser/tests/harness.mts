@@ -11,6 +11,7 @@ import { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
+import { hiddenFile } from "#shared/page-links";
 
 const require = createRequire(import.meta.url);
 export const testsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -136,4 +137,13 @@ export function post(event: Record<string, unknown>, { workspace = "home", tab =
   fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ browser_lean_event: 1, workspace, tab, secret: cfg.secret, ...event }) }));
   const at = new Date(Date.now() + ++posts * 10);
   fs.utimesSync(file, at, at);
+}
+
+/** Keeps the Library and Vault links from the agent (the switch #shared/page-links reads) or gives them
+ *  back; a test that turns it on turns it off in a `finally`. */
+export function hideLinks(on: boolean): void {
+  const file = hiddenFile(storage);
+  if (!on) return void fs.rmSync(file, { force: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, "test\n");
 }

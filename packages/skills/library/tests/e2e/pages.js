@@ -56,6 +56,43 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }
   assert.deepEqual(secrets, [{ site: "api.example.com", label: "ex", kind: "key", status: "saved" }], "the key the page posted is in the vault");
 
+  // The links kept from the agent (`anywherellm-suite pages --hide` writes this file on the host): the
+  // pages are still served, the answers carry no link, the links file has the two paths the bridge
+  // reads, and turning the switch on replaced both pages' addresses once.
+  const fs = require("fs");
+  const dir = `${process.env.STORAGE_DIR || `${APP}/storage`}/anywherellm-suite`;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(`${dir}/page-links-hidden`, new Date().toISOString() + "\n");
+  try {
+    const hidden = await call({ action: "library" });
+    assert.ok(!/vault-lean\/|library-lean\/|\.html/.test(hidden), "no page link in the answer");
+    assert.match(hidden, /You are never given their links/);
+    const linksPath = `${dir}/page-links.json`;
+    assert.equal(fs.statSync(linksPath).mode & 0o777, 0o600, "the links file is the owner's alone");
+    const links = JSON.parse(fs.readFileSync(linksPath, "utf8"));
+    assert.match(links.vault, /^\/vault-lean\/[\w-]+\.html$/);
+    assert.match(links.library, /^\/library-lean\/[\w-]+\.html$/);
+    assert.notEqual(links.vault, pagePath, "turning the switch on replaced the Vault's address");
+    assert.equal((await fetch(SERVER + pagePath)).status, 404, "the old address is gone");
+    const page = await fetch(SERVER + links.vault);
+    assert.equal(page.status, 200, "AnythingLLM serves the page at the address the links file holds");
+    const cfg2 = JSON.parse((await page.text()).match(/const cfg = (\{.*?\});/)[1]);
+    assert.notEqual(cfg2.secret, cfg.secret, "and with a new secret");
+    for (const part of [links.vault, links.library]) assert.ok(!hidden.includes(part.split("/")[2].replace(".html", "")), "no token in the answer");
+    // A key given on the new page still lands in the vault.
+    const keyed = await postEvent({ secret: cfg2.secret, ev: "key-save", label: "ex2", site: "api.example.com", sealed: seal("e2e-api-key-2") });
+    assert.equal(keyed.status, 200);
+    let again = [];
+    for (let i = 0; i < 40 && !again.some((s) => s.label === "ex2"); i++) {
+      await sleep(250);
+      await call({ action: "library" });
+      again = (await (await fetch(SERVER + links.vault.replace(/\.html$/, "-keys.json"))).json()).secrets;
+    }
+    assert.ok(again.some((s) => s.label === "ex2" && s.status === "saved"), "a key given on the new page is in the vault");
+  } finally {
+    fs.rmSync(`${dir}/page-links-hidden`, { force: true });
+  }
+
   console.log("ok");
   process.exit(0);
 })().catch((e) => {

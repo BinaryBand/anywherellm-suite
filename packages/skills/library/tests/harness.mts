@@ -12,6 +12,7 @@ import { after, type TestContext } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
+import { hiddenFile, linksFile } from "#shared/page-links";
 import { vendoredVersions } from "../../../build.mjs";
 
 const require = createRequire(import.meta.url);
@@ -108,9 +109,18 @@ export async function giveKey(label: string, site: string, value: string): Promi
   return asked;
 }
 
-/** Forgets the library, the vault and the page between tests. */
+/** Forgets the library, the vault and the page between tests, and the switch that keeps the pages'
+ *  links from the agent and the file the links are kept in (the pages' key stays). */
 export function reset(): void {
   for (const dir of [library, path.join(storage, "vault-lean"), path.join(storage, "documents"), publicDir]) fs.rmSync(dir, { recursive: true, force: true });
+  for (const file of [hiddenFile(storage), linksFile(storage)]) fs.rmSync(file, { force: true });
+}
+
+/** Turns the switch that keeps the Library page's and the Vault's links from the agent on or off, as
+ *  `anywherellm-suite pages --hide` and `--show` do on the host. */
+export function hideLinks(on: boolean): void {
+  if (on) writeAtomic(hiddenFile(storage), "2026-10-21T00:00:00.000Z\n");
+  else fs.rmSync(hiddenFile(storage), { force: true });
 }
 
 let posts = 0;

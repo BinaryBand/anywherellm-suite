@@ -32,3 +32,20 @@ test("a command it doesn't know prints the usage and exits 2; health with no sto
   assert.equal(none.status, 1);
   assert.match(none.stderr, /say which AnythingLLM: --storage DIR/);
 });
+
+test("the usage lists pages, and pages with no links yet exits 1 while the switch can still be made", () => {
+  const unknown = cli("serve");
+  assert.match(unknown.stderr, /pages \[--storage DIR\]/);
+  assert.match(unknown.stderr, /\[--hide \| --show\]/);
+  const storage = path.join(tmp, "pages-storage");
+  fs.mkdirSync(path.join(storage, "plugins"), { recursive: true });
+  const none = cli("pages", "--storage", storage);
+  assert.equal(none.status, 1, none.stdout + none.stderr);
+  assert.match(none.stdout, /No page yet/);
+  const hidden = cli("pages", "--storage", storage, "--hide");
+  assert.equal(hidden.status, 0, hidden.stdout + hidden.stderr);
+  assert.ok(fs.existsSync(path.join(storage, "anywherellm-suite", "page-links-hidden")));
+  const both = cli("pages", "--storage", storage, "--hide", "--show");
+  assert.equal(both.status, 1);
+  assert.match(both.stderr, /choose one/);
+});

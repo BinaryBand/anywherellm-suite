@@ -305,7 +305,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
         shown.add(section);
         return true;
       }));
-      if (!found.some(Boolean)) return toast("This link was replaced: ask the agent for the Vault's link again");
+      if (!found.some(Boolean)) return toast("This link was replaced: open the page again from where you got it (the agent, AnywhereLLM Lite, or `anywherellm-suite pages`)");
       const tabs = [...document.querySelectorAll("nav button")];
       for (const b of tabs) b.hidden = !shown.has(b.dataset.section);
       document.querySelector("nav").hidden = tabs.filter((b) => !b.hidden).length < 2; // one tab says nothing

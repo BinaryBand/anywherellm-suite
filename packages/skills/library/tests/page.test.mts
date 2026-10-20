@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { call, giveKey, library, pageConfig, pageState, post, postVault, publicDir, reset, saveSignIn, seal, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
+import { linksFile, readLinks } from "#shared/page-links";
+import { call, giveKey, hideLinks, library, pageConfig, pageState, post, postVault, publicDir, reset, saveSignIn, seal, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
 
 const KEY = "page-key-0123456789";
 test.beforeEach(reset);
@@ -23,6 +24,17 @@ test("library ends with the Vault's link and the Library page's: relative, or ab
   assert.equal(vaultConfig().key, "brx-test");
   assert.ok(secret.length >= 20);
   assert.notEqual(vaultConfig().secret, secret, "the Vault has a secret of its own");
+  assert.equal(pageState().vault, `https://llm.example.com/vault-lean/${vaultConfig().token}.html`, "the Library page links to the Vault");
+});
+
+test("with the links kept from the agent the pages are still written, the Library page's path is in the links file, and the page still links to the Vault", async () => {
+  hideLinks(true);
+  await call({ action: "library" }, { base: "https://llm.example.com/" });
+  const { token } = pageConfig();
+  assert.ok(fs.existsSync(path.join(publicDir, "library-lean", `${token}.html`)), "the page is written");
+  assert.equal(readLinks().library, `/library-lean/${token}.html`, "root-relative, whatever ANYTHINGLLM_URL is");
+  assert.equal(fs.statSync(linksFile()).mode & 0o777, 0o600);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(library, "page.json"), "utf8")).hidden, true, "made under the switch, so marked");
   assert.equal(pageState().vault, `https://llm.example.com/vault-lean/${vaultConfig().token}.html`, "the Library page links to the Vault");
 });
 

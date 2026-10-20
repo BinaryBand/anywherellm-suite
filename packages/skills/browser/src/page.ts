@@ -10,7 +10,7 @@
 // AnythingLLM's question card, which shows its answers in the chat. There they also take the tab
 // over to use it themselves (takeover.ts) and save what it offers. The saved logins are listed and
 // deleted on the Vault (#shared/vault-page), whose logins section this skill writes and applies,
-// and which the tab's page links to.
+// and which the tab's page links to, unless the links are kept from the agent (#shared/page-links).
 // Events are applied as they come while a page was shown lately, and at the start of each call.
 
 import fs from "node:fs";
@@ -19,6 +19,7 @@ import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hostOf } from "#shared/fence";
 import * as logins from "#shared/logins";
+import { linksHidden } from "#shared/page-links";
 import { inTurn, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
@@ -125,7 +126,10 @@ async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<stri
       const { width, height } = at.page.viewport() ?? VIEWPORT;
       await at.page.screenshot({ path: `${shot}-card.jpg`, type: "jpeg", quality: QUALITY, clip: { x: 0, y: 0, width, height: Math.min(height, Math.round(width * 1.2)), scale: 0.5 } });
     }
-    writePublic(pub(names.token, ".json"), JSON.stringify(tabState(at, title, at.page.url(), snap, await showVault())));
+    // The Vault page is written either way; its link goes into the tab's state (which the agent's card
+    // carries) only while the links aren't kept from the agent (#shared/page-links, read each time).
+    const vaultLink = await showVault();
+    writePublic(pub(names.token, ".json"), JSON.stringify(tabState(at, title, at.page.url(), snap, linksHidden() ? null : vaultLink)));
     if (card || !fs.existsSync(`${shot}.html`)) writePublic(pub(names.token, ".html"), await pageHtml(statics().get("pages/tab.html")!.text, { token: names.token, secret: names.secret, title: TITLE, workspace: at.workspace, tab: at.key }));
   } catch {
     return null;
