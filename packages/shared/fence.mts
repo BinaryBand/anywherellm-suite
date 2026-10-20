@@ -37,12 +37,15 @@ export class Fenced extends NetError {
 /** What the agent is told whenever the fence refuses an address. */
 export const FENCED = "That's final: don't reach it another way, with another tool or another address for the same place.";
 
+/** The folders of AnythingLLM's public folder the skills' pages live in (#shared/pages writes only
+ *  there): the Vault, the Library page, the browser's tab pages, the apps. */
+export const PAGE_FOLDERS = ["vault-lean", "library-lean", "browser-lean", "apps-lean"];
+
 /** The paths the agent never reaches, on any host and whatever the user lets through: the skills'
- *  own pages (the Vault, the Library page, the browser's), which act for whoever holds their link,
- *  and AnythingLLM's upload the pages post with. The user acts on them; the agent, which is given
- *  their links, mustn't (a toolkit the user locked would be unlocked by it). As AnythingLLM matches
- *  a path: any case, decoded, a run of slashes as one. */
-const NEVER = /^\/(?:api\/browser-extension|vault-lean|library-lean|browser-lean)(?:\/|$)/;
+ *  pages, which act for whoever holds their link, and AnythingLLM's upload the pages post with. The
+ *  user acts on them; the agent, which is given their links, mustn't (a toolkit the user locked
+ *  would be unlocked by it). As AnythingLLM matches a path: any case, decoded, a run of slashes as one. */
+const NEVER = new RegExp(`^/(?:api/browser-extension|${PAGE_FOLDERS.join("|")})(?:/|$)`);
 
 /** Why the agent never reaches `url`'s path, or null. */
 export function pathRefused(url: URL): string | null {

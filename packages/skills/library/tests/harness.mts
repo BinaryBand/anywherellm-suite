@@ -110,14 +110,14 @@ export function reset(): void {
 
 let posts = 0;
 
-/** What the page posts, written as AnythingLLM's collector writes it; each after the one before, as
- *  the page posts them one at a time. */
+/** What the page posts, written as AnythingLLM's collector writes it, with the page's secret unless
+ *  the event names another; each after the one before, as the page posts them one at a time. */
 export function post(event: Record<string, unknown>): void {
   const dir = path.join(storage, "documents", "custom-documents");
   fs.mkdirSync(dir, { recursive: true });
   const id = crypto.randomUUID();
   const file = path.join(dir, `raw-library-lean-event-${id}.json`);
-  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ library_lean_event: 1, ...event }) }));
+  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ library_lean_event: 1, ...("secret" in event ? {} : { secret: pageConfig().secret }), ...event }) }));
   const at = new Date(Date.now() + ++posts * 10);
   fs.utimesSync(file, at, at);
 }

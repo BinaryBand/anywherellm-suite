@@ -110,7 +110,7 @@ test("a site as a person writes it is a host, and its subdomains are on it", () 
 });
 
 test("the skills' own pages and AnythingLLM's upload for them are never reached, on any host, however written", async () => {
-  const never = ["/vault-lean/abc.html", "/library-lean/abc.json", "/browser-lean/x", "/api/browser-extension/upload-content", "/API/Browser-Extension/upload-content", "//vault-lean//abc.html", "/%76ault-lean/abc.html", "/library-lean%2Fabc.html", "/vault-lean"];
+  const never = ["/vault-lean/abc.html", "/library-lean/abc.json", "/browser-lean/x", "/apps-lean/t.html", "/api/browser-extension/upload-content", "/API/Browser-Extension/upload-content", "//vault-lean//abc.html", "/%76ault-lean/abc.html", "/library-lean%2Fabc.html", "/vault-lean"];
   for (const p of never) assert.match(pathRefused(new URL(`https://ai.example.com${p}`)) ?? "", /never reaches: the user acts on them/, p);
   for (const p of ["/", "/api/v1/workspaces", "/vault-leaner/x", "/docs/library-lean/x", "/api/browser-extensions"]) assert.equal(pathRefused(new URL(`https://ai.example.com${p}`)), null, p);
   const refused = makeFence({ allow: () => new Set(["127.0.0.1"]), lookup: async () => [{ address: "93.184.216.34" }] });

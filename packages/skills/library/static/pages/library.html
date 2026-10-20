@@ -73,7 +73,7 @@
     }
   }
 
-  const remove = (text, ev, fields) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(`${text}?`) && post(ev, fields) });
+  const remove = (text, ev, fields, asked = `${text}?`) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
 
   function draw(s) {
     $("vault").hidden = !s.vault;
@@ -83,7 +83,7 @@
     for (const t of s.toolkits) {
       // A locked toolkit: the agent can't change or remove it, nor this page delete in it, until it's unlocked.
       const lock = t.locked
-        ? el("button", { className: "act quiet", type: "button", textContent: "Unlock", onclick: () => confirm("Unlock? The agent can change its functions again.") && post("toolkit-unlock", { service: t.service }) })
+        ? remove("Unlock", "toolkit-unlock", { service: t.service }, "Unlock? The agent can change its functions again.")
         : el("button", { className: "act", type: "button", textContent: "Lock", onclick: () => post("toolkit-lock", { service: t.service }) });
       toolkits.append(el("div", { className: "card" },
         el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: t.locked ? "good" : "cap", textContent: t.locked ? `${t.service} · locked` : t.service })),

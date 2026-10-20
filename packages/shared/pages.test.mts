@@ -126,6 +126,7 @@ test("a public file's path can't leave the public folder", () => {
   assert.throws(() => removePublic(vault), out, "nor an absolute path");
   assert.throws(() => writePublic("../storage/vault-lean/vault.json", "gone"), out);
   assert.throws(() => listPublic(".."), out);
+  assert.throws(() => writePublic("elsewhere/x.html", "a page the fence wouldn't keep the agent from"), /isn't in one of the pages' folders \(vault-lean, library-lean, browser-lean, apps-lean\)/);
   assert.equal(fs.readFileSync(vault, "utf8"), "{}", "the file outside is as it was");
   removePublic("library-lean/x.json");
   assert.ok(!fs.existsSync(path.join(publicDir(), "library-lean", "x.json")), "one inside goes");

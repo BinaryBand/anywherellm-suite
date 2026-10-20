@@ -101,6 +101,7 @@ export const libraryDir = (): string => path.join(storageDir(), "library-lean");
  *  instance, under <storage>/library-lean/static/. */
 export const statics = (): StaticFiles => staticFiles(STATIC_FILES, path.join(libraryDir(), "static"));
 const kitDir = (service: string) => path.join(libraryDir(), "toolkits", service);
+const kitFile = (service: string) => path.join(kitDir(service), "toolkit.json");
 const fnFile = (service: string, name: string) => path.join(kitDir(service), "functions", `${name}.json`);
 const runsDir = () => path.join(libraryDir(), "runs");
 const unseenDir = () => path.join(libraryDir(), "unseen");
@@ -139,9 +140,9 @@ export function qualified(raw: unknown): { service: string; name: string } {
 }
 
 /** The services the library has a toolkit for, sorted. */
-export const services = (): string[] => namesIn(path.join(libraryDir(), "toolkits")).filter((s) => SERVICE.test(s) && fs.existsSync(path.join(kitDir(s), "toolkit.json")));
+export const services = (): string[] => namesIn(path.join(libraryDir(), "toolkits")).filter((s) => SERVICE.test(s) && fs.existsSync(kitFile(s)));
 
-export const toolkit = (service: string): Toolkit | null => readJson<Toolkit>(path.join(kitDir(service), "toolkit.json"));
+export const toolkit = (service: string): Toolkit | null => readJson<Toolkit>(kitFile(service));
 
 /** Every host a toolkit's functions may reach: its base addresses' and the others it names. */
 export const hostsOf = (kit: Toolkit): string[] => [...new Set([...kit.base_urls.map(hostOf), ...kit.hosts])];
@@ -155,24 +156,22 @@ const strings = (value: unknown, what: string): string[] => {
 /** An address a toolkit names, checked: http(s), without a trailing slash. */
 const urlChecked = (url: string): string => checkUrl(url).replace(/\/$/, "");
 
-/** Refuses to change the toolkit `service` when the user locked it. */
-export function assertUnlocked(service: string): void {
-  if (toolkit(service)?.locked) throw new LibraryError(`the user locked the toolkit ${service} on the Library page: it can't be changed or removed. If it needs a change, ask the user to unlock it there; don't save a copy under another name`);
+/** The toolkit `service`, refused when the user locked it: what a change starts from. */
+function unlocked(service: string): Toolkit | null {
+  const kit = toolkit(service);
+  if (kit?.locked) throw new LibraryError(`the user locked the toolkit ${service} on the Library page: it can't be changed or removed. If it needs a change, ask the user to unlock it there; don't save a copy under another name`);
+  return kit;
 }
 
-/** Locks the toolkit `service`, or unlocks it: the user's, from the Library page. Whether there's one. */
-export function setLocked(service: string, on: boolean): boolean {
+/** Locks the toolkit `service`, or unlocks it: the user's, from the Library page. */
+export function setLocked(service: string, on: boolean): void {
   const kit = toolkit(service);
-  if (!kit) return false;
-  const { locked: _, ...rest } = kit;
-  writeJson(path.join(kitDir(service), "toolkit.json"), on ? { ...rest, locked: true } : rest);
-  return true;
+  if (kit) writeJson(kitFile(service), { ...kit, locked: on || undefined });
 }
 
 /** Saves a toolkit: what's given replaces what was there, and the rest stays. */
 export function saveToolkit(service: string, given: Record<string, unknown>): Toolkit {
-  assertUnlocked(service);
-  const was = toolkit(service);
+  const was = unlocked(service);
   const pick = <T,>(key: keyof Toolkit, make: (v: unknown) => T, fallback: T): T => (given[key] !== undefined ? make(given[key]) : was ? (was[key] as T) : fallback);
   const base_urls = pick("base_urls", (v) => strings(v, "base_urls").map(urlChecked), [] as string[]);
   const hosts = pick(
@@ -205,14 +204,13 @@ export function saveToolkit(service: string, given: Record<string, unknown>): To
     notes,
     updated: new Date().toISOString(),
   };
-  writeJson(path.join(kitDir(service), "toolkit.json"), kit);
+  writeJson(kitFile(service), kit);
   return kit;
 }
 
 /** Removes a toolkit and its functions; its keys stay in the vault. */
 export function removeToolkit(service: string): boolean {
-  if (!toolkit(service)) return false;
-  assertUnlocked(service);
+  if (!unlocked(service)) return false;
   fs.rmSync(kitDir(service), { recursive: true, force: true });
   return true;
 }
@@ -242,7 +240,7 @@ function inputsOf(value: unknown): Record<string, Input> {
 
 /** Saves a function, keeping the version it replaces; answers it as saved. */
 export function saveFn(service: string, name: string, given: { description?: unknown; inputs?: unknown; source: string }): Fn {
-  assertUnlocked(service);
+  unlocked(service);
   const was = fn(service, name);
   const saved: Fn = {
     name,
@@ -264,7 +262,7 @@ export function saveFn(service: string, name: string, given: { description?: unk
 /** Removes a function, its earlier versions and its state. */
 export function removeFn(service: string, name: string): boolean {
   if (!fn(service, name)) return false;
-  assertUnlocked(service);
+  unlocked(service);
   const dir = path.join(kitDir(service), "functions");
   for (const file of namesIn(dir)) if (file === `${name}.json` || file.startsWith(`${name}.v`)) fs.rmSync(path.join(dir, file), { force: true });
   fs.rmSync(path.join(kitDir(service), "state", `${name}.json`), { force: true });

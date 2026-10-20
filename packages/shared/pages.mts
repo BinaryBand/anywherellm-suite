@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pageKeyFile, perBuild, perProcess, readPageKey, serial, serverDir, storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
+import { PAGE_FOLDERS } from "./fence.mts";
 import { writeAtomic, writeAtomicIfChanged } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
 
@@ -28,11 +29,14 @@ const RECENT_MS = 2000;
 export const publicDir = (): string => process.env.ANYTHINGLLM_PUBLIC_DIR || path.join(serverDir(), "public");
 
 /** Where `rel` ("library-lean/<token>.json") is in the public folder; throws for one that would be
- *  outside it ("../", an absolute path), since a name can come from what a page posted. */
+ *  outside it ("../", an absolute path), since a name can come from what a page posted, and for one
+ *  outside the pages' folders (PAGE_FOLDERS), which the fence keeps the agent from: a page anywhere
+ *  else could be acted on by the agent. */
 export function publicPath(rel: string): string {
   const dir = path.resolve(publicDir());
   const file = path.resolve(dir, rel);
   if (file !== dir && !file.startsWith(dir + path.sep)) throw new Error(`${JSON.stringify(rel)} isn't in AnythingLLM's public folder`);
+  if (!PAGE_FOLDERS.includes(path.relative(dir, file).split(path.sep)[0])) throw new Error(`${JSON.stringify(rel)} isn't in one of the pages' folders (${PAGE_FOLDERS.join(", ")})`);
   return file;
 }
 

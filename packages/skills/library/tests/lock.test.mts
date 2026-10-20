@@ -4,14 +4,15 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { call, idOf, pageConfig, pageState, post, reset, runRecord } from "./harness.mts";
+import { call, idOf, pageState, post, reset, runRecord } from "./harness.mts";
 
 const LOCKED = /the user locked the toolkit chan on the Library page: it can't be changed or removed/;
 const fn = (name: string, source: string) => ({ name, description: `${name}.`, source });
 
-/** Posts `ev` for the toolkit `service` from the Library page, and lets the skill apply it. */
-async function page(ev: string, service: string, secret = pageConfig().secret): Promise<void> {
-  post({ secret, ev, service });
+/** Posts `ev` for the toolkit `service` from the Library page (with `secret`, else the page's), and
+ *  lets the skill apply it. */
+async function page(ev: string, service: string, secret?: string): Promise<void> {
+  post({ ev, service, ...(secret ? { secret } : {}) });
   await call({ action: "library" });
 }
 
@@ -41,7 +42,7 @@ test("a locked toolkit can't be saved, changed or removed by the agent, and its 
 
 test("the page deletes nothing in a locked toolkit; unlocked first, it does", async () => {
   await page("toolkit-lock", "chan");
-  post({ secret: pageConfig().secret, ev: "fn-delete", fn: "chan.say" });
+  post({ ev: "fn-delete", fn: "chan.say" });
   await page("toolkit-delete", "chan");
   assert.deepEqual(pageState().toolkits.map((t: { service: string; functions: unknown[] }) => [t.service, t.functions.length]), [["chan", 1]]);
   await page("toolkit-unlock", "chan");

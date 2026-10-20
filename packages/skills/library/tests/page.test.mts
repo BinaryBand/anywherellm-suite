@@ -50,7 +50,7 @@ test("an event without the page's secret (an old link's, or a forgery) is droppe
   await call({ action: "library" });
   postVault({ secret: "not-the-secret", ev: "key-save", label: "x", site: "api.example.com", sealed: seal(KEY) });
   postVault({ secret: pageConfig().secret, ev: "key-save", label: "y", site: "api.example.com", sealed: seal(KEY) }); // the Library page's, not the Vault's
-  post({ ev: "toolkit-delete", service: "x" });
+  post({ secret: undefined, ev: "toolkit-delete", service: "x" });
   await call({ action: "library" });
   assert.deepEqual(vaultState().secrets, []);
 });
@@ -60,12 +60,12 @@ test("the user deletes a key on the Vault, and a function or a toolkit on the Li
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" } });
   await call({ action: "save", service: "ex", function: { name: "two", description: "Two.", source: "async function main() { return 2; }" } });
   await call({ action: "library" });
-  post({ secret: pageConfig().secret, ev: "fn-delete", fn: "ex.one" });
+  post({ ev: "fn-delete", fn: "ex.one" });
   postVault({ ev: "key-delete", label: "ex" });
   const said = await call({ action: "library", service: "ex" });
   assert.match(said, /Functions:\n- ex\.two\(\)/);
   assert.deepEqual(vaultState().secrets, []);
-  post({ secret: pageConfig().secret, ev: "toolkit-delete", service: "ex" });
+  post({ ev: "toolkit-delete", service: "ex" });
   assert.match(await call({ action: "library" }), /^The library is empty/);
 });
 
