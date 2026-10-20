@@ -27,16 +27,27 @@ const RECENT_MS = 2000;
 /** AnythingLLM's public folder, served at its root: ANYTHINGLLM_PUBLIC_DIR, else <server>/public. */
 export const publicDir = (): string => process.env.ANYTHINGLLM_PUBLIC_DIR || path.join(serverDir(), "public");
 
+/** Where `rel` ("library-lean/<token>.json") is in the public folder; throws for one that would be
+ *  outside it ("../", an absolute path), since a name can come from what a page posted. */
+export function publicPath(rel: string): string {
+  const dir = path.resolve(publicDir());
+  const file = path.resolve(dir, rel);
+  const inside = path.relative(dir, file);
+  if (inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) throw new Error(`${JSON.stringify(rel)} isn't in AnythingLLM's public folder`);
+  return file;
+}
+
 /** Writes a file into the public folder, at `rel` ("library-lean/<token>.json"), unless it holds
  *  `text` already; whether it wrote. */
-export const writePublic = (rel: string, text: string): boolean => writeAtomicIfChanged(path.join(publicDir(), rel), text, 0o644);
+export const writePublic = (rel: string, text: string): boolean => writeAtomicIfChanged(publicPath(rel), text, 0o644);
 
-export const removePublic = (rel: string): void => fs.rmSync(path.join(publicDir(), rel), { force: true });
+export const removePublic = (rel: string): void => fs.rmSync(publicPath(rel), { force: true });
 
 /** The files in a folder of the public folder ("library-lean"); none when there's none. */
 export function listPublic(rel: string): string[] {
+  const dir = publicPath(rel);
   try {
-    return fs.readdirSync(path.join(publicDir(), rel));
+    return fs.readdirSync(dir);
   } catch {
     return [];
   }

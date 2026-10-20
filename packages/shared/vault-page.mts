@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { readJson, updateJson } from "./atomic.mts";
-import { inTurn, listPublic, newSecret, pageHtml, publicDir, removePublic, sameSecret, takeEvents, watch, writePublic } from "./pages.mts";
+import { inTurn, listPublic, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "./pages.mts";
 import { vaultDir } from "./vault.mts";
 import template from "./vault.html";
 
@@ -44,7 +44,7 @@ export const titleOf = (section: Section): string => `vault-lean-${section}`;
 
 /** Writes the page under `names`, unless the one there was written by a newer version of it. */
 async function writePage(names: Names): Promise<void> {
-  const file = path.join(publicDir(), pub(`${names.token}.html`));
+  const file = publicPath(pub(`${names.token}.html`));
   let there = 0;
   try {
     there = Number(/"version":(\d+)/.exec(fs.readFileSync(file, "utf8"))?.[1] ?? 0);
@@ -94,7 +94,7 @@ export async function rotate(): Promise<void> {
   const now = await updateJson(namesFile(), fresh, (n) => Object.assign(n, fresh()));
   if (old) {
     for (const file of listPublic(pub("")).filter((f) => f.startsWith(`${old.token}-`) && f.endsWith(".json"))) {
-      fs.renameSync(path.join(publicDir(), pub(file)), path.join(publicDir(), pub(`${now.token}${file.slice(old.token.length)}`)));
+      fs.renameSync(publicPath(pub(file)), publicPath(pub(`${now.token}${file.slice(old.token.length)}`)));
     }
     removePublic(pub(`${old.token}.html`));
   }

@@ -19,7 +19,7 @@ import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hostOf } from "#shared/fence";
 import * as logins from "#shared/logins";
-import { inTurn, newSecret, pageHtml, publicDir, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { inTurn, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
 import { isUnsent, submitted, typeIn } from "./act";
@@ -118,7 +118,7 @@ async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<stri
   await takeover.keepOffer(at, asksPassword(snap)); // before the state shows the offer
   const names = namesOf(at.workspace, at.key)!;
   try {
-    const shot = path.join(publicDir(), pub(names.token, ""));
+    const shot = publicPath(pub(names.token, ""));
     fs.mkdirSync(path.dirname(shot), { recursive: true });
     await at.page.screenshot({ path: `${shot}.jpg`, type: "jpeg", quality: QUALITY });
     if (card) {

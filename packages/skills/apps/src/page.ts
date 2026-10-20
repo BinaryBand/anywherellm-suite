@@ -13,7 +13,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { jobTimeLeft, perProcess } from "#shared/anythingllm";
 import { readJson, updateJson } from "#shared/atomic";
-import { embed, inTurn, newSecret, pageKey, publicDir, putBack, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { embed, inTurn, newSecret, pageKey, publicPath, putBack, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import { HUB_ID, root } from "./dirs.ts";
 import type { Json } from "./patch.ts";
 import { file, libraries, PLACEHOLDER, RUNTIME_TAG, tag } from "./parts.ts";
@@ -223,7 +223,7 @@ export async function collect(): Promise<Result[]> {
 
 /** Whether `app`'s page is as this skill would write it, and still there: a public folder can be
  *  emptied, as a container's own is when the container is made again. */
-const current = (app: Json): boolean => app.version === versionOf(app) && fs.existsSync(path.join(publicDir(), pageFile(app.pageToken)));
+const current = (app: Json): boolean => app.version === versionOf(app) && fs.existsSync(publicPath(pageFile(app.pageToken)));
 
 /** Once per process: writes again every page that isn't as this skill would write it now (its
  *  parts changed) or that the public folder lost. */
