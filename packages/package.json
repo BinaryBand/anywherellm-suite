@@ -16,10 +16,12 @@
   "devDependencies": {
     "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
     "@types/node": "^18.19.130",
+    "@types/ssh2": "1.15.6",
     "esbuild": "^0.28.2",
     "fast-json-patch": "3.1.1",
     "puppeteer-core": "24.43.1",
     "quickjs-emscripten-core": "0.32.0",
+    "ssh2": "1.17.0",
     "typescript": "^7.0.2"
   },
   "imports": {

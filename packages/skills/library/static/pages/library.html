@@ -22,6 +22,11 @@
   .cap { color: var(--muted); font-size: 13px; }
   .bad { color: var(--warn); } .good { color: var(--ok); }
   a { color: var(--accent); }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 2px; }
+  label.check { display: flex; gap: 8px; align-items: center; color: var(--fg); }
+  label.check input { width: auto; }
+  input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; }
+  .need { border-color: var(--accent); }
   button.act { margin-top: 10px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
   button.quiet { background: none; color: var(--warn); border-color: var(--line); }
   pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 360px; overflow: auto; }
@@ -34,15 +39,17 @@
 <header>
   <h1>Library</h1>
   <nav role="tablist">
-    <button role="tab" data-tab="toolkits" aria-selected="true">Toolkits</button>
+    <button role="tab" data-tab="targets" aria-selected="true">Targets</button>
+    <button role="tab" data-tab="toolkits">Toolkits</button>
     <button role="tab" data-tab="runs">Runs</button>
   </nav>
 </header>
 <main>
   <p class="cap" id="vault" hidden>The keys and sign-ins the toolkits call with are in the <a id="vaultlink">Vault</a>.</p>
-  <section id="toolkits"></section>
+  <section id="targets"></section>
+  <section id="toolkits" hidden></section>
   <section id="runs" hidden></section>
-  <p class="cap">Anyone with this page's link can see what it shows and act on it.
+  <p class="cap">What you type for a target's key is sealed on this device; the agent never sees it. Anyone with this page's link can see what it shows and act on it.
     <button class="act quiet" id="rotate">New link</button></p>
 </main>
 <div id="toast" hidden></div>
@@ -73,12 +80,84 @@
     }
   }
 
+  // RSA-OAEP seals at most 190 bytes; a longer value (a private key, say) is sealed with a new
+  // AES-GCM key, itself sealed with RSA: "h1.<sealed key>.<iv>.<sealed value>".
+  const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
+  let pubKey = null;
+  async function seal(text) {
+    const bytes = new TextEncoder().encode(text);
+    pubKey ||= await crypto.subtle.importKey("spki", Uint8Array.from(atob(cfg.pub), (c) => c.charCodeAt(0)), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
+    if (bytes.length <= 190) return b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, bytes));
+    const aes = crypto.getRandomValues(new Uint8Array(32));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await crypto.subtle.importKey("raw", aes, "AES-GCM", false, ["encrypt"]);
+    const sealed = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes);
+    return ["h1", b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, aes)), b64(iv), b64(sealed)].join(".");
+  }
+
+  /** A labelled input: the label holds it, and `inputs[name]` keeps it for the form to read. */
+  // Not a login form: a password field asks for a new value (so the browser fills in no saved
+  // password, nor a user name beside it), and names hold nothing a browser reads as a login.
+  // A private key goes in a textarea, which keeps the line breaks an input drops.
+  const field = (inputs, name, label, type = "text") => {
+    const props = { name: `lib-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", spellcheck: false };
+    const input = (inputs[name] = type === "textarea" ? el("textarea", { ...props, rows: 4 }) : el("input", { ...props, type }));
+    return type === "checkbox" ? el("label", { className: "check" }, input, label) : el("label", { textContent: label }, input);
+  };
+
+  function form(title, fields, submit, onsubmit, need = false) {
+    const inputs = {};
+    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type]) => field(inputs, name, label, type)), el("button", { className: "act", type: "submit", textContent: submit }));
+    node.onsubmit = async (e) => {
+      e.preventDefault();
+      const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.type === "checkbox" ? i.checked : i.value.trim()]));
+      if (await onsubmit(v)) node.reset();
+    };
+    return node;
+  }
+
+  // A target: the machine's address and account, its host key's fingerprint, and a key, pasted here
+  // (sealed on this device) or made by the skill, which then shows the public line for the machine.
+  const targetForm = (need) =>
+    form(
+      el("div", {}, el("strong", { textContent: need ? `The agent asks for a target: ${need.label}` : "Add a target" }),
+        el("p", { className: "cap", textContent: "A machine the agent's functions run commands on over SSH. Read the fingerprint on the machine itself: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" })),
+      [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…"],
+        ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
+        ["private", "On my network: a private address, or a port this machine forwards", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
+      "Save",
+      async (v) => {
+        const label = need ? need.label : v.label;
+        if (!label || !v.host || !v.login || !v.fingerprint) return toast("Give a name, the host, the account and the fingerprint"), false;
+        return post("target-save", { label, host: v.host, port: v.port, login: v.login, fingerprint: v.fingerprint, private: v.private, unattended: v.unattended, sealed: v.key ? await seal(v.key) : "" });
+      },
+      !!need,
+    );
+
+  // Copies `text`; where the clipboard is refused, selects it to copy by hand.
+  const copyable = (text) => {
+    const pre = el("pre", { textContent: text });
+    const copy = () => navigator.clipboard.writeText(text).then(() => toast("Copied"), () => getSelection().selectAllChildren(pre));
+    return el("div", {}, pre, el("button", { className: "act quiet", type: "button", textContent: "Copy", onclick: copy }));
+  };
+
   const remove = (text, ev, fields, asked = `${text}?`) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
 
   function draw(s) {
     $("vault").hidden = !s.vault;
     if (s.vault) $("vaultlink").href = s.vault;
-    const toolkits = $("toolkits"), runs = $("runs");
+    const machines = $("targets"), toolkits = $("toolkits"), runs = $("runs");
+    machines.replaceChildren(...s.needs.map((n) => targetForm(n)));
+    for (const m of s.targets) {
+      machines.append(el("div", { className: "card" },
+        el("div", { className: "row" }, el("strong", { textContent: m.label }), el("span", { className: m.status === "signed in" ? "good" : "bad", textContent: m.status })),
+        el("p", { className: "cap", textContent: `${m.login}@${m.host}:${m.port}; ${m.fingerprint}${m.private ? "; on my network" : ""}${m.unattended ? "; may run unattended" : ""}` }),
+        m.public ? el("div", {}, el("p", { className: "cap", textContent: `Add this line to ~${m.login}/.ssh/authorized_keys on the machine (restrict keeps it to commands and files):` }), copyable(`restrict ${m.public}`)) : null,
+        el("button", { className: "act", type: "button", textContent: "Try signing in", onclick: () => post("target-check", { label: m.label }) }),
+        remove("Delete", "target-delete", { label: m.label })));
+    }
+    machines.append(targetForm(null));
+
     toolkits.replaceChildren(...(s.toolkits.length ? [] : [el("p", { className: "cap", textContent: "No toolkits yet." })]));
     for (const t of s.toolkits) {
       // A locked toolkit: the agent can't change or remove it, nor this page delete in it, until it's unlocked.
@@ -87,7 +166,7 @@
         : el("button", { className: "act", type: "button", textContent: "Lock", onclick: () => post("toolkit-lock", { service: t.service }) });
       toolkits.append(el("div", { className: "card" },
         el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: t.locked ? "good" : "cap", textContent: t.locked ? `${t.service} · locked` : t.service })),
-        el("p", { className: "cap", textContent: `${t.base_urls.join(", ") || "no base address"}; keys: ${t.secrets.join(", ") || "none"}` }),
+        el("p", { className: "cap", textContent: `${t.reach.join(", ") || "no base address or target"}; keys: ${t.secrets.join(", ") || "none"}` }),
         ...t.functions.map((f) => el("details", {}, el("summary", { textContent: `${f.name}: ${f.description} (v${f.version})` }), el("pre", { textContent: f.source }), t.locked ? null : remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))),
         el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can't change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can't change a locked toolkit." }),
         lock, " ", t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service })));

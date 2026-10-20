@@ -14,6 +14,7 @@ A toolkit is one service's API, as you found it. Save it with save, service (its
 - base_urls: where the API is; a function's path is relative to the first. Leave it out for a toolkit with no API, whose functions only compute or sign (kit.crypto, kit.secret).
 - hosts: any other host its functions must reach (the base addresses' hosts are in already). A function reaches nothing else.
 - secrets: the keys its functions send (topic secrets); the first goes with a request unless it names another.
+- targets: the machines its functions run commands on (topic targets), by name. A toolkit with targets needs no base_urls.
 - notes: what a function needs to know and the docs don't make easy to find: endpoints, paging, limits, quirks. Keep them short; you'll read them again before writing the next function.
 
 A toolkit the user locked (library marks it "locked by the user") can't be saved, changed or removed, nor its functions, and its functions run only functions of locked toolkits. The user locks one on the Library page once they've read its functions, so that nothing changes what they read. If it needs a change, say what and why, and ask them to unlock it there. Never save a copy under another name to get around it.

@@ -16,4 +16,5 @@ Topics (guide with topic):
 - `toolkits`: what a toolkit keeps, and saving one.
 - `functions`: how a function is written: main, its input, and what kit offers it.
 - `schedules`: running a function on a schedule, as AnythingLLM's scheduled job.
+- `targets`: machines the user registered, where a function runs commands over SSH.
 - `snippets`: worked examples to adapt (guide with snippet).

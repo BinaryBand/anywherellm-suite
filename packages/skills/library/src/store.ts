@@ -1,7 +1,8 @@
 // What the library keeps, in AnythingLLM's storage (<storage>/library-lean/), outside the skill's
 // own folder, so an uninstall keeps it. One folder per service, its toolkit:
 //
-//   toolkits/<service>/toolkit.json          what the agent learned of the API, and which keys it calls with
+//   toolkits/<service>/toolkit.json          what the agent learned of the API, which keys it calls with,
+//                                            and which targets its functions run commands on
 //   toolkits/<service>/functions/<fn>.json   a function: its description, inputs and source
 //   toolkits/<service>/functions/<fn>.v<N>.json   its earlier versions, the last KEEP_VERSIONS
 //   toolkits/<service>/state/<fn>.json       what it keeps between runs (kit.state)
@@ -20,6 +21,7 @@ import { checkUrl, hostOf } from "#shared/fence";
 import { staticFiles, type StaticFiles } from "#shared/static";
 import { LibraryError } from "./errors";
 import { asOf, labelOf, publicSite } from "./secrets";
+import { nameOf } from "./targets";
 
 const SERVICE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const FUNCTION = /^[a-z][a-z0-9_]{0,39}$/;
@@ -49,6 +51,8 @@ export interface Toolkit {
   hosts: string[];
   /** The keys its functions call with, the first unless a request names another. */
   secrets: KeyUse[];
+  /** The targets its functions run commands on (targets.ts), by name. */
+  targets: string[];
   docs: string[];
   /** What the agent learned of the API: endpoints, paging, limits, quirks. */
   notes: string;
@@ -142,7 +146,20 @@ export function qualified(raw: unknown): { service: string; name: string } {
 /** The services the library has a toolkit for, sorted. */
 export const services = (): string[] => namesIn(path.join(libraryDir(), "toolkits")).filter((s) => SERVICE.test(s) && fs.existsSync(kitFile(s)));
 
-export const toolkit = (service: string): Toolkit | null => readJson<Toolkit>(kitFile(service));
+/** A toolkit as saved. One saved before targets came has none: it is written again with `targets`
+ *  empty the first time it is opened, so nothing else reads the old shape. */
+export const toolkit = (service: string): Toolkit | null => {
+  const kit = readJson<Toolkit>(kitFile(service));
+  if (kit && !Array.isArray(kit.targets)) {
+    kit.targets = [];
+    writeJson(kitFile(service), kit);
+  }
+  return kit;
+};
+
+/** Where a toolkit's functions reach, as the agent and the page are shown it: its base addresses
+ *  and its targets. */
+export const reach = (kit: Toolkit): string[] => [...kit.base_urls, ...kit.targets.map((t) => `target ${t}`)];
 
 /** Every host a toolkit's functions may reach: its base addresses' and the others it names. */
 export const hostsOf = (kit: Toolkit): string[] => [...new Set([...kit.base_urls.map(hostOf), ...kit.hosts])];
@@ -174,6 +191,7 @@ export function saveToolkit(service: string, given: Record<string, unknown>): To
   const was = unlocked(service);
   const pick = <T,>(key: keyof Toolkit, make: (v: unknown) => T, fallback: T): T => (given[key] !== undefined ? make(given[key]) : was ? (was[key] as T) : fallback);
   const base_urls = pick("base_urls", (v) => strings(v, "base_urls").map(urlChecked), [] as string[]);
+  const targets = pick("targets", (v) => [...new Set(strings(v, "targets").map(nameOf))], [] as string[]);
   const hosts = pick(
     "hosts",
     (v) =>
@@ -200,6 +218,7 @@ export function saveToolkit(service: string, given: Record<string, unknown>): To
     base_urls,
     hosts,
     secrets,
+    targets,
     docs: pick("docs", (v) => strings(v, "docs").map(urlChecked).slice(0, MAX_DOCS), [] as string[]),
     notes,
     updated: new Date().toISOString(),

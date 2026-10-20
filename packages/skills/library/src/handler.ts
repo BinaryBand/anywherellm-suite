@@ -1,6 +1,7 @@
 // The user's own library of API toolkits, as one agent skill: for each service, what the agent
 // learned of its API (store.ts), the keys it calls with (secrets.ts, kept in the vault, which the
-// model never reads) and small JavaScript functions it wrote, run in QuickJS (sandbox.ts, runs.ts).
+// model never reads), the machines it runs commands on (targets.ts, in the vault too) and small
+// JavaScript functions it wrote, run in QuickJS (sandbox.ts, runs.ts).
 // One library for the whole AnythingLLM, kept in its storage (<storage>/library-lean/), so every
 // workspace and every scheduled job shares it. What is tuned rather than coded (the guide, the
 // snippets, the prelude every function runs after, the pages) is in static/, which the user can
@@ -31,6 +32,7 @@ import { check as compiles, failureText } from "./sandbox";
 import * as secrets from "./secrets";
 import * as signing from "./signing";
 import * as store from "./store";
+import * as targets from "./targets";
 
 type Args = Record<string, unknown>;
 
@@ -66,11 +68,24 @@ function keyStatus(kit: store.Toolkit, saved: Saved): string {
   return kit.secrets.length ? kit.secrets.map((s) => `${s.label} (${s.as}, ${status(s.label)})`).join(", ") : "none";
 }
 
+type Machines = Map<string, targets.Target>;
+
+/** The toolkit's targets, each as it is: signed in, why not, or not registered yet. */
+function targetStatus(kit: store.Toolkit, machines: Machines): string {
+  return kit.targets
+    .map((name) => {
+      const t = machines.get(name);
+      return t ? `${name} (${t.login}@${t.host}:${t.port}, ${t.status}${t.unattended ? ", may run unattended" : ""})` : `${name} (not registered: ask for it with secret, kind "ssh")`;
+    })
+    .join(", ");
+}
+
 /** The library at a glance, or one toolkit in full; its recent runs, and the pages' links. */
 async function library(args: Args, self: HandlerContext): Promise<string> {
   const saved: Saved = new Map(secrets.secrets().map((s) => [s.label.toLowerCase(), s]));
+  const machines: Machines = new Map(targets.targets().map((t) => [t.label, t]));
   const service = clean(args.service) ? store.serviceOf(args.service) : "";
-  const lines = service ? toolkitLines(service, saved) : [...listingLines(saved), ...signingLines()];
+  const lines = service ? toolkitLines(service, saved, machines) : [...listingLines(saved, machines), ...signingLines()];
   const recent = runs.recentRuns(5, service);
   if (recent.length && lines.length > 1) lines.push("", "Recent runs:", ...recent.map(runLine));
   lines.push("", await pageLine(self));
@@ -87,7 +102,7 @@ async function pageLine(self: HandlerContext): Promise<string> {
   }
 }
 
-function toolkitLines(service: string, saved: Saved): string[] {
+function toolkitLines(service: string, saved: Saved, machines: Machines): string[] {
   const kit = store.toolkit(service);
   if (!kit) throw new LibraryError(`there's no toolkit "${service}"; the toolkits are: ${store.services().join(", ") || "none yet"}`);
   const fns = store.functions(service);
@@ -96,6 +111,7 @@ function toolkitLines(service: string, saved: Saved): string[] {
     `Base addresses: ${kit.base_urls.join(", ") || "none"}`,
     `Hosts its functions reach: ${store.hostsOf(kit).join(", ") || "none"}`,
     `Keys: ${keyStatus(kit, saved)}`,
+    ...(kit.targets.length ? [`Targets: ${targetStatus(kit, machines)}`] : []),
     ...(kit.docs.length ? [`Docs: ${kit.docs.join(", ")}`] : []),
     "",
     "Functions:",
@@ -106,13 +122,13 @@ function toolkitLines(service: string, saved: Saved): string[] {
   ];
 }
 
-function listingLines(saved: Saved): string[] {
+function listingLines(saved: Saved, machines: Machines): string[] {
   const services = store.services();
   if (!services.length) return ["The library is empty: no toolkit yet. guide says how to build one (topic toolkits)."];
   const lines = ["The library's toolkits (library with service for one in full):"];
   for (const service of services) {
     const kit = store.toolkit(service)!;
-    lines.push(`- ${service}: ${kit.title}${kit.locked ? LOCKED : ""}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved)}`);
+    lines.push(`- ${service}: ${kit.title}${kit.locked ? LOCKED : ""}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved)}${kit.targets.length ? `. Targets: ${targetStatus(kit, machines)}` : ""}`);
   }
   return lines;
 }
@@ -136,6 +152,7 @@ function asksForSignIn(args: Args): boolean {
  *  sealed on their device: AnythingLLM's question card would show it in the chat once answered. */
 async function secret(args: Args, self: HandlerContext): Promise<string> {
   const named = clean(args.label);
+  if (clean(args.kind).toLowerCase() === "ssh") return target(args, self);
   if (asksForSignIn(args)) {
     const label = secrets.labelOf(named || clean(args.preset));
     return serial(`library-lean.sign-in.${label.toLowerCase()}`, () => signIn(args, label)); // two chats at once share one code; other sign-ins go on
@@ -145,6 +162,14 @@ async function secret(args: Args, self: HandlerContext): Promise<string> {
   secrets.assertKeyName(label);
   await page.need(label, site);
   return `The user gives the key on the Vault: ${await page.showVault(baseOf(self))}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
+}
+
+/** Asks the user to register a target, a machine the library's functions run commands on: its
+ *  address, login, key and host key's fingerprint are given on the Library page. */
+async function target(args: Args, self: HandlerContext): Promise<string> {
+  const label = targets.nameOf(args.label);
+  await page.need(label, "", "target");
+  return `The user registers the target "${label}" on the Library page, under Targets: ${await page.show(baseOf(self))}\nTell them to open it and give the machine's address, port and the account to sign in as, and the fingerprint of its host key, read on the machine itself (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). The page makes a key and shows the line to add to that account's ~/.ssh/authorized_keys, or takes one of theirs. Never ask for a key, a password or a fingerprint in the chat. When they say it's done, call library: "${label}" shows whether it signed in. Name it in a toolkit's targets: ["${label}"] (guide topic targets).`;
 }
 
 /** The OAuth sign-in `label`, one step at a time. A call that gives a preset saves it; then, by where
@@ -220,7 +245,7 @@ async function save(args: Args, self: HandlerContext): Promise<string> {
   const lines: string[] = [];
   if (args.toolkit !== undefined) {
     const kit = store.saveToolkit(service, objectOf(args.toolkit, "toolkit"));
-    lines.push(`Saved the toolkit ${service}: ${kit.base_urls.join(", ") || "no base address"}; keys: ${kit.secrets.map((s) => s.label).join(", ") || "none"}.`);
+    lines.push(`Saved the toolkit ${service}: ${store.reach(kit).join(", ") || "no base address"}; keys: ${kit.secrets.map((s) => s.label).join(", ") || "none"}.`);
   }
   let saved = "";
   if (args.function !== undefined) {

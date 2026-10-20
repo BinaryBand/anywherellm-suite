@@ -36,6 +36,17 @@ test("the Vault shows a saved key by name only, never its value, and only the li
   assert.ok(!fs.existsSync(vaultFile(`${vaultConfig().token}-logins.json`)), "no logins section without the browser");
 });
 
+test("a key and a target asked for under one label are on their own pages, and one given doesn't meet the other", async () => {
+  await call({ action: "secret", site: "api.example.com", label: "pi" });
+  await call({ action: "secret", kind: "ssh", label: "pi" });
+  assert.deepEqual(vaultState().needs, [{ label: "pi", site: "api.example.com" }], "the key's need is on the Vault");
+  assert.deepEqual(pageState().needs, [{ label: "pi", site: "" }], "the target's is on the Library page");
+  postVault({ ev: "key-save", label: "pi", site: "api.example.com", sealed: seal(KEY) });
+  await call({ action: "library" });
+  assert.deepEqual(vaultState().needs, [], "the key's need is met");
+  assert.deepEqual(pageState().needs, [{ label: "pi", site: "" }], "the target's is not");
+});
+
 test("a key is asked for on the Vault, given there, and the agent is told", async () => {
   const asked = await call({ action: "secret", site: "api.example.com", label: "ex" });
   assert.match(asked, /^The user gives the key on the Vault: \/vault-lean\/[\w-]+\.html\n/);
@@ -140,12 +151,13 @@ test("every field the pages read from their state is one the skill writes", asyn
   await call({ action: "secret", site: "api.other.example", label: "other" });
   await saveSignIn("api.example.com", "demo", { token_url: "https://auth.example.com/token", device_url: "https://auth.example.com/device/code", scopes: "read" }, "client-1");
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" }, test: {} });
+  await call({ action: "secret", kind: "ssh", label: "pi" });
   postVault({ ev: "signing-new", label: "signer", namespace: "test-ns" });
   await call({ action: "library" });
   const state = pageState();
   const html = pageSource("library.html");
   for (const [, field] of html.matchAll(/\bs\.([a-z_]+)/g)) assert.ok(field in state, `s.${field}`);
-  const items = { t: state.toolkits[0], f: state.toolkits[0].functions[0], r: state.runs[0] };
+  const items = { t: state.toolkits[0], f: state.toolkits[0].functions[0], r: state.runs[0], need: state.needs[0] };
   for (const [name, item] of Object.entries(items)) for (const [, field] of html.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);
   const keys = vaultState();
   const vault = vaultSource();

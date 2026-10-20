@@ -1,5 +1,5 @@
 // The secrets the skills use and the model never reads, for the whole AnythingLLM instance: the
-// browser's passwords and passkeys, the library's API keys and OAuth sign-ins. Each is an entry
+// browser's passwords and passkeys, the library's API keys, OAuth sign-ins and SSH targets. Each is an entry
 // { id, kind, site, user, ... } whose other fields are its kind's own; the skills give them meaning,
 // this file only keeps them. The Vault page (vault-page.mts), which each skill that keeps secrets
 // serves, lists them by name and deletes them. They're kept in one file,

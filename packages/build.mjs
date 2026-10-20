@@ -28,12 +28,30 @@ const self = fileURLToPath(import.meta.url);
 const here = path.dirname(self);
 
 /** The packages a skill may bundle besides its own code, by the skill's folder name. Each is a
- *  decision (docs/notes/README.md): library bundles QuickJS, the engine its functions run in.
+ *  decision (docs/notes/README.md): library bundles QuickJS, the engine its functions run in, and
+ *  ssh2, the client kit.ssh runs commands with, with ssh2's own dependencies.
  *  @type {Record<string, string[]>} */
 const VENDORED = {
   apps: ["node_modules/fast-json-patch/"],
-  library: ["node_modules/quickjs-emscripten-core/", "node_modules/@jitl/quickjs-ffi-types/", "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/"],
+  library: [
+    "node_modules/quickjs-emscripten-core/",
+    "node_modules/@jitl/quickjs-ffi-types/",
+    "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/",
+    "node_modules/ssh2/",
+    "node_modules/asn1/",
+    "node_modules/safer-buffer/",
+    "node_modules/bcrypt-pbkdf/",
+    "node_modules/tweetnacl/",
+  ],
   browser: ["node_modules/puppeteer-core/", "node_modules/@puppeteer/browsers/", "node_modules/ws/", "node_modules/debug/", "node_modules/ms/", "node_modules/semver/"],
+};
+
+/** What a skill's bundle leaves out although a vendored package asks for it, by the skill's folder
+ *  name: ssh2's optional native parts, which it requires inside a try and does without (it uses
+ *  node:crypto then), so the skill stays text and runs on any OS and CPU.
+ *  @type {Record<string, string[]>} */
+const LEFT_OUT = {
+  library: ["cpu-features", "*.node"],
 };
 
 /** Modules a vendored package requires but the skill never runs, bundled as an empty module, by the
@@ -113,10 +131,10 @@ function sharedStamp() {
  * metafile writes them. `clean` is what to remove if the bundle took in anything else. Answers the
  * files it took in, as the metafile names them.
  * @param {{ entry: string, outfile: string, target: string, allowed: string[], label: string,
- *   define?: Record<string, string>, loader?: Record<string, "text">, clean?: string, cwd?: string,
+ *   define?: Record<string, string>, loader?: Record<string, "text">, external?: string[], clean?: string, cwd?: string,
  *   plugins?: import("esbuild").Plugin[] }} options
  */
-export async function bundle({ entry, outfile, target, define, loader, allowed, label, clean = outfile, cwd = here, plugins }) {
+export async function bundle({ entry, outfile, target, define, loader, allowed, label, external, clean = outfile, cwd = here, plugins }) {
   define = { SHARED_STAMP: JSON.stringify(sharedStamp()), ...define };
   const { metafile } = await build({
     absWorkingDir: cwd,
@@ -128,6 +146,7 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
     format: "cjs",
     define,
     loader,
+    external,
     metafile: true,
     logLevel: "warning",
     plugins,
@@ -181,6 +200,7 @@ async function buildSkills(names) {
       define: { STATIC_FILES: JSON.stringify(staticFiles(path.join(dir, "static"), name)), VENDORED_VERSIONS: JSON.stringify(vendoredVersions(name)) },
       loader: { ".html": "text" }, // shared/vault.html, the Vault's page, which each skill that keeps secrets serves
       allowed: [`skills/${name}/src/`, "shared/", ...(VENDORED[name] || [])],
+      external: LEFT_OUT[name],
       label: name,
       clean: out,
       plugins: STUBBED[name] ? [stubs(STUBBED[name])] : undefined,
