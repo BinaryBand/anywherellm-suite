@@ -24,7 +24,7 @@ import template from "./vault.html";
 export type Section = "logins" | "keys";
 
 /** The page's version: a skill writes the page unless the one there is newer. */
-const VERSION = 2;
+const VERSION = 3;
 /** How long a section's events are watched for after the page was last shown for it. */
 const WATCH_MS = 30 * 60 * 1000;
 const MARKER = "vault_lean_event";
@@ -78,11 +78,10 @@ export function refresh(section: Section, state: unknown): void {
   if (names) writePublic(pub(`${names.token}-${section}.json`), JSON.stringify(state));
 }
 
-/** The section's events posted since the last time, oldest first: only those with the Vault's
- *  secret, but for the kinds in `open`, which carry a check of their own (a provider's redirect). */
-export function take(section: Section, open: ReadonlySet<string> = new Set()): Record<string, unknown>[] {
+/** The section's events posted since the last time, oldest first: only those with the Vault's secret. */
+export function take(section: Section): Record<string, unknown>[] {
   const names = readNames();
-  return takeEvents(titleOf(section), MARKER).filter((e) => open.has(String(e.ev)) || (!!names && sameSecret(e.secret, names.secret)));
+  return takeEvents(titleOf(section), MARKER).filter((e) => !!names && sameSecret(e.secret, names.secret));
 }
 
 /** Runs `pass` in turn with the section's watch (#shared/pages inTurn). */

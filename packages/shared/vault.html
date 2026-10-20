@@ -56,9 +56,6 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
 .ff{display:flex;flex-direction:column;gap:6px}
 .ff>span{padding:0 8px;font-size:13px;color:var(--muted)}
 .fld{width:100%;min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--line);background:var(--bg);font-size:16px}
-.fld.ro{border-color:transparent;background:var(--hover);color:var(--ink2);font:13px var(--mono);display:flex;align-items:center;overflow-wrap:anywhere;padding:12px 16px}
-.with{position:relative}.with .fld{padding-right:84px}.with .copy{position:absolute;right:4px;top:4px}
-.copy{min-height:44px;padding:0 12px;border-radius:12px;color:var(--accent);font-size:14px;font-weight:600}
 .btn{min-height:44px;padding:0 14px;border-radius:14px;border:1px solid var(--line);background:var(--panel);font-size:15px;font-weight:500;text-align:center}
 .pri{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
 .bad{color:var(--badfg)}
@@ -127,7 +124,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
   let pubKey = null;
   async function seal(text) {
-    if (!crypto.subtle) throw new Error("Open this page over https to give a key or a client secret: over plain http, the browser can't seal it");
+    if (!crypto.subtle) throw new Error("Open this page over https to give a key: over plain http, the browser can't seal it");
     const bytes = new TextEncoder().encode(text);
     pubKey ||= await crypto.subtle.importKey("spki", Uint8Array.from(atob(cfg.pub), (c) => c.charCodeAt(0)), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
     if (bytes.length <= 190) return b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, bytes));
@@ -191,7 +188,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     const keys = $("keys"), signins = $("signins");
     count("keys", "Keys", ks.secrets.filter((x) => x.kind === "key").length);
     count("signins", "Sign-ins", ks.secrets.filter((x) => x.kind === "oauth").length);
-    const needs = ks.needs.filter((n) => n.kind === "key").map((n) => {
+    const needs = ks.needs.map((n) => {
       const f = form([["value", "Key", "password"]], "Save key", async (v) => {
         if (!v.value) return toast("Paste the key first"), false;
         return post("keys", "key-save", { label: n.label, site: n.site, sealed: await seal(v.value) });
@@ -216,76 +213,15 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
 
     const oauth = ks.secrets.filter((x) => x.kind === "oauth");
     const items = oauth.map((o) => {
-      const needed = ks.needs.some((n) => n.kind === "client" && n.label === o.label);
       const tag = el("span", { className: "tag" + (o.tag.ok ? " ok" : ""), textContent: o.tag.text });
-      const { del, box } = remove(`Delete the sign-in ${o.label}? The agent can't reach ${o.site} with it after. Remove its access at ${o.authorize} too.`, `Delete the sign-in ${o.label}`, () => post("keys", "key-delete", { label: o.label }), { text: "Delete sign-in", className: "btn bad" });
-      const details = el("details", { open: needed },
-        el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.authorize}${o.scopes ? " · " + o.scopes : ""}` })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
-        el("div", { className: "body" },
-          el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status }), el("dt", { textContent: "Tokens go to" }), el("dd", { textContent: o.site }), el("dt", { textContent: "Client" }), el("dd", { textContent: o.shared ? "the suite's own" : o.device ? "yours, with a code" : "yours" }), el("dt", { textContent: "Client goes to" }), el("dd", { textContent: o.client })),
-          o.shared ? null : clientForm(o, ks.redirect), del, box));
-      return details;
+      const { del, box } = remove(`Delete the sign-in ${o.label}? The agent can't reach ${o.site} with it after. Remove its access in the provider's own settings too.`, `Delete the sign-in ${o.label}`, () => post("keys", "key-delete", { label: o.label }), { text: "Delete sign-in", className: "btn bad" });
+      return el("details", {},
+        el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.site}${o.scopes ? " · " + o.scopes : ""}` })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
+        el("div", { className: "body" }, el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status })), del, box));
     });
-    const paste = ks.redirect && !ks.redirect.startsWith("https://") && oauth.length ? el("div", { className: "card" }, pasteForm()) : null;
     signins.replaceChildren(el("div", { className: "lab", textContent: "Sign-ins" }),
       el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No sign-ins yet. The agent starts one when a task needs it." })])),
-      ...(paste ? [paste] : []), el("p", { className: "cap", textContent: "One sign-in for each provider. Its tokens go only to the site named, and are renewed by themselves as they run out." }));
-  }
-
-  // With ANYTHINGLLM_URL unset, the library learns AnythingLLM's address from the client saved here:
-  // the https address this page was opened at, whose oauth page is the redirect address it shows.
-  const here = location.protocol === "https:" ? location.origin : "";
-  const saveClient = async (o, id, secret) => post("keys", "oauth-client", { label: o.label, client_id: id, sealed: secret ? await seal(secret) : "", origin: here });
-
-  // The JSON file a provider's console gives for a client (Google's client_secret_<id>.json: { web:
-  // { client_id, client_secret, redirect_uris } }), read here: only its ID and sealed secret are sent.
-  async function loadClient(o, redirect, file) {
-    let c;
-    try {
-      const j = JSON.parse(await file.text());
-      c = j.web || j.installed || j;
-    } catch {}
-    if (!c?.client_id) return toast("That file has no client_id");
-    if (Array.isArray(c.redirect_uris) && !c.redirect_uris.includes(redirect)) return toast(`This client's redirect addresses don't include ${redirect}: add it at the provider, then load the file again`);
-    await saveClient(o, c.client_id, c.client_secret || "");
-  }
-
-  async function copy(text) {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast("Copied");
-    } catch {
-      toast("Select the address and copy it");
-    }
-  }
-
-  function clientForm(o, redirect) {
-    redirect = redirect || (here && `${here}/library-lean/oauth.html`);
-    const lead = o.device
-      ? el("p", { className: "say", textContent: "Make a client with the device flow switched on: it needs no redirect address. Then enter its ID here." })
-      : redirect
-        ? el("div", { className: "ff" }, el("p", { className: "say", textContent: "Make a web application client at the provider, with this redirect address. Then enter its ID and secret here." }), el("span", { textContent: "Redirect address" }), el("div", { className: "with" }, el("div", { className: "fld ro", textContent: redirect }), el("button", { className: "copy", type: "button", textContent: "Copy", onclick: () => copy(redirect) })))
-        : el("p", { className: "say", textContent: "Open this page at AnythingLLM's https address, or set the Library skill's ANYTHINGLLM_URL (AnythingLLM's Agent Skills) to it, first: the redirect address depends on it." });
-    const file = el("input", { type: "file", accept: ".json,application/json", hidden: true, onchange: () => file.files[0] && loadClient(o, redirect, file.files[0]).catch((err) => toast(err.message)).finally(() => (file.value = "")) });
-    const node = form([["id", "Client ID", "text", true], ["secret", "Client secret (leave empty to keep it, or if it has none)", "password"]], "Save client", async (v) => (v.id ? saveClient(o, v.id, v.secret) : (toast("Give the client ID"), false)), [sealedNote()]);
-    node.prepend(lead);
-    node.append(file, el("button", { className: "btn", type: "button", textContent: "Load the client's JSON file", onclick: () => file.click() }));
-    return node;
-  }
-
-  // Without an https address, the provider sends the user to a 127.0.0.1 address that doesn't load:
-  // its code and state are posted as oauth.html would post them.
-  function pasteForm() {
-    const node = form([["url", "The address you landed on", "text", true]], "Finish", async (v) => {
-      let q;
-      try {
-        q = new URL(v.url).searchParams;
-      } catch {}
-      if (!q?.get("state")) return toast("That address has no state in it"), false;
-      return post("keys", "oauth-code", { state: q.get("state"), code: q.get("code") || "", error: q.get("error_description") || q.get("error") || "" });
-    });
-    node.prepend(el("div", { style: "display:flex;flex-direction:column;gap:4px" }, el("b", { style: "font-size:17px;font-weight:600", textContent: "Finish a sign-in" }), el("span", { className: "say", textContent: "After signing in, your browser landed on a 127.0.0.1 address that didn't load: copy that whole address here." })));
-    return node;
+      el("p", { className: "cap", textContent: "One sign-in for each provider. Its tokens go only to the site named, and are renewed by themselves as they run out." }));
   }
 
   // ---- Logins and passkeys: the browser's section, saved as the user signs in on a tab's page.

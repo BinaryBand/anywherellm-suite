@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { call, giveKey, library, pageConfig, pageState, post, postVault, publicDir, reset, seal, skillDir, storage, vaultConfig, vaultState } from "./harness.mts";
+import { call, giveKey, library, pageConfig, pageState, post, postVault, publicDir, reset, saveSignIn, seal, skillDir, storage, vaultConfig, vaultState } from "./harness.mts";
 
 const KEY = "page-key-0123456789";
 test.beforeEach(reset);
@@ -39,7 +39,7 @@ test("the Vault shows a saved key by name only, never its value, and only the li
 test("a key is asked for on the Vault, given there, and the agent is told", async () => {
   const asked = await call({ action: "secret", site: "api.example.com", label: "ex" });
   assert.match(asked, /^The user gives the key on the Vault: \/vault-lean\/[\w-]+\.html\n/);
-  assert.deepEqual(vaultState().needs, [{ label: "ex", site: "api.example.com", kind: "key" }]);
+  assert.deepEqual(vaultState().needs, [{ label: "ex", site: "api.example.com" }]);
   postVault({ ev: "key-save", label: "ex", site: "api.example.com", sealed: seal(KEY) });
   await call({ action: "library" });
   assert.deepEqual(vaultState().needs, [], "the need is met");
@@ -127,7 +127,7 @@ const source = fs.readFileSync(path.join(skillDir, "src", "page.ts"), "utf8");
 const handled = (fn: string) => [...source.slice(source.indexOf(`function ${fn}(`)).split("\n}\n")[0].matchAll(/case "([a-z-]+)":|e\.ev === "([a-z-]+)"/g)].map((m) => m[1] || m[2]);
 
 test("every event the pages post is one the skill applies", () => {
-  const posted = [...pageSource("library.html").matchAll(/post\("([a-z-]+)"|remove\("[^"]*", "([a-z-]+)"/g), ...pageSource("oauth.html").matchAll(/ev: "([a-z-]+)"/g)].map((m) => m[1] || m[2]);
+  const posted = [...pageSource("library.html").matchAll(/post\("([a-z-]+)"|remove\("[^"]*", "([a-z-]+)"/g)].map((m) => m[1] || m[2]);
   assert.ok(posted.length >= 3);
   for (const ev of posted) assert.ok(handled("apply").includes(ev), ev);
   const keys = [...vaultSource().matchAll(/post\("keys", "([a-z-]+)"/g)].map((m) => m[1]);
@@ -138,7 +138,7 @@ test("every event the pages post is one the skill applies", () => {
 test("every field the pages read from their state is one the skill writes", async () => {
   await giveKey("ex", "api.example.com", KEY);
   await call({ action: "secret", site: "api.other.example", label: "other" });
-  await call({ action: "secret", kind: "oauth", label: "demo", definition: { site: "api.example.com", authorize_url: "https://auth.example.com/authorize", token_url: "https://auth.example.com/token", scopes: "read" } });
+  await saveSignIn("api.example.com", "demo", { token_url: "https://auth.example.com/token", device_url: "https://auth.example.com/device/code", scopes: "read" }, "client-1");
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" }, test: {} });
   await call({ action: "library" });
   const state = pageState();

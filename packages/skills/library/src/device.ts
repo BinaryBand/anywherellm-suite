@@ -1,7 +1,7 @@
 // The OAuth device flow (RFC 8628), for a provider that signs in with a code the user enters and no
 // redirect (GitHub): the skill asks the provider's device_url for a code, the user enters it at the
 // provider's page on any device and agrees, and the skill asks the token address until the provider
-// says they did. With no redirect address it works wherever AnythingLLM runs, https or not, and a
+// says they did. With no redirect address it works wherever AnythingLLM runs, https or not, and the
 // client needs no secret. The code waiting is kept in the vault, so whichever process asks next
 // (its own loop, or a chat's call) finishes it, once; when each process asks next is its own, so
 // asking writes the vault only when the sign-in ends. The device code never reaches the model,
@@ -11,7 +11,7 @@ import { perProcess } from "#shared/anythingllm";
 import { outsideRun, secureFor } from "#shared/fence";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { isSignIn, postForm, refusal, tokenAnswer, tokensOf, type DeviceCode, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
+import { REMOVED, isSignIn, postForm, refusal, tokenAnswer, tokensOf, type DeviceCode, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
 import * as page from "./page";
 
 const GRANT = "urn:ietf:params:oauth:grant-type:device_code";
@@ -28,17 +28,14 @@ const RAN_OUT = { error: "the code ran out before the user entered it: start the
 /** When this process asks next for each waiting code, and how many seconds apart, by device code. */
 const schedule = () => perProcess("library-lean.device.schedule", () => new Map<string, { next: number; interval: number }>());
 
-/** This process's asking: whether its loop runs, and AnythingLLM's address as the latest call gave
- *  it (askDevices), which the pages' state is written with when a sign-in ends; nothing else of a
- *  call, since the loop outlives it. */
-const loop = () => perProcess("library-lean.device.loop", () => ({ on: false, base: null as string | null }));
+/** This process's asking: whether its loop runs. Nothing of a call is kept, since the loop outlives it. */
+const loop = () => perProcess("library-lean.device.loop", () => ({ on: false }));
 
 /** Starts the device-flow sign-in `given`: asks the provider for a code, keeps its device code in
  *  the vault, starts asking for the tokens, and answers what the user is shown. */
 export async function startDevice(given: Readonly<SignIn>): Promise<DeviceCode> {
   const o = given.oauth;
-  if (!o.device_url) throw new LibraryError(`"${given.user}" signs in with a redirect, not a code`);
-  if (!given.client_id) throw new LibraryError(`"${given.user}" is waiting for the user's OAuth client: its ID`);
+  if (!o.device_url) throw new LibraryError(`"${given.user}": ${REMOVED}`);
   const answer = await postForm(o.device_url, { client_id: given.client_id, ...(o.scopes ? { scope: o.scopes } : {}) });
   const { device_code, user_code, verification_uri, verification_uri_complete, expires_in, interval } = answer.data;
   if (!device_code || !user_code || !verification_uri) throw new LibraryError(refusal(o.device_url, answer, "sign-in code"));
@@ -117,18 +114,16 @@ function askOnce(id: string, wait: boolean): Promise<void> {
     });
     if (!wrote) return;
     console.log(`library-lean: the sign-in "${signIn.user}" ${"tokens" in ended ? "signed in" : `ended: ${ended.error}`}`);
-    page.refresh(loop().base);
+    page.refreshKeys();
   })().finally(() => asking.delete(id));
   asking.set(id, ask);
   return ask;
 }
 
 /** Asks once for every sign-in whose code waits: those due now, or, with `wait`, each once it's
- *  due, so a chat's call after the user agreed finds it signed in. Keeps `base`, AnythingLLM's
- *  address as the call gave it, for the loop, and makes sure this process goes on asking while one
- *  waits, as after a restart. */
-export function askDevices(wait: boolean, base: string | null): Promise<void> {
-  loop().base = base;
+ *  due, so a chat's call after the user agreed finds it signed in. Makes sure this process goes on
+ *  asking while one waits, as after a restart. */
+export function askDevices(wait: boolean): Promise<void> {
   return asked(waiting().map((e) => e.id), wait);
 }
 

@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { after, type TestContext } from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
 import { vendoredVersions } from "../../../build.mjs";
@@ -158,4 +158,19 @@ export const pageState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "
 export function seal(text: string): string {
   const key = crypto.createPublicKey({ key: Buffer.from(vaultConfig().pub, "base64"), format: "der", type: "spki" });
   return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
+}
+
+type SaveSignIn = (site: string, label: string, oauth: unknown, clientId: string) => Promise<void>;
+let bundled: Promise<SaveSignIn> | null = null;
+
+/** secrets.ts's saveSignIn, bundled as the handler is (src imports without extensions, which Node
+ *  alone doesn't resolve): saves a sign-in as a preset does, but at any address a test names. */
+export async function saveSignIn(...args: Parameters<SaveSignIn>): Promise<void> {
+  bundled ??= (async () => {
+    const { build } = await import("esbuild");
+    const outfile = path.join(storage, "..", "from-src.mjs");
+    await build({ stdin: { contents: 'export { saveSignIn } from "./secrets";', resolveDir: path.join(skillDir, "src"), loader: "ts" }, bundle: true, platform: "node", format: "esm", outfile, logLevel: "silent" });
+    return (await import(pathToFileURL(outfile).href)).saveSignIn as SaveSignIn;
+  })();
+  return (await bundled)(...args);
 }

@@ -5,8 +5,8 @@
 // workspace and every scheduled job shares it. What is tuned rather than coded (the guide, the
 // snippets, the prelude every function runs after, the pages) is in static/, which the user can
 // override file by file on their instance. Its two pages (page.ts) are the user's own view of it: the
-// Vault, every secret by name, where they give a key or an OAuth client, and the Library page, the
-// toolkits and their runs.
+// Vault, every secret by name, where they give a key, and the Library page, the toolkits and their
+// runs.
 //
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
@@ -20,7 +20,7 @@ import { LibraryError } from "./errors";
 import { askDevices, askNow, startDevice } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { LOOPBACK, define, givenLink, redirectFor, start as startSignIn, stateOf, type DeviceCode, type SignIn, type SignInLink, type SignInState } from "./oauth";
+import { stateOf, type DeviceCode, type SignInState } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
 import { presetOf } from "./presets";
@@ -112,108 +112,66 @@ function listingLines(saved: Saved): string[] {
   return lines;
 }
 
-/** What secret is asked for: its kind, else a sign-in when a preset or definition is given, else
- *  the kind of the secret its label names (with no site), else a key. */
-function kindOf(args: Args): "key" | "oauth" {
-  const kind = clean(args.kind).toLowerCase();
-  if (kind === "key" || kind === "oauth") return kind;
-  if (kind) throw new LibraryError('secret\'s kind is "key" (an API key or token) or "oauth" (a sign-in)');
-  if (args.preset !== undefined || args.definition !== undefined) return "oauth";
+/** Whether secret is asked for a sign-in: a preset is given, or the label names one (with no site);
+ *  else it is a key. */
+function asksForSignIn(args: Args): boolean {
   const named = clean(args.label);
-  return named && !clean(args.site) && secrets.signIn(named) ? "oauth" : "key";
+  return args.preset !== undefined || (!!named && !clean(args.site) && !!secrets.signIn(named));
 }
 
-/** Asks the user for a key, or sets up and starts an OAuth sign-in. What the user gives, they give
- *  on the Vault, sealed on their device: AnythingLLM's question card would show it in the chat once
- *  answered. */
+/** Asks the user for a key, or starts a preset's OAuth sign-in. A key the user gives on the Vault,
+ *  sealed on their device: AnythingLLM's question card would show it in the chat once answered. */
 async function secret(args: Args, self: HandlerContext): Promise<string> {
   const named = clean(args.label);
-  if (kindOf(args) === "oauth") {
+  if (asksForSignIn(args)) {
     const label = secrets.labelOf(named || clean(args.preset));
-    return serial(`library-lean.sign-in.${label.toLowerCase()}`, () => signIn(args, label, baseOf(self))); // two chats at once share one code; other sign-ins go on
+    return serial(`library-lean.sign-in.${label.toLowerCase()}`, () => signIn(args, label)); // two chats at once share one code; other sign-ins go on
   }
   const site = secrets.siteChecked(args.site);
   const label = secrets.labelOf(named || site);
-  await page.need(label, site, "key");
+  await page.need(label, site);
   return `The user gives the key on the Vault: ${await page.showVault(baseOf(self))}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
 }
 
-/** The OAuth sign-in `label`, one step at a time. A call that gives the definition (or a preset)
- *  saves it; then, by where the sign-in is (stateOf): what client the user makes and gives on the
- *  Vault, that it's signed in, the code or link that still waits, or a new one, saying why the last
- *  one ended. `base` is AnythingLLM's address as the call gave it. */
-async function signIn(args: Args, label: string, base: string | null): Promise<string> {
-  const redirect = redirectFor(page.baseFor(base));
+/** The OAuth sign-in `label`, one step at a time. A call that gives a preset saves it; then, by where
+ *  the sign-in is (stateOf): that it's signed in, the code that still waits, or a new code, saying
+ *  why the last one ended. */
+async function signIn(args: Args, label: string): Promise<string> {
   if (args.preset !== undefined) {
     const p = presetOf(args.preset, args.scopes);
-    await secrets.saveSignIn(p.site, label, define(p.definition, p.site), p.client_id);
-  } else if (args.definition !== undefined) {
-    const def = objectOf(args.definition, "definition");
-    const site = secrets.siteChecked(def.site ?? args.site);
-    await secrets.saveSignIn(site, label, define(def, site));
+    await secrets.saveSignIn(p.site, label, p.definition, p.client_id);
   }
   const saved = secrets.signIn(label);
-  if (!saved) throw new LibraryError(`there's no sign-in "${label}": give its definition { site, authorize_url, token_url, scopes, params }, or a preset (guide topic secrets)`);
-  const device = !!saved.oauth.device_url;
-  if (device) await askNow(saved.id); // the user may have agreed since the last ask
-  const found = device ? (secrets.signIn(label) ?? saved) : saved;
+  if (!saved) throw new LibraryError(`there's no sign-in "${label}": start one with a preset (guide topic secrets); for any other service, ask for a key or token with secret`);
+  if (saved.device) await askNow(saved.id); // the user may have agreed since the last ask
+  const found = saved.device ? (secrets.signIn(label) ?? saved) : saved;
   const state = stateOf(found);
-  let lead = ""; // what's said before the code or link: that it's the one before, or why there's a new one
   switch (state.at) {
-    case "no client":
-      return needsClient(found, label, base, redirect);
     case "signed in":
       return `"${label}" is signed in already: start no new sign-in. Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }. If the provider refuses calls with it, the user deletes it on the Vault, and then you call secret again.`;
     case "code waits":
       return "The code shown before still waits, and no new one was made: show it again. " + codeText(state.code, label);
-    case "link waits": {
-      // It goes back to another address: a new one, saying why as if the old link weren't there.
-      if (state.redirect !== redirect) {
-        lead = whyNew(stateOf({ ...found, pending: null }));
-        break;
-      }
-      const link = givenLink(found, state.minutes);
-      await page.oauthPage(link.state, label); // again, for a new container that lacks its page
-      return "The link given before still waits, and no new one was made: give it again. " + (await linkText(link, label, base, redirect));
+    default: {
+      const code = await startDevice(found);
+      page.refreshKeys(); // the Vault says "Enter the code"
+      return whyNew(state) + codeText(code, label);
     }
-    default:
-      lead = whyNew(state);
   }
-  if (device) return lead + codeText(await startDevice(found), label);
-  if (!redirect) return `The sign-in "${label}" has its client, but AnythingLLM's address isn't known, and the redirect address the provider sends the user back to depends on it. Ask the user to open the Vault over https and save the client again there (${await page.showVault(base)}), or to set the Library skill's ANYTHINGLLM_URL in AnythingLLM (Settings, Agent Skills, Library) to the https address they open AnythingLLM at; then call secret again with kind "oauth" and label "${label}". Give no redirect address until then.`;
-  const link = await startSignIn(found, redirect);
-  await page.oauthPage(link.state, label);
-  return lead + (await linkText(link, label, base, redirect));
 }
 
-/** Why a new code or link is made for a sign-in at `state`: its last one failed, or ran out. */
+/** Why a new code is made for a sign-in at `state`: its last one failed, or ran out. */
 function whyNew(state: SignInState): string {
   if (state.at === "failed") return `Its last sign-in didn't finish (${state.why}), so this is a new one. `;
   if (state.at === "ran out") return "Its sign-in ran out and can't be renewed, so this is a new one. ";
   return "";
 }
 
-/** For a sign-in with no client yet: what OAuth client the user makes at the provider, and that
- *  they give it on the Vault. */
-async function needsClient(found: Readonly<SignIn>, label: string, base: string | null, redirect: string | null): Promise<string> {
-  await page.need(label, found.site, "client");
-  const host = new URL(found.oauth.authorize_url).host;
-  const kind = found.oauth.device_url ? "a client with the device flow switched on (it needs no redirect address)" : redirect ? `a web application client, with this redirect address registered: ${redirect}` : "a web application client, with the redirect address the Vault shows registered";
-  return `"${label}" needs the user's own OAuth client at the provider (${host}). Tell them to make one in its developer console: ${kind}\nIf the provider asks for a consent screen, they can keep it in testing and add themselves as a test user.\nThen they enter its client ID (and its secret, if it has one) on the Vault, under Sign-ins: ${await page.showVault(base)}\nNever ask for them in the chat. When they say it's done, call secret again with kind "oauth" and label "${label}".`;
-}
-
-/** What the agent does once the user has the code or link: call library to see it signed in. */
+/** What the agent does once the user has the code: call library to see it signed in. */
 const done = (label: string): string => `When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
 
 /** The code to show the user for the sign-in `label`. */
 const codeText = (code: DeviceCode, label: string): string =>
   `Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${minutesText(code.minutes)}. ${done(label)}`;
-
-/** The sign-in link to give the user for the sign-in `label`, coming back to `redirect`. */
-async function linkText(link: SignInLink, label: string, base: string | null, redirect: string): Promise<string> {
-  const back = redirect !== LOOPBACK ? "After they agree, the provider sends them to a page that says it was sent (on a phone, with a button back to the AnywhereLLM app)." : `After they agree, their browser lands on a 127.0.0.1 address that doesn't load: they copy that address into the Vault's Sign-ins tab (Finish a sign-in): ${await page.showVault(base)}`;
-  return `Give the user this sign-in link, to open in their browser; it's good for ${minutesText(link.minutes)}:\n${link.url}\n${back} ${done(label)}`;
-}
 
 const minutesText = (n: number): string => `${n} minute${n === 1 ? "" : "s"}`;
 
@@ -359,7 +317,7 @@ export const runtime = {
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
       await fromPage(this);
-      await askDevices(action === "library", baseOf(this));
+      await askDevices(action === "library");
       // In a chat in AnywhereLLM, the agent's own call asks the user for a host the fence refuses.
       return await runAs(this, "Library", action === "call" ? (o) => `Send a request to ${o}` : undefined, () => act(args, this));
     } catch (e) {
