@@ -1,6 +1,6 @@
 # The apps skill: notes
 
-What changed from the lean edition and why is in the decisions log (`docs/notes/README.md`, "The apps skill moved in"); this is how it was checked.
+What changed from the lean edition and why is in the decisions (`docs/notes/README.md`, "Apps"); this is how it was checked.
 
 ## Check
 
