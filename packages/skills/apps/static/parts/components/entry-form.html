@@ -4,6 +4,7 @@
 <div class="stack wide" data-part="entry-form">
 <form class="stack" data-ref="form"><label class="field">Note<textarea data-ref="text" maxlength="500" required></textarea></label><button type="submit">Add</button></form>
 <ul class="items" data-ref="entries"></ul>
+<p class="empty" data-ref="none">Nothing written yet. Your first note goes above.</p>
 </div>
 <script>
 App.mount("entry-form", ({ at, q }) => {
@@ -13,10 +14,14 @@ App.mount("entry-form", ({ at, q }) => {
     if (text) App.patch([{ op: "add", path: at + "/entries/-", value: { text, at: new Date().toISOString() } }], { ev: "add", text }), App.cue(q("entries").firstElementChild, "added");
     q("text").value = "";
   };
-  return () => q("entries").replaceChildren(...App.get(at + "/entries").slice(-20).reverse().map((e) => {
-    const li = el("li");
-    li.append(el("span", { textContent: e.text }), el("small", { textContent: e.at.slice(0, 10) }));
-    return li;
-  }));
+  return () => {
+    const entries = App.get(at + "/entries");
+    q("none").hidden = entries.length > 0;
+    q("entries").replaceChildren(...entries.slice(-20).reverse().map((e) => {
+      const li = el("li");
+      li.append(el("span", { textContent: e.text }), el("small", { textContent: e.at.slice(0, 10) }));
+      return li;
+    }));
+  };
 });
 </script>
