@@ -1,6 +1,6 @@
-# The OS matrix lefthook can't give: the type-check and every part's tests on Linux, macOS and
-# Windows, and the e2e (a throwaway AnythingLLM in a container) on Linux, where runners have one.
-# The hooks stay the gate before a push; this is the same scripts on the OSes a laptop isn't.
+# The type-check and every part's tests, and the e2e (a throwaway AnythingLLM in a container), on
+# Linux, the one platform the suite is tested on. The hooks stay the gate before a push; this is the
+# same scripts on a clean machine.
 name: test
 
 on:
@@ -9,11 +9,7 @@ on:
 
 jobs:
   test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: packages

@@ -15,7 +15,7 @@ An MCP server and agent skills that a stock AnythingLLM runs itself, and the com
 You need a stock AnythingLLM (Desktop, or the Docker image) and Node 18 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the control server and the skills; build it with `npm install` once in `packages/`, then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
 
 ```sh
-node anywherellm-suite.cjs install                     # AnythingLLM Desktop, on Windows, macOS or Linux
+node anywherellm-suite.cjs install                     # AnythingLLM Desktop
 node anywherellm-suite.cjs install --storage ~/anythingllm   # Docker: the folder mounted at /app/server/storage
 node anywherellm-suite.cjs install --page-key brx-...  # once: the key the skills' pages post with
 ```
@@ -31,8 +31,8 @@ The skills' pages (the browser's tab, the Vault, the Library page, the apps) sen
 | Where AnythingLLM runs | Install | Verified on real hardware |
 | --- | --- | --- |
 | Docker or podman on Linux | `install --storage DIR` | yes, with podman (AnythingLLM 1.16.2); docker not yet (CI's e2e will) |
-| Desktop on Windows, macOS, Linux | `install` | not yet |
-| Docker Desktop on macOS or Windows | `install --storage DIR` | not yet; best effort |
+| Desktop on Linux | `install` | not yet |
+| Windows or macOS, Desktop or Docker Desktop | `install`, or `install --storage DIR` | not tested, not supported; nothing is meant to stop it working (see the notes' house rules) |
 
 ## Secrets
 
@@ -48,7 +48,7 @@ packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the vau
 packages/package.json, tsconfig.json   the toolchain: one install, one type-check
 tools/              check, package, install, e2e, e2e-skill, e2e-fence; versions.env, the AnythingLLM image every check uses (the test lab reads it too)
 docs/               architecture.md; browser-tab.md and fence-lean.md, the file formats the phone app and the bridge read; notes/ for decisions, repo-wide and per part
-.github/workflows/  the tests on Linux, macOS and Windows, and the e2e on Linux
+.github/workflows/  the tests and the e2e, on Linux
 dist/               build output, ignored
 ```
 
@@ -60,7 +60,7 @@ dist/               build output, ignored
 
 ## Checks
 
-`lefthook.yml` is the gate before a push, and `.github/workflows/test.yml` runs the same tests on Linux, macOS and Windows. `make` lists the commands; they only call `lefthook` or a script in `tools/`. After cloning, run `make hooks`. `tools/check <part>` runs on push, only when files of that part changed. `tools/check` knows the installer, the control server and the skills. `make test` runs those hooks on every file; `make check` tests everything. `make e2e` (`tools/e2e`) is not a hook: it starts a throwaway AnythingLLM in a container with its storage bind-mounted, runs `install` into it, and has the real AnythingLLM start the control server and the tests drive it. `tools/e2e command...` runs that command in place of the tests, with the throwaway's address, password and workspace in `E2E_*` (listed in `tools/e2e.test.mts`). `make e2e-fence` (`tools/e2e-fence [BRIDGE_DIR]`) checks the fence's asks against a real anywherellm-bridge checkout (`../anywherellm-bridge`, or `$ANYWHERELLM_BRIDGE`): it runs the bridge's `tools/e2e` with `tools/fence-lean.e2e.mts`, so this checkout's lock, ask and `allowed.json` meet the bridge's in one storage folder. The slow tests (the fake sign-in sites the browser skill is tried against, and the agent eval that runs cases on a model) are in the sibling repository `test-lab`, not here: this repository keeps the fast tests that need no model.
+`lefthook.yml` is the gate before a push, and `.github/workflows/test.yml` runs the same tests, and the e2e, on Linux. `make` lists the commands; they only call `lefthook` or a script in `tools/`. After cloning, run `make hooks`. `tools/check <part>` runs on push, only when files of that part changed. `tools/check` knows the installer, the control server and the skills. `make test` runs those hooks on every file; `make check` tests everything. `make e2e` (`tools/e2e`) is not a hook: it starts a throwaway AnythingLLM in a container with its storage bind-mounted, runs `install` into it, and has the real AnythingLLM start the control server and the tests drive it. `tools/e2e command...` runs that command in place of the tests, with the throwaway's address, password and workspace in `E2E_*` (listed in `tools/e2e.test.mts`). `make e2e-fence` (`tools/e2e-fence [BRIDGE_DIR]`) checks the fence's asks against a real anywherellm-bridge checkout (`../anywherellm-bridge`, or `$ANYWHERELLM_BRIDGE`): it runs the bridge's `tools/e2e` with `tools/fence-lean.e2e.mts`, so this checkout's lock, ask and `allowed.json` meet the bridge's in one storage folder. The slow tests (the fake sign-in sites the browser skill is tried against, and the agent eval that runs cases on a model) are in the sibling repository `test-lab`, not here: this repository keeps the fast tests that need no model.
 
 ## Status
 
