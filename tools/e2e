@@ -52,7 +52,7 @@ echo "[e2e] anywherellm-suite install, built from packages/"
 (cd "$ROOT/packages" && node build.mjs install >/dev/null)
 cli="$ROOT/packages/install/dist/anywherellm-suite.cjs"
 export ANYTHINGLLM_URL="$allm"
-node "$cli" install --storage "$storage" --roles chat,schedule --page-key "$page_key" >"$work/install.log"
+node "$cli" install --storage "$storage" --page-key "$page_key" >"$work/install.log"
 
 # A developer key, as the settings page makes one, and a workspace for the tests to find.
 key=$(curl -fs -X POST "$allm/api/system/generate-api-key" -H "Authorization: Bearer $token" \
@@ -60,7 +60,7 @@ key=$(curl -fs -X POST "$allm/api/system/generate-api-key" -H "Authorization: Be
 workspace=$(curl -fs -X POST "$allm/api/v1/workspace/new" -H "Authorization: Bearer $key" \
   -H 'Content-Type: application/json' -d '{"name":"E2E Workspace"}' | json 'j.workspace.slug')
 
-export E2E_ENGINE="$engine" E2E_CONTAINER="$name" E2E_CONTROL="$INNER_STORAGE/anywherellm-suite/control.cjs" \
+export E2E_ENGINE="$engine" E2E_CONTAINER="$name" \
   E2E_ALLM_URL="$allm" E2E_ALLM_PORT="$allm_port" E2E_PASSWORD="$password" E2E_WORKSPACE="$workspace" \
   E2E_CLI="$cli" E2E_STORAGE="$storage"
 if [ $# -gt 0 ]; then

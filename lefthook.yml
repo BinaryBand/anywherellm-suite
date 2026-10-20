@@ -1,16 +1,14 @@
 # Git hooks, the gate before a push (.github/workflows/test.yml runs the same tests in CI). Install once per clone:
 #   lefthook install
-# The hook runs only when a pushed file matches its glob. tools/check tests the installer, the
-# control server and the skills (their unit tests, not a container run: that is `make e2e`), after
-# one type-check and one build of all three: the installer carries the others, so a change to one
-# part is checked by all. Their imports are checked when they are built (packages/build.mjs).
+# The hook runs only when a pushed file matches its glob. tools/check tests the installer and
+# the skills (their unit tests, not a container run: that is `make e2e`), after one type-check and
+# one build of both: the installer carries the skills, so a change to one part is checked by both. Their imports are checked when they are built (packages/build.mjs).
 
 pre-push:
   commands:
     check:
       glob:
         - "packages/install/**/*.{ts,mts,mjs,json}"
-        - "packages/control/**/*.{ts,mts,mjs,json}"
         - "packages/skills/**/*.{js,ts,mts,mjs,json,html,css,md}"
         - "packages/*.{json,mjs,mts}"
         - "packages/shared/**"

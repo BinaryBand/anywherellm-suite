@@ -3,12 +3,9 @@
 // part: that is the boundary between parts, since a part cannot ship another part's code.
 //
 //   install src/main.mts -> install/dist/anywherellm-suite.cjs, the command people run, for Node
-//           18, like the control server it may start natively with the same node. The extension
-//           is fixed (.cjs) so it runs the same wherever it is copied to. What install puts into
-//           AnythingLLM's storage, the control server and every skill, built first, is inlined as
+//           18. The extension is fixed (.cjs) so it runs the same wherever it is copied to. What
+//           install puts into AnythingLLM's storage, every skill, built first, is inlined as
 //           PAYLOAD. Allowed: src/ and shared/.
-//   control src/main.mts -> control/dist/control.cjs, the MCP server AnythingLLM starts itself, so
-//           for Node 18 (the one in its image). Allowed: src/ and shared/.
 //   skills  each skill's src/handler.ts -> <skill>/build/<hubId>/handler.js plus plugin.json, the
 //           folder AnythingLLM unpacks, for Node 18. esbuild folds src/ and shared/ (helpers both
 //           parts use) into the one handler.js, which then requires only Node's own modules (and
@@ -20,7 +17,7 @@
 //           packages' versions are inlined as VENDORED_VERSIONS ("puppeteer-core@24.43.1 ws@8.22.0
 //           ..."), for the per-process keys that keep a reloaded skill off an older copy.
 //
-// usage: node build.mjs [install | control | skills [skill ...]]   (no argument: every part)
+// usage: node build.mjs [install | skills [skill ...]]   (no argument: every part)
 import { build } from "esbuild";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -145,17 +142,15 @@ export async function bundle({ entry, outfile, target, define, loader, allowed, 
   return Object.keys(metafile.inputs);
 }
 
-/** What install puts into the storage (install/src/addons.mts's Payload): the control server and
- *  every skill, built first. */
+/** What install puts into the storage (install/src/addons.mts's Payload): every skill, built first. */
 async function payload() {
-  const control = fs.readFileSync(await buildControl(), "utf8");
   const skills = (await buildSkills([])).map(({ name, hubId, out, pages }) => ({
     name,
     hubId,
     pages,
     files: Object.fromEntries(fs.readdirSync(out).map((file) => [file, fs.readFileSync(path.join(out, file), "utf8")])),
   }));
-  return { control, skills };
+  return { skills };
 }
 
 async function buildInstall() {
@@ -164,13 +159,6 @@ async function buildInstall() {
   await bundle({ entry: "install/src/main.mts", outfile, target: "node18", define, allowed: ["install/src/", "shared/"], label: "the installer" });
   fs.chmodSync(outfile, 0o755);
   console.log(`built install -> ${path.relative(here, outfile)}`);
-}
-
-async function buildControl() {
-  const outfile = path.join(here, "control", "dist", "control.cjs");
-  await bundle({ entry: "control/src/main.mts", outfile, target: "node18", allowed: ["control/src/", "shared/"], label: "the control server" });
-  console.log(`built control -> ${path.relative(here, outfile)}`);
-  return outfile;
 }
 
 /** The skills: the folders of packages/skills with a src/handler.ts. */
@@ -206,8 +194,7 @@ async function buildSkills(names) {
 
 if (process.argv[1] === self) {
   const [part, ...names] = process.argv.slice(2);
-  if (part && !["install", "control", "skills"].includes(part)) throw new Error(`usage: node build.mjs [install | control | skills [skill ...]], not ${part}`);
-  if (!part || part === "install") await buildInstall(); // builds the control server and the skills first
-  else if (part === "control") await buildControl();
+  if (part && !["install", "skills"].includes(part)) throw new Error(`usage: node build.mjs [install | skills [skill ...]], not ${part}`);
+  if (!part || part === "install") await buildInstall(); // builds the skills first
   else await buildSkills(names);
 }

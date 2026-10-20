@@ -1,10 +1,9 @@
 # anywherellm-suite
 
-An MCP server and agent skills that a stock AnythingLLM runs itself, and the command that installs them. The bridge that AnywhereLLM Lite (the phone app) calls is a repository of its own, anywherellm-bridge.
+Agent skills that a stock AnythingLLM runs itself, and the command that installs them. The bridge that AnywhereLLM Lite (the phone app) calls, and the control server that gives the agent its chat and scheduled-job tools, are a repository of their own, anywherellm-bridge.
 
 | Part | Folder | Runs | Toolchain |
 | --- | --- | --- | --- |
-| Control server (MCP: chat and schedule) | `packages/control` | started by AnythingLLM, from its storage folder, with `node` | Node 18+, no dependencies shipped |
 | Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS; browser bundles Puppeteer and runs the Chrome AnythingLLM's image ships, or the system's) |
 | The installer | `packages/install` | the command you run | Node 18+, no dependencies shipped |
 
@@ -12,7 +11,7 @@ An MCP server and agent skills that a stock AnythingLLM runs itself, and the com
 
 ## Install
 
-You need a stock AnythingLLM (Desktop, or the Docker image) and Node 18 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the control server and the skills; build it with `npm install` once in `packages/`, then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
+You need a stock AnythingLLM (Desktop, or the Docker image) and Node 18 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the skills; build it with `npm install` once in `packages/`, then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
 
 ```sh
 node anywherellm-suite.cjs install                     # AnythingLLM Desktop
@@ -20,7 +19,7 @@ node anywherellm-suite.cjs install --storage ~/anythingllm   # Docker: the folde
 node anywherellm-suite.cjs install --page-key brx-...  # once: the key the skills' pages post with
 ```
 
-It writes the control server, its entry in AnythingLLM's MCP servers file and the skills into AnythingLLM's storage folder, and AnythingLLM runs them itself: nothing runs beside it, so there is no service or socket to set up. Then, in AnythingLLM, open Settings > Agent Skills, refresh the MCP servers (or restart AnythingLLM) and switch on what you want.
+It writes the skills into AnythingLLM's storage folder, and AnythingLLM runs them itself: nothing runs beside it, so there is no service or socket to set up. Then, in AnythingLLM, open Settings > Agent Skills and switch on what you want. The agent's chat and scheduled-job tools (the control server) are anywherellm-bridge's: `anywherellm-bridge install --control`.
 
 The skills' pages (the browser's tab, the Vault, the Library page, the apps) send what the user does there through AnythingLLM's browser-extension upload, so they need a browser-extension key: make one in AnythingLLM's Settings > Browser Extension and give it to install once with `--page-key`. Install keeps it in the storage (`anywherellm-suite/page-key`, readable by its owner alone) until it's given another; `health` asks AnythingLLM whether it still takes it. The key sits in every page, which anyone with a page's address can read: it can add documents (and embed them in a workspace), list the workspaces and revoke itself, never read a chat or a document. A skill applies what it posts only with a page's own secret. Revoke it in the same settings and give install a new one.
 
@@ -41,7 +40,6 @@ The library's keys and sign-ins and the browser's logins and passkeys are in one
 ## Layout
 
 ```text
-packages/control/   the control MCP server (TypeScript; ships as control.cjs, inside the installer)
 packages/install/   the installer (TypeScript; ships as one file, anywherellm-suite.cjs)
 packages/skills/    one folder per skill; each ships as its own zip, and inside the installer
 packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the vault, the fence, AnythingLLM's login)
@@ -54,17 +52,17 @@ dist/               build output, ignored
 
 ## Rules
 
-- **No part imports another.** A JavaScript part's build fails if its bundle takes in a file from outside its own `src/` (the helpers in `packages/shared/` aside; `build.test.mts` tests this). Imports that are erased or not bundled (types, tests) are not checked. Parts share the contract and the tooling, never modules. The installer carries the control server and the skills as built text, not as imports.
+- **No part imports another.** A JavaScript part's build fails if its bundle takes in a file from outside its own `src/` (the helpers in `packages/shared/` aside; `build.test.mts` tests this). Imports that are erased or not bundled (types, tests) are not checked. Parts share the contract and the tooling, never modules. The installer carries the skills as built text, not as imports.
 - **One version of AnythingLLM under test.** `tools/versions.env` pins the image every check uses.
 - **Parts version and release on their own.** Tags are prefixed: `skills/library-lean-v0.3.0`.
 
 ## Checks
 
-`lefthook.yml` is the gate before a push, and `.github/workflows/test.yml` runs the same tests, and the e2e, on Linux. `make` lists the commands; they only call `lefthook` or a script in `tools/`. After cloning, run `make hooks`. `tools/check <part>` runs on push, only when files of that part changed. `tools/check` knows the installer, the control server and the skills. `make test` runs those hooks on every file; `make check` tests everything. `make e2e` (`tools/e2e`) is not a hook: it starts a throwaway AnythingLLM in a container with its storage bind-mounted, runs `install` into it, and has the real AnythingLLM start the control server and the tests drive it. `tools/e2e command...` runs that command in place of the tests, with the throwaway's address, password and workspace in `E2E_*` (listed in `tools/e2e.test.mts`). `make e2e-fence` (`tools/e2e-fence [BRIDGE_DIR]`) checks the fence's asks against a real anywherellm-bridge checkout (`../anywherellm-bridge`, or `$ANYWHERELLM_BRIDGE`): it runs the bridge's `tools/e2e` with `tools/fence-lean.e2e.mts`, so this checkout's lock, ask and `allowed.json` meet the bridge's in one storage folder. The slow tests (the fake sign-in sites the browser skill is tried against, and the agent eval that runs cases on a model) are in the sibling repository `test-lab`, not here: this repository keeps the fast tests that need no model.
+`lefthook.yml` is the gate before a push, and `.github/workflows/test.yml` runs the same tests, and the e2e, on Linux. `make` lists the commands; they only call `lefthook` or a script in `tools/`. After cloning, run `make hooks`. `tools/check <part>` runs on push, only when files of that part changed. `tools/check` knows the installer and the skills. `make test` runs those hooks on every file; `make check` tests everything. `make e2e` (`tools/e2e`) is not a hook: it starts a throwaway AnythingLLM in a container with its storage bind-mounted, runs `install` into it, and has the real AnythingLLM start the control server and the tests drive it. `tools/e2e command...` runs that command in place of the tests, with the throwaway's address, password and workspace in `E2E_*` (listed in `tools/e2e.test.mts`). `make e2e-fence` (`tools/e2e-fence [BRIDGE_DIR]`) checks the fence's asks against a real anywherellm-bridge checkout (`../anywherellm-bridge`, or `$ANYWHERELLM_BRIDGE`): it runs the bridge's `tools/e2e` with `tools/fence-lean.e2e.mts`, so this checkout's lock, ask and `allowed.json` meet the bridge's in one storage folder. The slow tests (the fake sign-in sites the browser skill is tried against, and the agent eval that runs cases on a model) are in the sibling repository `test-lab`, not here: this repository keeps the fast tests that need no model.
 
 ## Status
 
-Moved in: the control server (chat and schedule, ported from Python to TypeScript; AnythingLLM 1.16.2 starts it from its storage and `make e2e` drives it there), the `library` and `browser` skills (see their READMEs), the `notebook` skill, which took the place of the `memory` skill (archived on the branch `archive/memory-skill`), and the `apps` skill (on the branch `apps-port`, from the lean edition's 0.17). Moved out: the bridge, to anywherellm-bridge (2026-10-19). Not yet: a run on real macOS and Windows machines.
+Moved in: the `library` and `browser` skills (see their READMEs), the `notebook` skill, which took the place of the `memory` skill (archived on the branch `archive/memory-skill`), and the `apps` skill (on the branch `apps-port`, from the lean edition's 0.17). Moved out: the bridge, to anywherellm-bridge (2026-10-19), and the control server, to the same repository (2026-10-20). Not yet: a run on real macOS and Windows machines.
 
 ## License
 

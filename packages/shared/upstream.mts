@@ -1,5 +1,4 @@
-// AnythingLLM, from here: one JSON call to it, and where it is. The control server's logged-in
-// client is built on it (control/src/upstream.mts); the installer asks it about the pages' key.
+// AnythingLLM, from here: one JSON call to it, and where it is. The installer asks it about the pages' key.
 
 import { Told } from "./errors.mts";
 

@@ -25,7 +25,6 @@ jobs:
       - run: npm run shared:test
       - run: node build.mjs # every part: the installer carries the others
       - run: npm run install:unit
-      - run: npm run control:unit
       - run: npm run skills:unit
 
   e2e:

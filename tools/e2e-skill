@@ -6,7 +6,7 @@
 # temporary folder are removed afterwards, pass or fail; nothing running on this machine is touched.
 #
 # Fresh storage matters: a folder left from an earlier run has tabs whose pages are gone. (Not
-# tools/e2e, which drives the control server.) Needs podman or docker and Node 22.18
+# tools/e2e, which only installs the skills and asks AnythingLLM about them.) Needs podman or docker and Node 22.18
 # or later; the first run pulls the image.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"

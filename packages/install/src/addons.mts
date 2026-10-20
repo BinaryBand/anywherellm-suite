@@ -1,16 +1,11 @@
 // What install puts into AnythingLLM's storage folder, where AnythingLLM finds it and runs it itself:
 //
-//   anywherellm-suite/control.cjs             the control MCP server (packages/control)
-//   plugins/anythingllm_mcp_servers.json      an entry `control` that starts it with `node`
 //   plugins/agent-skills/<hubId>/             each skill (packages/skills)
 //   anywherellm-suite/page-key                the browser-extension key the skills' pages post
 //                                             with, when install is given one (--page-key)
 //
-// The entry runs the container's own node on the path the container sees (/app/server/storage), or
-// for AnythingLLM Desktop (and one run from source) the node that ran install, on the host's path.
-// Every other entry of the servers file stays, and so do the settings AnythingLLM keeps in ours
-// (`anythingllm`: suppressed tools, autoStart). Files are written in place, not renamed over, since
-// a file in AnythingLLM's storage may belong to its user and group.
+// Files are written in place, not renamed over, since a file in AnythingLLM's storage may belong to
+// its user and group.
 
 import fs from "node:fs";
 import path from "node:path";
@@ -18,11 +13,9 @@ import { isDeepStrictEqual } from "node:util";
 import { pageKeyFile, SAVED_NOW, SUITE_DIR } from "#shared/anythingllm";
 import { sameText, writeAtomicIfChanged } from "#shared/atomic";
 import { Told } from "#shared/errors";
-import { DEFAULT_ROLES, ROLES_ENV } from "#shared/roles";
 
 /** The files install writes, built into it (packages/build.mjs). */
 export interface Payload {
-  control: string;
   skills: Skill[];
 }
 
@@ -36,37 +29,13 @@ export interface Skill {
   pages?: boolean;
 }
 
-export type Runtime = "container" | "native";
-
-export const NAME = "control";
-const CONTROL = "control.cjs";
 /** Where the container sees its storage (tools/versions.env INNER_STORAGE). */
 export const INNER_STORAGE = "/app/server/storage";
 
 type Obj = Record<string, unknown>;
 export type Check = [what: string, ok: boolean, detail: string];
 
-export const serversFile = (storage: string): string => path.join(storage, "plugins", "anythingllm_mcp_servers.json");
-const controlFile = (storage: string): string => path.join(storage, SUITE_DIR, CONTROL);
 const skillDir = (storage: string, skill: Skill): string => path.join(storage, "plugins", "agent-skills", skill.hubId);
-
-/** The servers-file entry that starts the control server. */
-export function entry(runtime: Runtime, storage: string, roles: string[], node: string): Obj {
-  const [command, file] = runtime === "container" ? ["node", `${INNER_STORAGE}/${SUITE_DIR}/${CONTROL}`] : [node, controlFile(storage)];
-  return { command, args: [file], env: { [ROLES_ENV]: roles.join(",") } };
-}
-
-/** What an entry `entry` wrote says, the runtime and the roles; null for an entry that isn't ours. */
-export function parseEntry(found: unknown): { runtime: Runtime; roles: string[] } | null {
-  const { command, args, env } = (found ?? {}) as Obj;
-  const words = Array.isArray(args) ? args.map(String) : [];
-  const file = (words.at(-1) ?? "").replace(/\\/g, "/");
-  if (!file.endsWith(`/${SUITE_DIR}/${CONTROL}`)) return null;
-  const roles = ((env ?? {}) as Obj)[ROLES_ENV];
-  return { runtime: command === "node" && file.startsWith(INNER_STORAGE) ? "container" : "native", roles: typeof roles === "string" ? roles.split(",") : DEFAULT_ROLES };
-}
-
-const ours = (found: unknown): boolean => parseEntry(found) !== null;
 
 /** Runs a file operation, saying what to do when the storage isn't the user's to write. */
 function writable<T>(file: string, operation: () => T): T {
@@ -89,44 +58,6 @@ function write(file: string, text: string): boolean {
     fs.writeFileSync(file, text);
   });
   return true;
-}
-
-function readServers(file: string): Obj {
-  if (!fs.existsSync(file)) return {};
-  let found: unknown;
-  try {
-    found = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
-  } catch (e) {
-    throw new Told(`${file} isn't JSON (${(e as Error).message}); fix it first`);
-  }
-  if (!found || typeof found !== "object" || Array.isArray(found)) throw new Told(`${file} doesn't hold a JSON object`);
-  return found as Obj;
-}
-
-/** The servers a servers file's JSON names. */
-const serversIn = (config: Obj): Obj => (config.mcpServers ?? {}) as Obj;
-
-/** What our entry in the servers file says (parseEntry), or null when there is none or no file to read. */
-export function current(storage: string): ReturnType<typeof parseEntry> {
-  try {
-    return parseEntry(serversIn(readServers(serversFile(storage)))[NAME]);
-  } catch {
-    return null;
-  }
-}
-
-/** Sets our entry in the servers file, or with null drops it; what it did. */
-export function setEntry(storage: string, wanted: Obj | null): string {
-  const file = serversFile(storage);
-  const config = readServers(file);
-  const servers = { ...serversIn(config) };
-  const old = servers[NAME] as Obj | undefined;
-  if (old !== undefined && !ours(old)) throw new Told(`${file} has a server named ${NAME} that isn't ours; rename it first`);
-  if (!wanted && old === undefined) return `no ${NAME} entry in ${file}`;
-  if (wanted) servers[NAME] = old?.anythingllm ? { ...wanted, anythingllm: old.anythingllm } : wanted;
-  else delete servers[NAME];
-  if (!write(file, `${JSON.stringify({ ...config, mcpServers: servers }, null, 2)}\n`)) return `unchanged: ${NAME} in ${file}`;
-  return `${wanted ? "set" : "dropped"} ${NAME} in ${file}`;
 }
 
 /** A skill's file as install writes it over `file`: a plugin.json keeps what AnythingLLM saved in
@@ -169,10 +100,9 @@ export function chosen(payload: Payload, names?: string[]): Skill[] {
   return payload.skills.filter((s) => names.includes(s.name));
 }
 
-/** Puts the control server, its entry and `skills` into the storage; what it did, line by line. */
-export function put(storage: string, payload: Payload, wantedEntry: Obj, skills: Skill[]): string[] {
-  const done = [write(controlFile(storage), payload.control) ? `wrote the control server: ${controlFile(storage)}` : `unchanged: ${controlFile(storage)}`];
-  done.push(setEntry(storage, wantedEntry));
+/** Puts `skills` into the storage; what it did, line by line. */
+export function put(storage: string, skills: Skill[]): string[] {
+  const done: string[] = [];
   for (const skill of skills) {
     const dir = skillDir(storage, skill);
     const changed = Object.entries(skill.files).filter(([name, text]) => write(path.join(dir, name), skillFile(path.join(dir, name), text)));
@@ -196,9 +126,9 @@ function leftovers(storage: string, skill: Skill): string[] {
 
 /** Takes out what `put` put in (the skills it knows of); what it did. A skill's data stays. */
 export function take(storage: string, payload: Payload): string[] {
-  const done = [setEntry(storage, null)];
+  const done: string[] = [];
   if (fs.existsSync(pageKeyFile(storage))) done.push("the pages' key goes with it: revoke it in AnythingLLM's Settings > Browser Extension");
-  for (const folder of [path.dirname(controlFile(storage)), ...payload.skills.map((s) => skillDir(storage, s))]) {
+  for (const folder of [path.join(storage, SUITE_DIR), ...payload.skills.map((s) => skillDir(storage, s))]) {
     if (!fs.existsSync(folder)) continue;
     writable(folder, () => fs.rmSync(folder, { recursive: true }));
     done.push(`removed ${folder}`);
@@ -217,16 +147,7 @@ export const needsPageKey = (storage: string, payload: Payload): boolean => payl
 
 /** Whether what `put` puts there is there and current. */
 export function checks(storage: string, payload: Payload): Check[] {
-  const same = (file: string, text: string): string => (!fs.existsSync(file) ? "missing" : sameText(file, text) ? "" : "not this version's");
-  const control = same(controlFile(storage), payload.control);
-  let listed: Check;
-  try {
-    const found = serversIn(readServers(serversFile(storage)))[NAME];
-    listed = [`the ${NAME} entry`, found !== undefined && ours(found), found === undefined ? `missing from ${serversFile(storage)}` : ours(found) ? "" : "another server has its name"];
-  } catch (e) {
-    listed = [`the ${NAME} entry`, false, (e as Error).message];
-  }
-  const found: Check[] = [["the control server", !control, control && `${control}: run install again`], listed];
+  const found: Check[] = [];
   for (const skill of payload.skills) {
     if (!fs.existsSync(skillDir(storage, skill))) continue; // not chosen
     const stale = Object.entries(skill.files).filter(([name, text]) => {

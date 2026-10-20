@@ -4,7 +4,7 @@
 .DEFAULT_GOAL := help
 .PHONY: help hooks test check e2e e2e-skill e2e-fence package install
 
-PART    ?=# install, control or skills; empty: all
+PART    ?=# install or skills; empty: all
 SKILL   ?=# a skill's folder name under packages/skills
 STORAGE ?=# AnythingLLM's storage folder; empty: AnythingLLM Desktop's
 
@@ -24,7 +24,7 @@ hooks: ## Install the git hooks, once per clone
 test: ## Run the push hooks on every file (each part's tests)
 	lefthook run pre-push --all-files
 
-check: ## Test a part (PART=control) or, with no PART, all of them
+check: ## Test a part (PART=skills) or, with no PART, all of them
 	tools/check $(PART)
 
 e2e: ## Install into a throwaway AnythingLLM and run the suite against it (needs podman or docker)

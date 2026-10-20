@@ -52,7 +52,7 @@ export function serial<T>(key: string, fn: () => T | Promise<T>): Promise<T> {
   return run;
 }
 
-/** The suite's own folder in the storage: the control server, and the pages' key. */
+/** The suite's own folder in the storage: the pages' key. */
 export const SUITE_DIR = "anywherellm-suite";
 
 /** The browser-extension key the skills' pages post with, which install keeps in the storage
