@@ -14,7 +14,7 @@ import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
 import zlib from "node:zlib";
-import { FENCED, Fenced, NetError, addressesRefused, allowedHosts, bareHost, hostRefused, httpUrl } from "./fence.mts";
+import { FENCED, Fenced, NetError, addressesRefused, allowedNow, bareHost, hostRefused, httpUrl } from "./fence.mts";
 
 /** A server that didn't answer, or whose answer couldn't be read: worth trying again later. */
 export class Unreachable extends NetError {
@@ -32,7 +32,7 @@ type Resolve = (hostname: string, options: dns.LookupAllOptions, callback: (err:
 
 /** A lookup for http.request that refuses a name resolving to an address that isn't public and
  *  answers only addresses it checked; the hosts in `allowed` are let through. */
-function fencedLookup(allowed: Set<string>, resolve: Resolve = dns.lookup): LookupFunction {
+function fencedLookup(allowed: ReadonlySet<string>, resolve: Resolve = dns.lookup): LookupFunction {
   return (hostname, options, callback) => {
     resolve(hostname, { all: true, verbatim: true }, (err, found) => {
       if (err) return callback(err, "", 0);
@@ -67,24 +67,31 @@ export interface Answer {
 
 export type Headers = Record<string, string>;
 
-type Once = Required<Pick<Send, "method" | "url" | "headers" | "timeout" | "maxBytes">> & Pick<Send, "body" | "resolve" | "signal"> & { allowed: Set<string> };
+type Once = Required<Pick<Send, "method" | "url" | "headers" | "timeout" | "maxBytes">> & Pick<Send, "body" | "resolve" | "signal"> & { allowed: ReadonlySet<string> };
 
 type Agents = { http: http.Agent; https: https.Agent };
 const AGENTS = Symbol.for("anywherellm-suite.net.agents");
+/** How many allow-lists keep their connections: one per run the user let a host through in, so they
+ *  don't pile up. */
+const MAX_POOLS = 8;
 
 /** The connections kept for the hosts `allowed` lets through: one pool per allow-list, so a
  *  connection opened under a looser one is never reused under a stricter one. Kept on globalThis,
- *  since AnythingLLM loads a skill's handler.js afresh for each agent run. */
-function agentsFor(allowed: Set<string>): Agents {
+ *  since AnythingLLM loads a skill's handler.js afresh for each agent run; the pool used longest ago
+ *  is let go of past MAX_POOLS, not destroyed (a request may still be using it): its idle
+ *  connections close after IDLE_MS. */
+function agentsFor(allowed: ReadonlySet<string>): Agents {
   const g = globalThis as unknown as Record<symbol, Map<string, Agents>>;
   const pools = (g[AGENTS] ||= new Map());
   const key = [...allowed].sort().join(",");
   let agents = pools.get(key);
-  if (!agents) {
+  if (agents) pools.delete(key); // used now: last to go
+  else {
     const options = { keepAlive: true, timeout: IDLE_MS, lookup: fencedLookup(allowed) };
     agents = { http: new http.Agent(options), https: new https.Agent(options) };
-    pools.set(key, agents);
+    while (pools.size >= MAX_POOLS) pools.delete(pools.keys().next().value!);
   }
+  pools.set(key, agents);
   return agents;
 }
 
@@ -150,7 +157,8 @@ export interface Send {
   body?: string | Buffer;
   timeout?: number;
   maxBytes?: number;
-  allow?: string[];
+  /** The hosts let through: by default, those let through now (allowedNow). */
+  allow?: Iterable<string>;
   resolve?: Resolve;
   signal?: AbortSignal;
   /** The headers to send to a redirect's address, or null not to follow it. */
@@ -160,7 +168,7 @@ export interface Send {
 /** Sends a request; answers its status, headers and at most `maxBytes` of its body (cut when there
  *  was more). A redirect of a GET or a HEAD is followed with the headers `next(url)` answers for
  *  it, or not at all when it answers null. */
-export async function send({ method = "GET", url, headers = {}, body, timeout = TIMEOUT_MS, maxBytes = MAX_BYTES, allow = allowedHosts(), resolve, signal, next = () => headers }: Send): Promise<Answer> {
+export async function send({ method = "GET", url, headers = {}, body, timeout = TIMEOUT_MS, maxBytes = MAX_BYTES, allow = allowedNow(), resolve, signal, next = () => headers }: Send): Promise<Answer> {
   const allowed = new Set(allow);
   let target = url;
   let sent = headers;

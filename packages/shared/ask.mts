@@ -6,14 +6,16 @@
 // skill waits for it, at most ASK_MS, and an ask nobody answered is denied. Only a chat through
 // AnythingLLM's developer API, in AnythingLLM's own process, asks: a scheduled job's or Telegram's
 // run (a process AnythingLLM forks) and a chat in AnythingLLM's web UI (which AnywhereLLM doesn't
-// see) are refused as before.
+// see) are refused as before. Each skill's handler runs its call in a run (runAs), and the request
+// the fence refuses asks through it (withAsk), so no call site carries the asking itself.
 
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { type Invoked, perProcess, storageDir, workspaceOf } from "./anythingllm.mts";
 import { readJson, updateJson } from "./atomic.mts";
-import { FENCED, FENCE_DIR, NetError } from "./fence.mts";
+import { FENCED, FENCE_DIR, Fenced, NetError, currentRun, inRun } from "./fence.mts";
 
 /** How long an ask waits for the user. */
 export const ASK_MS = 120 * 1000;
@@ -63,8 +65,6 @@ export function grantsOf(self: Invoked | undefined): Set<string> {
   return hosts;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /** Asks the user, in AnywhereLLM, to let `host` through for `origin`, and waits for their answer:
  *  "once" or "always" (the host is then let through for the rest of this run), "deny", or
  *  "expired" when nobody answered in time. Only for a `foreground` chat. */
@@ -99,21 +99,25 @@ export async function askToReach(self: Asking, what: { skill: string; host: stri
   }
 }
 
-/** Removes the asks whose time ran out an hour ago or more: a process that ended while it waited
- *  leaves its ask behind. */
-function sweep(dir: string): void {
+const SWEEP_MS = 60 * 60 * 1000;
+
+/** At most once an hour in a process, removes the asks last written an hour or more after their
+ *  time ran out: a process that ended while it waited leaves its ask behind. */
+function sweep(dir: string, now = Date.now()): void {
+  const last = perProcess("fence.swept", () => ({ at: 0 }));
+  if (now - last.at < SWEEP_MS) return;
+  last.at = now;
   let names: string[];
   try {
     names = fs.readdirSync(dir);
   } catch {
     return;
   }
-  const before = Date.now() - 60 * 60 * 1000;
   for (const name of names) {
     if (!/^[0-9a-f]{32}\.json$/.test(name)) continue;
+    const file = path.join(dir, name);
     try {
-      const { expires } = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")) as Partial<Ask>;
-      if (Date.parse(String(expires)) < before) fs.rmSync(path.join(dir, name), { force: true });
+      if (fs.statSync(file).mtimeMs < now - ASK_MS - SWEEP_MS) fs.rmSync(file, { force: true });
     } catch {}
   }
 }
@@ -124,4 +128,29 @@ export async function letThrough(self: Asking, skill: string, refused: { host: s
   const outcome = await askToReach(self, { skill, host: refused.host, origin: refused.origin, why });
   if (outcome === "deny") throw new NetError(`${refused.origin} isn't reached: the user declined it in AnywhereLLM. ${FENCED}`);
   if (outcome === "expired") throw new NetError(`${refused.origin} isn't reached: the user didn't answer in AnywhereLLM in time. ${FENCED}`);
+}
+
+/** Runs a call of `skill`'s handler (`self`) as its agent run: the hosts the user let through once in
+ *  the run pass the fence, and, in a chat in AnywhereLLM, a request the fence refuses asks the user,
+ *  for what `why` says the skill would do at its origin (none: it doesn't ask). */
+export function runAs<T>(self: Asking, skill: string, why: ((origin: string) => string) | undefined, fn: () => T): T {
+  const ask = why && foreground(self) ? (refused: Fenced) => letThrough(self, skill, refused, why(refused.origin)) : undefined;
+  return inRun({ grants: grantsOf(self), ask }, fn);
+}
+
+/** Runs `fn` with the current run's grants but never asking, and without holding the agent: for
+ *  what goes on in the background (a library function's run). */
+export const quietly = <T,>(fn: () => T): T => inRun({ grants: currentRun()?.grants ?? new Set() }, fn);
+
+/** Answers `attempt`; when the fence refused it and the current run asks, asks the user and, once
+ *  they let the host through, attempts it again (the fence refuses before anything is sent). */
+export async function withAsk<T>(attempt: () => Promise<T>): Promise<T> {
+  try {
+    return await attempt();
+  } catch (e) {
+    const ask = currentRun()?.ask;
+    if (!(e instanceof Fenced) || !ask) throw e;
+    await ask(e);
+    return attempt();
+  }
 }

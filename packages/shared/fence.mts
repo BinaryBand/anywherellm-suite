@@ -8,11 +8,13 @@
 // (the browser's page requests): there a name could resolve differently in between.
 // Ported from the lean browser skill's fence.js.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import dns from "node:dns";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { storageDir } from "./anythingllm.mts";
+import { perProcess, storageDir } from "./anythingllm.mts";
+import { readJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
 
 /** A request refused or failed, said as it is: a fenced address, a bad header, an unreachable server. */
@@ -105,30 +107,31 @@ export const FENCE_DIR = "fence-lean";
 /** The hosts the user let through for good: { hosts: [{ host, added }] }, written by the bridge. */
 export const allowedFile = (storage: string): string => path.join(storage, FENCE_DIR, "allowed.json");
 
-let kept: { file: string; stamp: number; hosts: string[] } | null = null;
-
 /** The hosts the user let through for good from AnywhereLLM, in lower case; read again when the file
- *  changes. None when there's no file, or one that can't be read: the fence stays shut. */
+ *  changes (by its stamp, as the vault's: the bridge replaces it). None when there's no file, or one
+ *  that can't be read: the fence stays shut. */
 export function alwaysAllowed(): string[] {
+  const kept = perProcess("fence.allowed", () => ({ last: null as { stamp: string; hosts: string[] } | null }));
   let file: string;
-  let stamp: number;
+  let stamp: string;
   try {
     file = allowedFile(storageDir());
-    stamp = fs.statSync(file).mtimeMs;
+    const s = fs.statSync(file);
+    stamp = `${file}\0${s.ino}:${s.mtimeMs}:${s.size}`;
   } catch {
     return [];
   }
-  if (kept?.file === file && kept.stamp === stamp) return kept.hosts;
+  if (kept.last?.stamp === stamp) return kept.last.hosts;
   let hosts: string[] = [];
   try {
-    const listed = (JSON.parse(fs.readFileSync(file, "utf8")) as { hosts?: { host?: unknown }[] }).hosts;
+    const listed = readJson<{ hosts?: { host?: unknown }[] }>(file, () => ({})).hosts;
     hosts = Array.isArray(listed) ? listed.map((h) => String(h?.host ?? "").trim().toLowerCase()).filter(Boolean) : [];
   } catch {}
-  kept = { file, stamp, hosts };
+  kept.last = { stamp, hosts };
   return hosts;
 }
 
-/** The hosts the user lets through, in lower case: FENCE_ALLOW's, and those let through for good. */
+/** The hosts the user lets through for good, in lower case: FENCE_ALLOW's, and AnywhereLLM's. */
 export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] => [
   ...new Set([
     ...(env.FENCE_ALLOW ?? "")
@@ -139,9 +142,34 @@ export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] => 
   ]),
 ];
 
+/** The agent run a skill's call is part of: the hosts the user let through once in it (lower case),
+ *  and, in a chat in AnywhereLLM, how to ask them for a host the fence refuses (ask.mts). Each skill's
+ *  handler sets it for the whole call; what the call starts keeps it (a library function's run,
+ *  without asking). */
+export interface Run {
+  grants: ReadonlySet<string>;
+  ask?: (refused: Fenced) => Promise<void>;
+}
+
+const runs = () => perProcess("fence.run", () => new AsyncLocalStorage<Run>());
+
+/** Runs `fn` as part of `run`. */
+export const inRun = <T,>(run: Run, fn: () => T): T => runs().run(run, fn);
+
+/** Runs `fn` as part of no run: for what lives on after the call that starts it (a browser), which
+ *  would otherwise keep that run, and its agent, as long as it lives. */
+export const outsideRun = <T,>(fn: () => T): T => runs().exit(fn);
+
+/** The run the code running now is part of, if any. */
+export const currentRun = (): Run | undefined => runs().getStore();
+
+/** Every host let through now: the user's for good (allowedHosts), and `once`, by default those let
+ *  through once in the current run. */
+export const allowedNow = (once: Iterable<string> = currentRun()?.grants ?? []): Set<string> => new Set([...allowedHosts(), ...once]);
+
 /** Why `host` (a name or an address, without brackets) is refused by itself, or null; "lookup"
  *  when only its addresses can say. The hosts in `allowed` are let through. */
-export function hostRefused(host: string, allowed: Set<string>): string | null {
+export function hostRefused(host: string, allowed: ReadonlySet<string>): string | null {
   if (allowed.has(host.toLowerCase())) return null;
   if (net.isIP(host)) return privateAddress(host) ? `${host} isn't a public address` : null;
   if (privateName(host)) return `${host} is a name on this machine or its network`;
@@ -156,16 +184,16 @@ export function addressesRefused(host: string, addresses: string[]): string | nu
 
 type Lookup = (host: string) => Promise<{ address: string }[]>;
 
+const NONE: ReadonlySet<string> = new Set();
+
 /** A fence: `refused(url)` answers why a request to `url` is refused, or null. Lookups are kept for
- *  DNS_TTL_MS; the hosts in `allow` are let through, read again for each request when it's a
- *  function (by default, the hosts the user lets through now). */
+ *  DNS_TTL_MS; the hosts `allow()` answers are let through, asked only for a host refused by
+ *  itself, so a public one costs nothing more (by default, the hosts let through now). */
 export function makeFence({
   lookup = (host) => dns.promises.lookup(host, { all: true, verbatim: true }),
   now = Date.now,
-  allow = () => allowedHosts(),
-}: { lookup?: Lookup; now?: () => number; allow?: string[] | (() => Iterable<string>) } = {}) {
-  const fixed = typeof allow === "function" ? null : new Set(allow);
-  const allowedNow = () => fixed ?? new Set([...(allow as () => Iterable<string>)()].map((h) => h.toLowerCase()));
+  allow = () => allowedNow(),
+}: { lookup?: Lookup; now?: () => number; allow?: () => ReadonlySet<string> } = {}) {
   const known = new Map<string, { addresses: Promise<string[]>; until: number }>();
   function addresses(host: string): Promise<string[]> {
     const kept = known.get(host);
@@ -175,6 +203,13 @@ export function makeFence({
     known.set(host, entry);
     pending.catch(() => known.get(host) === entry && known.delete(host));
     return pending;
+  }
+  async function byAddress(host: string): Promise<string | null> {
+    try {
+      return addressesRefused(host, await addresses(host));
+    } catch {
+      return null; // the request's own lookup fails the same way and says so
+    }
   }
   return async function refused(url: string): Promise<string | null> {
     let parsed: URL;
@@ -186,16 +221,9 @@ export function makeFence({
     if (LOCAL_SCHEMES.has(parsed.protocol)) return null;
     if (!["http:", "https:"].includes(parsed.protocol)) return `${parsed.protocol} addresses aren't loaded`;
     const host = bareHost(parsed);
-    const allowed = allowedNow();
-    const why = hostRefused(host, allowed);
-    if (why !== "lookup") return why;
-    let found: string[];
-    try {
-      found = await addresses(host);
-    } catch {
-      return null; // the request's own lookup fails the same way and says so
-    }
-    return addressesRefused(host, found);
+    const why = hostRefused(host, NONE);
+    const refusal = why === "lookup" ? await byAddress(host) : why;
+    return refusal && !allow().has(host.toLowerCase()) ? refusal : null;
   };
 }
 

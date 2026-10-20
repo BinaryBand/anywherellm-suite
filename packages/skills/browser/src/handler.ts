@@ -12,13 +12,13 @@
 
 import { BINARY, answerText, bodyOf, headersOf, keepOf, methodOf, withParams } from "#shared/answer";
 import { baseUrlOf, workspaceOf } from "#shared/anythingllm";
-import { foreground, grantsOf, letThrough } from "#shared/ask";
+import { grantsOf, runAs } from "#shared/ask";
 import { Told } from "#shared/errors";
 import { checkUrl, hostOf, onSite } from "#shared/fence";
 import * as logins from "#shared/logins";
 import { entryOf } from "#shared/static";
 import { act, checkAct, element, isPassword, notTyped, reachable, settle, settled, submitted, typeIn } from "./act";
-import { type Ask, existing, load, tab, through } from "./browser";
+import { existing, load, tab, through } from "./browser";
 import { BrowserError } from "./errors";
 import type { HandlerContext } from "./host";
 import { card, caughtUp } from "./page";
@@ -172,7 +172,7 @@ async function signIn(self: HandlerContext, at: Tab, args: Args): Promise<string
 
 /** A request from inside the tab, on its site's own origin, so the browser's signed-in session goes
  *  with it: for a site's own JSON, as its pages fetch it. */
-async function call(self: HandlerContext, scope: Scope, args: Args): Promise<string> {
+async function call(scope: Scope, args: Args): Promise<string> {
   if (clean(args.auth) !== "session") throw new BrowserError('the browser\'s call goes with the tab\'s signed-in session: give auth "session". A call to an API with a key is the library skill\'s');
   const method = methodOf(args.method);
   const url = withParams(new URL(checkUrl(args.url)), args.params).href;
@@ -180,7 +180,7 @@ async function call(self: HandlerContext, scope: Scope, args: Args): Promise<str
   const body = bodyOf(method, args.body, headers);
   const keep = keepOf(args.keep);
   const at = existing(scope.workspace, scope.thread);
-  await through(at.entry, url, "isn't reached", askOf(self, (o) => `Send a request to ${o} from the browser`));
+  await through(at.entry, url, "isn't reached");
   const origin = new URL(url).origin;
   if (!at.page.url().startsWith(origin + "/")) await load(at.entry, at.page, origin + "/");
   const got = await at.page.evaluate(
@@ -195,13 +195,6 @@ async function call(self: HandlerContext, scope: Scope, args: Args): Promise<str
   );
   const binary = BINARY.test(String(got.headers["content-type"] ?? ""));
   return answerText({ ...got, text: binary ? "" : got.text, bytes: got.text.length, binary }, `${method} ${url} (with the tab's session)`, keep, [...at.entry.secrets]);
-}
-
-/** In a chat in AnywhereLLM, how the user is asked to let through a host the fence refuses, for what
- *  `why` says the browser would do at its origin; nothing elsewhere, where it's refused. */
-function askOf(self: HandlerContext, why: (origin: string) => string): Ask | undefined {
-  if (!foreground(self)) return undefined;
-  return (refused) => letThrough(self, "Browser", refused, why(refused.origin));
 }
 
 /** The actions that change the tab: refused while the user holds it, and the user can't take it over
@@ -226,17 +219,17 @@ const ACTIONS: Record<string, (self: HandlerContext, scope: Scope, args: Args) =
   guide: (self, scope, args) => entryOf(statics(), "guide", ".md", "topic", args.topic, "index").text,
   search: (self, scope, args) => {
     self.introspect?.(`Searching for ${clean(args.query).slice(0, 100)}`);
-    return research.search(scope.workspace, args.query, self.runtimeArgs?.SEARCH_URL, askOf(self, (o) => `Search with ${o}`));
+    return research.search(scope.workspace, args.query, self.runtimeArgs?.SEARCH_URL);
   },
   look: (self, scope, args) => {
     if (!clean(args.url)) throw new BrowserError("look needs url, the address to read");
-    return research.look(scope.workspace, args.url, { find: clean(args.find), from: args.from, ask: askOf(self, (o) => `Read a page on ${o}`) });
+    return research.look(scope.workspace, args.url, { find: clean(args.find), from: args.from });
   },
   open: async (self, scope, args) => {
     const url = checkUrl(args.url);
     self.introspect?.(`Opening ${url}`);
     const at = await tab(scope.workspace, scope.thread);
-    const failed = await load(at.entry, at.page, url, askOf(self, (o) => `Open ${o} in the browser`));
+    const failed = await load(at.entry, at.page, url);
     if (failed) note(at.entry, at.key, `loading ${url} didn't finish: ${failed}`);
     return answer(self, at, `Opened ${url} in this chat's tab.`);
   },
@@ -246,7 +239,16 @@ const ACTIONS: Record<string, (self: HandlerContext, scope: Scope, args: Args) =
     const at = existing(scope.workspace, scope.thread);
     return clean(args.what) ? askCode(self, at, args) : signIn(self, at, args);
   },
-  call: (self, scope, args) => call(self, scope, args),
+  call: (self, scope, args) => call(scope, args),
+};
+
+/** What each action that may ask the user for a host the fence refuses would do at its origin, as
+ *  the ask says it; the others don't ask. */
+const WHY: Record<string, (origin: string) => string> = {
+  open: (o) => `Open ${o} in the browser`,
+  look: (o) => `Read a page on ${o}`,
+  search: (o) => `Search with ${o}`,
+  call: (o) => `Send a request to ${o} from the browser`,
 };
 
 export const runtime = {
@@ -260,7 +262,7 @@ export const runtime = {
       const scope = scopeOf(this);
       // The hosts this run was let through, for its workspace's pages to load meanwhile.
       if (workspaceOf(this) && this.super) state().grants.set(scope.workspace, { hosts: grantsOf(this), last: Date.now() });
-      return await (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args));
+      return await runAs(this, "Browser", WHY[action], () => (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args)));
     } catch (e) {
       if (e instanceof Told) return `Browser: ${e.message.replace(/\.$/, "")}.`;
       this.logger?.(`browser-lean ${action} failed: ${(e as Error)?.stack || e}`);

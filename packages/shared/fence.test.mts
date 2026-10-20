@@ -60,7 +60,7 @@ test("a name that doesn't resolve is left to the request's own lookup, which fai
 test("hosts the user lets through in FENCE_ALLOW pass the fence", async () => {
   assert.deepEqual(allowedHosts({ FENCE_ALLOW: " NAS.lan, 127.0.0.1 ,," }), ["nas.lan", "127.0.0.1"]);
   assert.deepEqual(allowedHosts({}), []);
-  const refused = makeFence({ allow: ["nas.lan", "127.0.0.1"], lookup: async () => [{ address: "192.168.1.5" }] });
+  const refused = makeFence({ allow: () => new Set(["nas.lan", "127.0.0.1"]), lookup: async () => [{ address: "192.168.1.5" }] });
   assert.equal(await refused("http://NAS.lan:5000/"), null);
   assert.equal(await refused("http://127.0.0.1:8080/"), null);
   assert.match((await refused("http://127.0.0.2/"))!, /isn't a public address/);

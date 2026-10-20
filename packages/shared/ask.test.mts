@@ -3,9 +3,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { after, beforeEach, test } from "node:test";
-import { type Ask, type Asking, askToReach, asksDir, foreground, grantsOf, letThrough } from "./ask.mts";
+import { perProcess } from "./anythingllm.mts";
+import { type Ask, type Asking, askToReach, asksDir, foreground, grantsOf, letThrough, quietly, runAs, withAsk } from "./ask.mts";
 import { updateJson } from "./atomic.mts";
-import { NetError } from "./fence.mts";
+import { Fenced, NetError, allowedNow, currentRun } from "./fence.mts";
 
 const storage = fs.mkdtempSync(path.join(os.tmpdir(), "ask-"));
 after(() => fs.rmSync(storage, { recursive: true, force: true }));
@@ -84,13 +85,42 @@ test("letThrough tells the agent why a host stays refused, and that it's final",
   assert.ok(grantsOf(always).has("muse-vm"));
 });
 
-test("asks left behind by a process that ended are swept an hour after they ran out", async () => {
+test("asks left behind by a process that ended are swept an hour after they ran out, once an hour", async () => {
   const dir = asksDir();
   fs.mkdirSync(dir, { recursive: true });
-  const old = "a".repeat(32);
-  const recent = "b".repeat(32);
-  fs.writeFileSync(path.join(dir, `${old}.json`), JSON.stringify({ expires: new Date(Date.now() - 2 * 3600 * 1000).toISOString() }));
-  fs.writeFileSync(path.join(dir, `${recent}.json`), JSON.stringify({ expires: new Date(Date.now() - 60 * 1000).toISOString() }));
+  const write = (name: string, agoMs: number) => {
+    const file = path.join(dir, `${name.repeat(32)}.json`);
+    fs.writeFileSync(file, "{}");
+    const at = (Date.now() - agoMs) / 1000;
+    fs.utimesSync(file, at, at);
+  };
+  write("a", 2 * 3600 * 1000);
+  write("b", 60 * 1000);
+  // The sweep the earlier tests' asks made this hour: as if it was an hour ago.
+  perProcess("fence.swept", () => ({ at: 0 })).at = 0;
   await askToReach(chat(), what, { pollMs: 10, waitMs: 20 });
-  assert.deepEqual(fs.readdirSync(dir).sort(), [`${recent}.json`]);
+  assert.deepEqual(fs.readdirSync(dir).sort(), [`${"b".repeat(32)}.json`]);
+  write("c", 2 * 3600 * 1000);
+  await askToReach(chat(), what, { pollMs: 10, waitMs: 20 });
+  assert.equal(fs.readdirSync(dir).length, 2, "not again within the hour");
+});
+
+test("a run asks for what the fence refuses and tries again; its background work keeps the grants and never asks", async () => {
+  const self = chat();
+  let tries = 0;
+  const refuseUntilLet = async () => {
+    tries++;
+    if (!allowedNow().has("muse-vm")) throw new Fenced("refused", "muse-vm", "http://muse-vm:8463");
+    return "sent";
+  };
+  const sent = runAs(self, "Library", (o) => `Send a request to ${o}`, () => withAsk(refuseUntilLet));
+  await decide((await askOf(self)).file, "once");
+  assert.equal(await sent, "sent");
+  assert.equal(tries, 2);
+  assert.match(self.said[0], /reach muse-vm \[ask:/);
+  assert.deepEqual(fs.readdirSync(asksDir()), [], "the ask is gone once answered");
+  const later = runAs(self, "Library", (o) => o, () => quietly(() => (assert.equal(currentRun()?.ask, undefined), withAsk(refuseUntilLet))));
+  assert.equal(await later, "sent", "the run's grant holds in its background work");
+  await assert.rejects(runAs(chat(), "Library", undefined, () => withAsk(refuseUntilLet)), Fenced, "no why: no asking");
+  await assert.rejects(withAsk(refuseUntilLet), Fenced, "outside a run: refused as before");
 });
