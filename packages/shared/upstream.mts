@@ -3,7 +3,7 @@
 
 import { Told } from "./errors.mts";
 
-/** AnythingLLM's port when SERVER_PORT doesn't say another (contract/versions.env INNER_PORT). */
+/** AnythingLLM's port when SERVER_PORT doesn't say another (tools/versions.env INNER_PORT). */
 const ANYTHINGLLM_PORT = 3001;
 export const DEFAULT_TIMEOUT = 30_000; // how long a call to AnythingLLM may take, in ms
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tools/e2e-fence [BRIDGE_DIR]: the fence's asks across this checkout and anywherellm-bridge
-# (contract/fence-lean.md). Runs the bridge's own tools/e2e (a throwaway AnythingLLM with the
+# (docs/fence-lean.md). Runs the bridge's own tools/e2e (a throwaway AnythingLLM with the
 # bridge served beside it, from the bridge checkout in BRIDGE_DIR, else $ANYWHERELLM_BRIDGE, else
 # ../anywherellm-bridge beside this one) with tools/fence-lean.e2e.mts as its command, so this
 # checkout's shared code and that bridge meet in one storage folder, as a skill and the bridge do.

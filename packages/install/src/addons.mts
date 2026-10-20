@@ -40,7 +40,7 @@ export type Runtime = "container" | "native";
 
 export const NAME = "control";
 const CONTROL = "control.cjs";
-/** Where the container sees its storage (contract/versions.env INNER_STORAGE). */
+/** Where the container sees its storage (tools/versions.env INNER_STORAGE). */
 export const INNER_STORAGE = "/app/server/storage";
 
 type Obj = Record<string, unknown>;

@@ -1,5 +1,5 @@
 // AnythingLLM's internal API in memory: its status and JSON (null for the plain text some routes
-// send), shaped by reading AnythingLLM 1.16.2 (anywherellm-bridge's contract/endpoints.md). The
+// send), shaped by reading AnythingLLM 1.16.2 (anywherellm-bridge's docs/endpoints.md). The
 // unit tests call it through the real Anything client; `serve` puts it behind HTTP, with the
 // login, for the stdio test.
 

@@ -1,4 +1,4 @@
-// The fence's asks across the suite and the bridge (contract/fence-lean.md), against the real
+// The fence's asks across the suite and the bridge (docs/fence-lean.md), against the real
 // bridge. tools/e2e-fence runs this as anywherellm-bridge's tools/e2e command, which starts a
 // throwaway AnythingLLM with the bridge served beside it and names them in the environment:
 //

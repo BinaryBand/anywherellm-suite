@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tools/e2e: the suite against the real thing. Starts a throwaway AnythingLLM (the image in
-# contract/versions.env) on a free port with its storage bind-mounted from a temporary folder, as
+# tools/versions.env) on a free port with its storage bind-mounted from a temporary folder, as
 # AnythingLLM's Docker instructions do; runs the built `anywherellm-suite install` into that storage
 # (with a browser-extension key for the pages), makes a workspace, and runs tools/e2e.test.mts, or
 # with arguments (`tools/e2e command...`) that command in its place. Everything lives in the

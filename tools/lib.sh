@@ -4,7 +4,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 # IMAGE, INNER_PORT and INNER_STORAGE: the one AnythingLLM every check runs against.
 # shellcheck source=/dev/null
-. "$ROOT/contract/versions.env"
+. "$ROOT/tools/versions.env"
 
 # skills: the name of each skill under packages/skills, a folder with a plugin.json.
 skills() { for c in "$ROOT"/packages/skills/*/plugin.json; do [ -f "$c" ] && basename "$(dirname "$c")"; done; }

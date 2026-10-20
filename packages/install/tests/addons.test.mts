@@ -152,7 +152,7 @@ test("a storage that isn't the user's to write says what to do", { skip: process
 });
 
 test("the storage path inside the container is the contract's", () => {
-  const contract = fs.readFileSync(fileURLToPath(new URL("../../../contract/versions.env", import.meta.url)), "utf8");
+  const contract = fs.readFileSync(fileURLToPath(new URL("../../../tools/versions.env", import.meta.url)), "utf8");
   const inner = /^INNER_STORAGE=(.+)$/m.exec(contract)?.[1];
   assert.deepEqual(entry("container", "/x", ["chat"], "node").args, [`${inner}/anywherellm-suite/control.cjs`]);
 });

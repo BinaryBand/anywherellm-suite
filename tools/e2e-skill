@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tools/e2e-skill [skill ...]: a skill's own check inside a real AnythingLLM. For each skill (no
 # argument: every skill with a tests/e2e/inside.js) it starts a throwaway AnythingLLM (the image in
-# contract/versions.env) on fresh storage, installs the built skill with `anywherellm-suite install
+# tools/versions.env) on fresh storage, installs the built skill with `anywherellm-suite install
 # --skills` (and a browser-extension key it made, --page-key), and runs the skill's tests/e2e/inside.js in the container. The container and the
 # temporary folder are removed afterwards, pass or fail; nothing running on this machine is touched.
 #

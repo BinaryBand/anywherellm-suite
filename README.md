@@ -8,7 +8,7 @@ An MCP server and agent skills that a stock AnythingLLM runs itself, and the com
 | Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS; browser bundles Puppeteer and runs the Chrome AnythingLLM's image ships, or the system's) |
 | The installer | `packages/install` | the command you run | Node 18+, no dependencies shipped |
 
-`packages/` holds what runs inside AnythingLLM and what puts it there. `contract/` is what the parts and the test lab agree on.
+`packages/` holds what runs inside AnythingLLM and what puts it there. `docs/browser-tab.md` and `docs/fence-lean.md` are what the parts agree on with the phone app and the bridge.
 
 ## Install
 
@@ -46,9 +46,8 @@ packages/install/   the installer (TypeScript; ships as one file, anywherellm-su
 packages/skills/    one folder per skill; each ships as its own zip, and inside the installer
 packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the vault, the fence, AnythingLLM's login)
 packages/package.json, tsconfig.json   the toolchain: one install, one type-check
-contract/           versions.env, browser-tab.md: read by the parts and the test lab
-tools/              check, package, install, e2e, e2e-skill, e2e-fence
-docs/               architecture.md; notes/ for decisions, repo-wide and per part
+tools/              check, package, install, e2e, e2e-skill, e2e-fence; versions.env, the AnythingLLM image every check uses (the test lab reads it too)
+docs/               architecture.md; browser-tab.md and fence-lean.md, the file formats the phone app and the bridge read; notes/ for decisions, repo-wide and per part
 .github/workflows/  the tests on Linux, macOS and Windows, and the e2e on Linux
 dist/               build output, ignored
 ```
@@ -56,7 +55,7 @@ dist/               build output, ignored
 ## Rules
 
 - **No part imports another.** A JavaScript part's build fails if its bundle takes in a file from outside its own `src/` (the helpers in `packages/shared/` aside; `build.test.mts` tests this). Imports that are erased or not bundled (types, tests) are not checked. Parts share the contract and the tooling, never modules. The installer carries the control server and the skills as built text, not as imports.
-- **One version of AnythingLLM under test.** `contract/versions.env` pins the image every check uses.
+- **One version of AnythingLLM under test.** `tools/versions.env` pins the image every check uses.
 - **Parts version and release on their own.** Tags are prefixed: `skills/library-lean-v0.3.0`.
 
 ## Checks
