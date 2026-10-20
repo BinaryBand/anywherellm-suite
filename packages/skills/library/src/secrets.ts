@@ -112,15 +112,22 @@ export function labelForHost(host: string): string {
 }
 
 /** The refusal for a name that is the other kind of secret already: a name is one secret. */
-export const nameTaken = (label: string, kind: string): LibraryError => new LibraryError(`"${label}" is ${kind === "oauth" ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
+const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${isSignIn(e) ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
+
+/** Refuses a key's name that is a sign-in's already (before the user is asked for the key). */
+export function assertKeyName(label: string): void {
+  const taken = signIn(label);
+  if (taken) throw nameTaken(taken);
+}
 
 /** Saves `entry` under its label, replacing whole the secret of that name (keeping only its id), when
  *  that is the same kind of secret. */
 function put(v: vault.Vault, entry: { kind: string; site: string; user: string; [field: string]: unknown }): void {
   const at = v.entries.findIndex(named(entry.user));
-  if (at >= 0 && v.entries[at].kind !== entry.kind) throw nameTaken(v.entries[at].user, v.entries[at].kind);
-  if (at >= 0) v.entries[at] = { id: v.entries[at].id, ...entry };
-  else v.entries.push({ id: vault.newId(), ...entry });
+  const there = v.entries[at];
+  if (!there) return void v.entries.push({ id: vault.newId(), ...entry });
+  if (there.kind !== entry.kind) throw nameTaken(there);
+  v.entries[at] = { id: there.id, ...entry };
 }
 
 /** Saves a key under `label`, replacing a key of that name. */

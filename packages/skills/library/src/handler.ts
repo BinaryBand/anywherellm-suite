@@ -129,8 +129,7 @@ async function secret(args: Args, self: HandlerContext): Promise<string> {
   }
   const site = secrets.siteChecked(args.site);
   const label = secrets.labelOf(named || site);
-  const taken = secrets.signIn(label);
-  if (taken) throw secrets.nameTaken(taken.user, taken.kind);
+  secrets.assertKeyName(label);
   await page.need(label, site);
   return `The user gives the key on the Vault: ${await page.showVault(baseOf(self))}\nTell them to open it and enter the key for ${site} there, at the top of Keys (it's saved without you seeing it), and to tell you when it's done; then call library: "${label}" shows as saved. Never ask for the key in the chat. Name it in the toolkit's secrets as { "label": "${label}", "as": "bearer" } or however the API's docs say it goes.`;
 }

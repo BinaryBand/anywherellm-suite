@@ -203,13 +203,14 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     });
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
       if (!v.value || !v.label || !v.site) return toast("Fill in every field"), false;
+      if (ks.secrets.some((x) => x.kind === "oauth" && x.label.toLowerCase() === v.label.trim().toLowerCase())) return toast("That name is a sign-in's: use another"), false;
       const went = await post("keys", "key-save", { label: v.label, site: v.site, sealed: await seal(v.value) });
       if (went) (adding = false), drawKeys(ks);
       return went;
     }, [sealedNote()]);
     const add = el("button", { className: "add", type: "button", onclick: () => ((adding = !adding), drawKeys(ks)) }, icon(adding ? "M4 8h8" : "M8 3v10M3 8h10"), adding ? "Cancel" : "Add a key");
     keys.replaceChildren(...needs, el("div", { className: "lab", textContent: "API keys" }), el("div", { className: "card" }, ...saved, ...(saved.length ? [] : [el("p", { className: "empty", textContent: "No keys yet. The agent asks for one when a task needs it." })]), el("div", {}, add, adding ? addForm : null)),
-      el("p", { className: "cap", textContent: "A key goes only to its own site, over https, at most 60 times a minute. Saving under the name of a key replaces that key." }));
+      el("p", { className: "cap", textContent: "A key goes only to its own site, over https, at most 60 times a minute. Saving under the name of a key replaces that key; a sign-in's name can't be used for a key." }));
 
     const oauth = ks.secrets.filter((x) => x.kind === "oauth");
     const items = oauth.map((o) => {
