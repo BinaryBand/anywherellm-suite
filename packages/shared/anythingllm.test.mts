@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import { perProcess, serial } from "./anythingllm.mts";
+import { perBuild, perProcess, serial } from "./anythingllm.mts";
 
 // serial's order (one key at a time, other keys alongside, a failure not stopping the next) is
 // tested through inTurn, which is built on it (pages.test.mts).
@@ -15,4 +15,11 @@ test("serial drops a key once its calls are done, so keys don't pile up", async 
   assert.equal(await next, "ran");
   await sleep(0);
   assert.ok(!queues.has("gone"), "the key is gone");
+});
+
+test("a cache kept per build is one value for its build, apart from what perProcess keeps by that key", () => {
+  const made = perBuild("test.cache", () => ({ n: 1 }));
+  assert.equal(perBuild("test.cache", () => ({ n: 2 })), made, "made once in a build");
+  assert.notEqual(perProcess("test.cache", () => ({ n: 3 })), made, "an earlier build's entry under the plain key isn't read");
+  assert.equal(perProcess("test.cache source", () => ({ n: 4 })), made, "unbundled, the build is the sources'");
 });

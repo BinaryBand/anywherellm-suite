@@ -25,13 +25,21 @@ export function serverRequire<T>(what: string): T {
 }
 
 /** One value per process, made the first time: kept on globalThis, since AnythingLLM loads a
- *  skill's handler.js afresh for each agent run, and shared by every skill's bundled copy. */
+ *  skill's handler.js afresh for each agent run, and shared by every skill's bundled copy, and by
+ *  every install of it while AnythingLLM runs. So a value whose shape changes needs a new key, or
+ *  code that takes the old one over; a cache that can be made again belongs in perBuild. */
 export function perProcess<T>(key: string, make: () => T): T {
   const g = globalThis as unknown as Record<symbol, T>;
   const at = Symbol.for(`anywherellm-suite.${key}`);
   if (!(at in g)) g[at] = make();
   return g[at];
 }
+
+/** One value per process and per build of the shared code (SHARED_STAMP, which build.mjs inlines):
+ *  for a cache, which an install whose shared code changed makes afresh rather than read in an
+ *  earlier build's shape. Not for what holds something live (a browser, a timer, a queue): that
+ *  would be left running beside the new one. */
+export const perBuild = <T,>(key: string, make: () => T): T => perProcess(`${key} ${typeof SHARED_STAMP === "string" ? SHARED_STAMP : "source"}`, make);
 
 /** Runs `fn` after every earlier call with the same key in this process has finished. A key is
  *  kept only while calls with it are queued, so keys made from what the model names don't pile up. */

@@ -67,12 +67,12 @@ export interface Answer {
 
 export type Headers = Record<string, string>;
 
-type Once = Required<Pick<Send, "method" | "url" | "headers" | "timeout" | "maxBytes" | "allow">> & Pick<Send, "body" | "resolve" | "signal">;
+type Once = Required<Pick<Send, "method" | "url" | "headers" | "timeout" | "maxBytes">> & Pick<Send, "body" | "allow" | "resolve" | "signal">;
 
 type Agents = { http: http.Agent; https: https.Agent };
 const AGENTS = Symbol.for("anywherellm-suite.net.agents");
-/** How many allow-lists keep their connections: one per origin the user let through, so they don't
- *  pile up. */
+/** How many allow-lists keep their connections: the public web's (FENCE_ALLOW alone), and one for
+ *  each host an origin the user let through is on, so they don't pile up. */
 const MAX_POOLS = 8;
 
 /** The connections kept for the hosts `allowed` lets through: one pool per allow-list, so a
@@ -95,12 +95,12 @@ function agentsFor(allowed: ReadonlySet<string>): Agents {
   return agents;
 }
 
-/** One request and its answer, with no redirect followed: the hosts `allow` answers for its origin
- *  are let through. */
+/** One request and its answer, with no redirect followed: the hosts allowedFor lets through for its
+ *  origin are (or `allow`'s, which tests fix). */
 function once({ method, url, headers, body, timeout, maxBytes, allow, resolve, signal }: Once): Promise<Answer> {
   const parsed = httpUrl(url);
   const host = bareHost(parsed).toLowerCase();
-  const allowed = new Set(allow(parsed.origin));
+  const allowed = allow ? new Set(allow) : allowedFor(parsed.origin);
   const why = hostRefused(host, allowed);
   if (why && why !== "lookup") throw new Fenced(`${parsed.origin} isn't reached: ${why}. ${FENCED}`, host, parsed.origin);
   if (signal?.aborted) throw new NetError(`${parsed.origin} wasn't asked: the run stopped`);
@@ -159,8 +159,8 @@ export interface Send {
   body?: string | Buffer;
   timeout?: number;
   maxBytes?: number;
-  /** The hosts let through for a request to an origin: by default, allowedFor's. */
-  allow?: (origin: string) => Iterable<string>;
+  /** The hosts let through, whatever the origin: for tests. By default, allowedFor's for each hop. */
+  allow?: Iterable<string>;
   resolve?: Resolve;
   signal?: AbortSignal;
   /** The headers to send to a redirect's address, or null not to follow it. */
@@ -170,7 +170,7 @@ export interface Send {
 /** Sends a request; answers its status, headers and at most `maxBytes` of its body (cut when there
  *  was more). A redirect of a GET or a HEAD is followed with the headers `next(url)` answers for
  *  it, or not at all when it answers null. */
-export async function send({ method = "GET", url, headers = {}, body, timeout = TIMEOUT_MS, maxBytes = MAX_BYTES, allow = (origin) => allowedFor(origin), resolve, signal, next = () => headers }: Send): Promise<Answer> {
+export async function send({ method = "GET", url, headers = {}, body, timeout = TIMEOUT_MS, maxBytes = MAX_BYTES, allow, resolve, signal, next = () => headers }: Send): Promise<Answer> {
   let target = url;
   let sent = headers;
   for (let hops = 0; ; hops++) {

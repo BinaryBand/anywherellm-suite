@@ -90,7 +90,7 @@ const resolved = (base: string | null, p: PageFile | null): string | null => bas
 export const baseFor = (base: string | null): string | null => resolved(base, read());
 
 /** An address the Vault says it was opened at, when it's an https origin and nothing more. */
-function originOf(given: unknown): string | null {
+function httpsOriginOf(given: unknown): string | null {
   try {
     const url = new URL(String(given ?? ""));
     return url.protocol === "https:" && url.origin === String(given) ? url.origin : null;
@@ -219,7 +219,7 @@ async function applyKeys(e: Record<string, unknown>): Promise<string | null> {
     case "oauth-client": {
       const sealed = text(e.sealed, 20000);
       await secrets.saveClient(label, text(e.client_id), sealed ? vault.openSealed(sealed) : null);
-      const at = originOf(e.origin);
+      const at = httpsOriginOf(e.origin);
       if (at) await change((p) => void (p.origin = at));
       return label;
     }

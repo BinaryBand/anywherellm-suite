@@ -9,7 +9,7 @@
 
 import { perProcess } from "#shared/anythingllm";
 import { NOT_SET } from "#shared/answer";
-import { allowedHosts, alwaysAllowed, bareHost, onSite, secureFor, siteOf } from "#shared/fence";
+import { allowedHosts, alwaysAllowedHosts, bareHost, onSite, secureFor, siteOf } from "#shared/fence";
 import type { Headers } from "#shared/net";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
@@ -60,7 +60,7 @@ export function labelOf(label: unknown): string {
 export function publicSite(raw: unknown): string | null {
   const want = siteOf(raw);
   if (!want) return null;
-  return /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(want) || allowedHosts().includes(want) || alwaysAllowed().some((o) => bareHost(new URL(o)).toLowerCase() === want) ? want : null;
+  return /^[a-z0-9.-]+\.[a-z0-9-]+$/.test(want) || allowedHosts().includes(want) || alwaysAllowedHosts().includes(want) ? want : null;
 }
 
 /** The site a secret goes to, checked. */

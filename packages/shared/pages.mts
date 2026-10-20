@@ -12,7 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { pageKeyFile, perProcess, readPageKey, serial, serverDir, storageDir } from "./anythingllm.mts";
+import { pageKeyFile, perBuild, perProcess, readPageKey, serial, serverDir, storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
 import { writeAtomic, writeAtomicIfChanged } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
@@ -77,7 +77,7 @@ export function take(title: string): unknown[] {
   const name = new RegExp(`^raw-${title}-.*\\.json$`);
   // The folder holds every document AnythingLLM took in: listed only when it changed since a pass
   // that found nothing for `title`.
-  const empty = perProcess("pages.empty", () => new Map<string, number>());
+  const empty = perBuild("pages.empty", () => new Map<string, number>());
   let names: string[] = [];
   let at: number;
   try {

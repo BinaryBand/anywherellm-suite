@@ -25,7 +25,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { perProcess, storageDir } from "./anythingllm.mts";
+import { perBuild, storageDir } from "./anythingllm.mts";
 import { locked, readJson, writeAtomic } from "./atomic.mts";
 import { Told } from "./errors.mts";
 
@@ -153,9 +153,9 @@ function read(dir: string): { vault: Vault; earlier: boolean } {
 
 // What was read or written last, by the file's stamp and the secret it's opened with: a change
 // replaces the file (writeAtomic renames it), so an unchanged stamp is an unchanged vault. Kept per
-// process, across handler reloads.
+// process and build, across handler reloads.
 type Cached = { at: string; vault: Vault; priv?: crypto.KeyObject };
-const cache = () => perProcess("vault.cache", () => ({ last: null as Cached | null }));
+const cache = () => perBuild("vault.cache", () => ({ last: null as Cached | null }));
 
 /** Where the vault is, what its file is now, and what it's opened with. */
 const stampOf = (dir: string): string => {

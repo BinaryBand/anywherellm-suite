@@ -22,6 +22,7 @@
 //
 // usage: node build.mjs [install | control | skills [skill ...]]   (no argument: every part)
 import { build } from "esbuild";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -101,6 +102,15 @@ export function staticFiles(dir, skill = "") {
   ]);
 }
 
+/** The shared code's sources, hashed: inlined as SHARED_STAMP, so perBuild's caches change with
+ *  them and a build of the same code bundles the same bytes. */
+function sharedStamp() {
+  const dir = path.join(here, "shared");
+  const hash = crypto.createHash("sha256");
+  for (const name of fs.readdirSync(dir).filter((n) => /\.(mts|html)$/.test(n) && !n.endsWith(".test.mts")).sort()) hash.update(name).update(fs.readFileSync(path.join(dir, name)));
+  return hash.digest("hex").slice(0, 16);
+}
+
 /**
  * Bundles `entry` into `outfile`; `allowed` are path prefixes relative to `cwd`, as esbuild's
  * metafile writes them. `clean` is what to remove if the bundle took in anything else. Answers the
@@ -110,6 +120,7 @@ export function staticFiles(dir, skill = "") {
  *   plugins?: import("esbuild").Plugin[] }} options
  */
 export async function bundle({ entry, outfile, target, define, loader, allowed, label, clean = outfile, cwd = here, plugins }) {
+  define = { SHARED_STAMP: JSON.stringify(sharedStamp()), ...define };
   const { metafile } = await build({
     absWorkingDir: cwd,
     entryPoints: [entry],

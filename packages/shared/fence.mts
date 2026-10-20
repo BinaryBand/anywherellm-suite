@@ -14,7 +14,7 @@ import dns from "node:dns";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { perProcess, storageDir } from "./anythingllm.mts";
+import { perBuild, perProcess, storageDir } from "./anythingllm.mts";
 import { readJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
 
@@ -78,10 +78,10 @@ export function privateName(host: string): boolean {
 /** A URL's host as the fence checks it: an IPv6 address without its brackets. */
 export const bareHost = (url: URL): string => url.hostname.replace(/^\[|\]$/g, "");
 
-/** Whether a secret may go to `url` by its scheme: https, or plain http to a host the user lets
- *  through (FENCE_ALLOW) or an origin they let through for good (allowed.json). */
-export const secureFor = (url: URL): boolean =>
-  url.protocol === "https:" || (url.protocol === "http:" && (allowedHosts().includes(bareHost(url).toLowerCase()) || alwaysAllowed().includes(url.origin)));
+/** Whether a secret may go to `url` by its scheme: https, or plain http to what the user lets
+ *  through for good (FENCE_ALLOW's hosts, allowed.json's origins). An origin let through once
+ *  doesn't carry a secret over plain http. */
+export const secureFor = (url: URL): boolean => url.protocol === "https:" || (url.protocol === "http:" && allows(url.origin, NONE));
 
 /** `url` parsed, when it's an http(s) address; a NetError saying why not otherwise. */
 export function httpUrl(url: string): URL {
@@ -120,11 +120,14 @@ export function originOf(raw: unknown): string | null {
   }
 }
 
-/** The origins the user let through for good from AnywhereLLM; read again when the file changes (by
- *  its stamp, as the vault's: the bridge replaces it). None when there's no file, or one that can't
- *  be read: the fence stays shut. */
-export function alwaysAllowed(): string[] {
-  const kept = perProcess("fence.allowed.origins", () => ({ last: null as { stamp: string; origins: string[] } | null }));
+type Listed = { origins: string[]; hosts: string[] };
+const NOTHING: Listed = { origins: [], hosts: [] };
+
+/** allowed.json as it is now; read again when the file changes (by its stamp, as the vault's: the
+ *  bridge replaces it). Nothing when there's no file, or one that can't be read: the fence stays
+ *  shut. */
+function listed(): Listed {
+  const kept = perBuild("fence.allowed", () => ({ last: null as ({ stamp: string } & Listed) | null }));
   let file: string;
   let stamp: string;
   try {
@@ -132,17 +135,23 @@ export function alwaysAllowed(): string[] {
     const s = fs.statSync(file);
     stamp = `${file}\0${s.ino}:${s.mtimeMs}:${s.size}`;
   } catch {
-    return [];
+    return NOTHING;
   }
-  if (kept.last?.stamp === stamp) return kept.last.origins;
+  if (kept.last?.stamp === stamp) return kept.last;
   let origins: string[] = [];
   try {
-    const listed = readJson<{ origins?: { origin?: unknown }[] }>(file, () => ({})).origins;
-    origins = Array.isArray(listed) ? listed.map((o) => originOf(o?.origin)).filter((o): o is string => o !== null) : [];
+    const entries = readJson<{ origins?: { origin?: unknown }[] }>(file, () => ({})).origins;
+    origins = Array.isArray(entries) ? entries.map((o) => originOf(o?.origin)).filter((o): o is string => o !== null) : [];
   } catch {}
-  kept.last = { stamp, origins };
-  return origins;
+  kept.last = { stamp, origins, hosts: [...new Set(origins.map((o) => bareHost(new URL(o))))] };
+  return kept.last;
 }
+
+/** The origins the user let through for good from AnywhereLLM. */
+export const alwaysAllowed = (): string[] => listed().origins;
+
+/** Their hosts: where a secret may be kept for (a single-label name like muse-vm isn't otherwise). */
+export const alwaysAllowedHosts = (): string[] => listed().hosts;
 
 /** The hosts the user lets through, on any port, in lower case: FENCE_ALLOW's. */
 export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] => [
@@ -175,12 +184,20 @@ export const outsideRun = <T,>(fn: () => T): T => runs().exit(fn);
 /** The run the code running now is part of, if any. */
 export const currentRun = (): Run | undefined => runs().getStore();
 
-/** The hosts let through now for a request to `origin`: FENCE_ALLOW's, and `origin`'s own host when
- *  the user let that origin through for good, or once (`once`, by default the current run's). A host
- *  let through for one origin isn't for its other ports or scheme. */
-export function allowedFor(origin: string, once: Iterable<string> = currentRun()?.grants ?? []): Set<string> {
+const NONE: ReadonlySet<string> = new Set();
+
+/** Whether the user lets `origin` through: a FENCE_ALLOW host on any port, or that very origin let
+ *  through for good (allowed.json) or once (`once`, by default the current run's grants). A host let
+ *  through for one origin isn't for its other ports or scheme. */
+export function allows(origin: string, once: ReadonlySet<string> = currentRun()?.grants ?? NONE): boolean {
+  return allowedHosts().includes(bareHost(new URL(origin))) || alwaysAllowed().includes(origin) || once.has(origin);
+}
+
+/** The hosts let through now for a request to `origin`, as the host checks below take them:
+ *  FENCE_ALLOW's, and `origin`'s own host when allows says so. */
+export function allowedFor(origin: string, once: ReadonlySet<string> = currentRun()?.grants ?? NONE): Set<string> {
   const hosts = new Set(allowedHosts());
-  if (alwaysAllowed().includes(origin) || [...once].includes(origin)) hosts.add(bareHost(new URL(origin)).toLowerCase());
+  if (allows(origin, once)) hosts.add(bareHost(new URL(origin)));
   return hosts;
 }
 
@@ -200,8 +217,6 @@ export function addressesRefused(host: string, addresses: string[]): string | nu
 }
 
 type Lookup = (host: string) => Promise<{ address: string }[]>;
-
-const NONE: ReadonlySet<string> = new Set();
 
 /** A fence: `refused(url)` answers why a request to `url` is refused, or null. Lookups are kept for
  *  DNS_TTL_MS; the hosts `allow(origin)` answers for the request's origin are let through, asked only

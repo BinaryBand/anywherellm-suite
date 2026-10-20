@@ -4,3 +4,6 @@ declare module "*.html" {
   const text: string;
   export default text;
 }
+
+// The shared code's build, by its sources (build.mjs): what perBuild keeps its caches apart by.
+declare const SHARED_STAMP: string;
