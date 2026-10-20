@@ -95,7 +95,7 @@ function state(p: PageFile, base: string | null) {
   return {
     vault: vaultPage.linkOf(base),
     needs: p.needs.filter((n) => n.kind === "target" && n.until > now).map(({ label, site }) => ({ label, site })),
-    targets: targets.targets(),
+    targets: targets.targets().map((m) => ({ ...m, held: store.heldBy(m.label) })),
     result: p.result ?? null,
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;

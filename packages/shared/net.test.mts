@@ -160,3 +160,17 @@ test("a TCP connection for another protocol is fenced as a request is: refused i
   await assert.rejects(net.connect({ host: "127.0.0.1", port: 1, allow: ["127.0.0.1"] }), (e: Error) => e.name === "Unreachable");
   server.close();
 });
+
+test("a connection can be refused by address whatever its host is let through for, at connect time", async () => {
+  const server = (await import("node:net")).createServer((sock) => sock.end("hello\n"));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  const itself = (ip: string) => (ip === "127.0.0.1" ? "that's the machine itself" : null);
+  const answers: Resolve = (host, options, callback) => callback(null, [{ address: "127.0.0.1", family: 4 }]);
+  await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: ["127.0.0.1"], refuse: itself }), /127\.0\.0\.1:\d+ isn't reached: that's the machine itself/);
+  await assert.rejects(net.connect({ host: "box.example", port, allow: ["box.example"], resolve: answers, refuse: itself }), /box\.example:\d+ isn't reached: that's the machine itself/);
+  const sock = await net.connect({ host: "box.example", port, allow: ["box.example"], resolve: answers });
+  assert.equal(await new Promise<string>((resolve) => sock.once("data", (d) => resolve(String(d)))), "hello\n", "without the refusal it connects");
+  sock.destroy();
+  server.close();
+});

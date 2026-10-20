@@ -16,6 +16,22 @@ import ssh2 from "ssh2";
 import { call as called, library, pageConfig, pageState, post, reset, storage, until } from "./harness.mts";
 
 const { Server, utils } = ssh2;
+
+/** The stand-in machines are on 127.0.0.1 and 127.0.0.2, which the library refuses as this machine's
+ *  own: the seam names them as not this machine (shared/thishost.mts). The tests of that refusal take
+ *  it away for their length. */
+const THISHOST_EXCEPT = Symbol.for("anywherellm-suite.thishost.except");
+const standIns = new Set(["127.0.0.1", "127.0.0.2"]);
+(globalThis as unknown as Record<symbol, Set<string>>)[THISHOST_EXCEPT] = standIns;
+const asThisMachine = async (fn: () => Promise<void>) => {
+  const g = globalThis as unknown as Record<symbol, Set<string>>;
+  g[THISHOST_EXCEPT] = new Set();
+  try {
+    await fn();
+  } finally {
+    g[THISHOST_EXCEPT] = standIns;
+  }
+};
 const call = (args: Record<string, unknown>, slug: string | null = "work") => called(args, { slug });
 
 /** `text` sealed as the page seals it, with the vault's public key: RSA-OAEP up to 190 bytes, and
@@ -237,7 +253,7 @@ test("a function runs a command on its toolkit's target: its exit, output and er
   await ops();
   const hi = await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } });
   assert.match(hi, /^Ran ops\.run \(r-[\w-]+\): ok, [\d.]+ s, 1 request\./);
-  assert.match(hi, /- SSH box \$ echo hi: 0 \(\d+ ms\)/);
+  assert.match(hi, /- SSH box \$ \(7 characters\): 0 \(\d+ ms\)/);
   assert.deepEqual({ ...result(hi), ms: 0 }, { exit: 0, signal: null, stdout: "hi\n", stderr: "", truncated: false, killed: null, remote_may_run: false, ms: 0 });
   const failed = result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "fail" } } }));
   assert.deepEqual([failed.exit, failed.stderr], [3, "no such thing\n"]);
@@ -610,4 +626,58 @@ test("a pasted private key is in no run record, log, page or vault file", async 
   walk(storage);
   walk(path.dirname(path.join(storage, "..", "public")));
   assert.deepEqual(seenIn, [], "the key is nowhere in the clear");
+});
+
+test("moving a target to another host, port or account drops its key; an edit that stays put keeps it", async () => {
+  const first = await register();
+  const edit = async (fields: Record<string, unknown>) => {
+    const n = pageState().result?.n ?? 0;
+    post({ secret: pageConfig().secret, ev: "target-save", label: "box", host: "127.0.0.1", port: PORT, login: "sandbox", fingerprint: fingerprint(hostKey.public), private: true, sealed: "", ...fields });
+    await call({ action: "library" });
+    await until(() => (pageState().result?.n ?? 0) > n);
+    await until(() => boxState().status !== "not tried yet", 15_000);
+    return boxState();
+  };
+  const same = await edit({ unattended: true, fingerprint: fingerprint(otherHostKey.public) });
+  assert.equal(same.public, first.public, "ticks and the fingerprint change, the key stays");
+  for (const moved of [{ host: "127.0.0.2" }, { port: PORT + 1 }, { login: "other" }]) {
+    const was = boxState().public;
+    const now = await edit(moved);
+    assert.match(now.public, /^ssh-ed25519 AAAA\S+ library-lean box$/);
+    assert.notEqual(now.public, was, `${JSON.stringify(moved)}: a new key is made, whose line goes in the new account's authorized_keys`);
+    await edit({ host: "127.0.0.1", port: PORT, login: "sandbox" });
+  }
+});
+
+test("a target can't be this machine, however it is ticked: a literal address, a name, or a name that answers otherwise at connect time", async () => {
+  await call({ action: "secret", kind: "ssh", label: "box" }); // makes the page
+  await asThisMachine(async () => {
+    const saved = () => pageState().targets.map((t: { label: string }) => t.label);
+    const refusal = async (label: string, host: string) => {
+      const n = pageState().result?.n ?? 0;
+      post({ secret: pageConfig().secret, ev: "target-save", label, host, port: PORT, login: "sandbox", fingerprint: fingerprint(hostKey.public), private: true, sealed: "" });
+      await call({ action: "library" });
+      await until(() => (pageState().result?.n ?? 0) > n);
+      return pageState().result.error as string | null;
+    };
+    for (const host of ["127.0.0.1", "127.0.0.9", "::1", "0.0.0.0", "169.254.169.254", "fe80::1"]) assert.match((await refusal("itself", host)) ?? "", /an address of this machine itself.*the vault's key/, host);
+    assert.deepEqual(saved(), [], "none of them was saved");
+    const lookup = dns.lookup;
+    let calls = 0;
+    dns.lookup = ((host: string, options: unknown, cb: (...a: unknown[]) => void) => {
+      if (host === "me.example") return cb(null, [{ address: "127.0.0.1", family: 4 }]);
+      // Public when the save asks, this machine when the connection does.
+      if (host === "rebind.example") return cb(null, [{ address: ++calls === 1 ? "192.0.2.9" : "127.0.0.1", family: 4 }]);
+      return (lookup as (...a: unknown[]) => void)(host, options, cb);
+    }) as typeof dns.lookup;
+    try {
+      assert.match((await refusal("itself", "me.example")) ?? "", /me\.example resolves to 127\.0\.0\.1 is an address of this machine itself/);
+      assert.equal(await refusal("rebind", "rebind.example"), null, "a name that was public when saved is saved");
+      await until(() => pageState().targets.find((t: { label: string }) => t.label === "rebind")?.status !== "not tried yet", 15_000);
+      assert.match(pageState().targets.find((t: { label: string }) => t.label === "rebind").status, /rebind\.example:\d+ isn't reached: .*an address of this machine itself/, "the address the connection goes to is checked, at connect time, though ticked");
+      assert.equal(seen.open, 0, "nothing connected");
+    } finally {
+      dns.lookup = lookup;
+    }
+  });
 });

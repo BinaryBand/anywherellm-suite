@@ -130,7 +130,7 @@
         el("p", { className: "cap", textContent: "A machine the agent's functions run commands on over SSH. Read the fingerprint on the machine itself: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" })),
       [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…"],
         ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
-        ["private", "On my network: a private address, or a port this machine forwards", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
+        ["private", "On my network: a private address. The machine must not be this one, and must not be able to reach this AnythingLLM: its pages carry the page secret", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
       "Save",
       async (v, node) => {
         const label = need ? need.label : v.label;
@@ -159,6 +159,7 @@
       machines.append(el("div", { className: "card" },
         el("div", { className: "row" }, el("strong", { textContent: m.label }), el("span", { className: m.status === "signed in" ? "good" : "bad", textContent: m.status })),
         el("p", { className: "cap", textContent: `${m.login}@${m.host}:${m.port}; ${m.fingerprint}${m.private ? "; on my network" : ""}${m.unattended ? "; may run unattended" : ""}` }),
+        m.held ? el("p", { className: "cap", textContent: `Kept for locked toolkits (${m.held}): an unlocked toolkit can't use it.` }) : null,
         m.public ? el("div", {}, el("p", { className: "cap", textContent: `Add this line to ~${m.login}/.ssh/authorized_keys on the machine (restrict keeps it to commands and files):` }), copyable(`restrict ${m.public}`)) : null,
         el("button", { className: "act", type: "button", textContent: "Try signing in", onclick: () => post("target-check", { label: m.label }) }),
         remove("Delete", "target-delete", { label: m.label })));
@@ -178,7 +179,7 @@
         el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: t.locked ? "good" : "cap", textContent: t.locked ? `${t.service} · locked` : t.service })),
         el("p", { className: "cap", textContent: `${t.reach.join(", ") || "no base address or target"}; keys: ${t.secrets.join(", ") || "none"}` }),
         ...t.functions.map((f) => el("details", {}, el("summary", { textContent: `${f.name}: ${f.description} (v${f.version})` }), el("pre", { textContent: f.source }), t.locked ? null : remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))),
-        el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can't change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can't change a locked toolkit." }),
+        el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can't change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can't change a locked toolkit. Locking also pins its targets (machine, account and host key): they stay as they are for it, and unlocked toolkits can't use them." }),
         lock, " ", t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service })));
     }
 

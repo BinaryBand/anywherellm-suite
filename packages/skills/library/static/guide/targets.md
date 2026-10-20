@@ -10,6 +10,7 @@ Using it:
 - command runs in the account's shell; stdin (text, at most 1 MB) goes to it. timeout_s is 30 by default and 300 at most, and never past the run's own end; max_bytes caps each of stdout and stderr, 256 KB by default and 1 MB at most (truncated says it was cut).
 - A command past its time is sent TERM and its channel closed (killed "timeout"); when the run is stopped, the same (killed "stopped"). remote_may_run true means the machine didn't say it ended: check, or stop it with another command.
 - Keep each command short and do more in each: a target takes 60 calls a minute (commands, puts, gets and the page's sign-in tries) and 4 at once. For work longer than a few minutes, start it in the background on the machine (nohup … > log 2>&1 &) and check on it in later runs; it goes on past a stop and the time limit, so end it with another command.
+- A target a locked toolkit lists is for locked toolkits only, and a locked toolkit uses a target only as it was when the user locked it. If a call says so, tell the user; don't register the same account under another name.
 - Scheduled jobs use a target only when the user ticked "May run unattended" for it.
 
 Files:

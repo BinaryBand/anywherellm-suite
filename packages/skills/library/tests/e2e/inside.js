@@ -44,6 +44,9 @@ const server = http.createServer((req, res) => {
 });
 
 (async () => {
+  // The sshd beside AnythingLLM is at 127.0.0.1 in its network namespace, which a target may not be in
+  // production (it's this machine); this test says it isn't, as the unit tests do (shared/thishost.mts).
+  globalThis[Symbol.for("anywherellm-suite.thishost.except")] = new Set(["127.0.0.1"]);
   await new Promise((r) => server.listen(PORT, "127.0.0.1", r));
   assert.ok(ImportedPlugin.validateImportedPluginHandler(HUB_ID), "the handler is where AnythingLLM looks");
   assert.ok(JSON.stringify(ImportedPlugin.activeImportedPlugins()).includes(HUB_ID), "AnythingLLM lists the skill as active");

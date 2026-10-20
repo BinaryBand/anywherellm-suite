@@ -12,6 +12,7 @@
 // Every file is written whole (writeAtomic), so a reader never sees half of one, and a run is a file
 // of its own, so a chat and a scheduled job's process never write the same one.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { objectOf } from "#shared/answer";
@@ -21,7 +22,7 @@ import { checkUrl, hostOf } from "#shared/fence";
 import { staticFiles, type StaticFiles } from "#shared/static";
 import { LibraryError } from "./errors";
 import { asOf, labelOf, publicSite } from "./secrets";
-import { nameOf } from "./targets";
+import { nameOf, targets as registered, type Target } from "./targets";
 
 const SERVICE = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const FUNCTION = /^[a-z][a-z0-9_]{0,39}$/;
@@ -60,6 +61,9 @@ export interface Toolkit {
   /** Locked by the user on the Library page, once they read its functions: nothing changes or
    *  removes it, or them, until they unlock it there. */
   locked?: boolean;
+  /** What locking pinned of each of its targets (pinOf), by name: a locked toolkit uses a target
+   *  only while it is as it was when the user read the toolkit and locked it. */
+  pins?: Record<string, string>;
 }
 
 export interface Input {
@@ -146,14 +150,28 @@ export function qualified(raw: unknown): { service: string; name: string } {
 /** The services the library has a toolkit for, sorted. */
 export const services = (): string[] => namesIn(path.join(libraryDir(), "toolkits")).filter((s) => SERVICE.test(s) && fs.existsSync(kitFile(s)));
 
-/** A toolkit as saved. One saved before targets came has none: it is written again with `targets`
- *  empty the first time it is opened, so nothing else reads the old shape. */
+/** What locking pins of a target: its host, port, account and host key, as a digest; "" for one that
+ *  isn't registered. A target moved to another machine or account no longer matches. */
+export const pinOf = (t: Pick<Target, "host" | "port" | "login" | "fingerprint"> | undefined): string =>
+  t ? crypto.createHash("sha256").update([t.host, t.port, t.login, t.fingerprint].join("\n")).digest("hex") : "";
+
+/** The pins of `names`, as the targets are now. */
+const pinsOf = (names: string[]): Record<string, string> => {
+  const now = registered();
+  return Object.fromEntries(names.map((n) => [n, pinOf(now.find((t) => t.label === n))]));
+};
+
+/** A toolkit as saved. Two changes of format are made once, when it is first opened, so nothing
+ *  else reads the old shape: one saved before targets came gets `targets` empty, and a locked one
+ *  saved before locking pinned its targets gets the pins they have now. */
 export const toolkit = (service: string): Toolkit | null => {
   const kit = readJson<Toolkit>(kitFile(service));
-  if (kit && !Array.isArray(kit.targets)) {
-    kit.targets = [];
-    writeJson(kitFile(service), kit);
-  }
+  if (!kit) return kit;
+  const noTargets = !Array.isArray(kit.targets);
+  const unpinned = kit.locked === true && (typeof kit.pins !== "object" || kit.pins === null);
+  if (noTargets) kit.targets = [];
+  if (unpinned) kit.pins = pinsOf(kit.targets);
+  if (noTargets || unpinned) writeJson(kitFile(service), kit);
   return kit;
 };
 
@@ -183,7 +201,30 @@ function unlocked(service: string): Toolkit | null {
 /** Locks the toolkit `service`, or unlocks it: the user's, from the Library page. */
 export function setLocked(service: string, on: boolean): void {
   const kit = toolkit(service);
-  if (kit) writeJson(kitFile(service), { ...kit, locked: on || undefined });
+  if (kit) writeJson(kitFile(service), { ...kit, locked: on || undefined, pins: on ? pinsOf(kit.targets) : undefined });
+}
+
+/** The locked toolkit that holds the target `name`, other than `except`: one that lists it, or lists
+ *  another by the same account (host, port and login) on the same machine; null when none does. */
+export function heldBy(name: string, except = ""): string | null {
+  const now = registered();
+  const mine = now.find((t) => t.label === name);
+  const same = (n: string) => n === name || (!!mine && now.some((t) => t.label === n && t.host === mine.host && t.port === mine.port && t.login === mine.login));
+  return (
+    services().find((s) => {
+      const kit = s === except ? null : toolkit(s);
+      return !!kit?.locked && kit.targets.some(same);
+    }) ?? null
+  );
+}
+
+/** Why the toolkit `kit` may not use its target `name` now, in a few words, or null when it may. An
+ *  unlocked toolkit can't use what a locked one holds: it could change what the locked one runs or
+ *  reads on the machine. A locked one can't use a target changed since the user locked it. */
+export function targetBar(kit: Toolkit, name: string): string | null {
+  if (kit.locked) return kit.pins?.[name] === pinOf(registered().find((t) => t.label === name)) ? null : `changed since the user locked ${kit.service}`;
+  const holder = heldBy(name, kit.service);
+  return holder ? `kept for locked toolkits (${holder})` : null;
 }
 
 /** Saves a toolkit: what's given replaces what was there, and the rest stays. */

@@ -75,7 +75,8 @@ function targetStatus(kit: store.Toolkit, machines: Machines): string {
   return kit.targets
     .map((name) => {
       const t = machines.get(name);
-      return t ? `${name} (${t.login}@${t.host}:${t.port}, ${t.status}${t.unattended ? ", may run unattended" : ""})` : `${name} (not registered: ask for it with secret, kind "ssh")`;
+      const bar = store.targetBar(kit, name);
+      return t ? `${name} (${t.login}@${t.host}:${t.port}, ${t.status}${t.unattended ? ", may run unattended" : ""}${bar ? `, not usable here: ${bar}` : ""})` : `${name} (not registered: ask for it with secret, kind "ssh")`;
     })
     .join(", ");
 }

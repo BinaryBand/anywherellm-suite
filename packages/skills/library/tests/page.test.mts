@@ -131,7 +131,7 @@ test("while the Vault is open, what the user does is applied without waiting for
 });
 
 const FINGERPRINT = `SHA256:${"A".repeat(43)}`;
-const saveTarget = (fields: Record<string, unknown> = {}) => post({ ev: "target-save", label: "box", host: "127.0.0.1", port: "1", login: "sandbox", fingerprint: FINGERPRINT, private: true, sealed: "", ...fields });
+const saveTarget = (fields: Record<string, unknown> = {}) => post({ ev: "target-save", label: "box", host: "box.internal", port: "22", login: "sandbox", fingerprint: FINGERPRINT, private: true, sealed: "", ...fields });
 
 test("a target the user deletes with the page open is gone from its state without the agent's next call", async () => {
   await call({ action: "library" });

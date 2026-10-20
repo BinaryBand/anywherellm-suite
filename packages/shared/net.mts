@@ -29,15 +29,19 @@ const MAX_REDIRECTS = 3;
 const IDLE_MS = 4 * 1000;
 const USER_AGENT = "anywherellm-suite (an AnythingLLM agent skill)";
 
+/** Why an address is refused whatever the host is let through for, or null. */
+export type Refuse = (address: string) => string | null;
+
 type Resolve = (hostname: string, options: dns.LookupAllOptions, callback: (err: NodeJS.ErrnoException | null, addresses: dns.LookupAddress[]) => void) => void;
 
 /** A lookup for http.request that refuses a name resolving to an address that isn't public and
  *  answers only addresses it checked; the hosts in `allowed` are let through. */
-function fencedLookup(allowed: ReadonlySet<string>, resolve: Resolve = dns.lookup): LookupFunction {
+function fencedLookup(allowed: ReadonlySet<string>, resolve: Resolve = dns.lookup, refuse?: Refuse): LookupFunction {
   return (hostname, options, callback) => {
     resolve(hostname, { all: true, verbatim: true }, (err, found) => {
       if (err) return callback(err, "", 0);
-      const why = allowed.has(hostname.toLowerCase()) ? null : addressesRefused(hostname, found.map((a) => a.address));
+      // `refuse` holds even for a host let through: it is asked of every address the connection could go to.
+      const why = found.map((a) => refuse?.(a.address)).find(Boolean) || (allowed.has(hostname.toLowerCase()) ? null : addressesRefused(hostname, found.map((a) => a.address)));
       if (why) return callback(Object.assign(new Error(why), { code: "EFENCED" }), "", 0);
       const usable = options?.family ? found.filter((a) => a.family === options.family) : found;
       if (!usable.length) return callback(Object.assign(new Error(`${hostname} has no address`), { code: "ENOTFOUND" }), "", 0);
@@ -182,19 +186,22 @@ export interface Connect {
   timeout?: number;
   resolve?: Resolve;
   signal?: AbortSignal;
+  /** Why an address the connection could go to is refused, even for a host in `allow`: asked of a
+   *  literal address and of every address the name resolves to, at connect time. */
+  refuse?: Refuse;
 }
 
 /** A TCP connection to `host`:`port` for a protocol of its own (the library's SSH), through the
  *  fence as a request is: the name looked up once, every address it gives checked, the connection
  *  made to a checked one. */
-export function connect({ host, port, allow = allowedHosts(), timeout = TIMEOUT_MS, resolve, signal }: Connect): Promise<net.Socket> {
+export function connect({ host, port, allow = allowedHosts(), timeout = TIMEOUT_MS, resolve, signal, refuse }: Connect): Promise<net.Socket> {
   const allowed = new Set(allow);
   const where = `${host}:${port}`;
-  const why = hostRefused(host, allowed);
+  const why = (net.isIP(host) ? refuse?.(host) : null) || hostRefused(host, allowed);
   if (why && why !== "lookup") return Promise.reject(new NetError(`${where} isn't reached: ${why}. ${FENCED}`));
   if (signal?.aborted) return Promise.reject(new NetError(`${where} wasn't asked: the run stopped`));
   return new Promise((resolveSocket, reject) => {
-    const sock = net.connect({ host, port, lookup: fencedLookup(allowed, resolve) });
+    const sock = net.connect({ host, port, lookup: fencedLookup(allowed, resolve, refuse) });
     const done = (e?: NodeJS.ErrnoException) => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);

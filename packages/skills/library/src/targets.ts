@@ -14,11 +14,13 @@
 
 import { isUtf8 } from "node:buffer";
 import crypto from "node:crypto";
+import dns from "node:dns";
 import net from "node:net";
 import { Client, utils, type ClientChannel, type SFTPWrapper } from "ssh2";
 import { perProcess } from "#shared/anythingllm";
 import { NetError, hostRefused } from "#shared/fence";
 import { connect } from "#shared/net";
+import { thisHostRefusal } from "#shared/thishost";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 import { countUse } from "./secrets";
@@ -117,6 +119,22 @@ export interface Given {
   key: string;
 }
 
+/** Why `host` is this machine, or null: a literal address is checked as it is, a name by what it
+ *  resolves to now (a try, since a name can answer otherwise later: connecting checks the address it
+ *  goes to). */
+async function thisMachine(host: string): Promise<string | null> {
+  if (net.isIP(host)) return thisHostRefusal(host);
+  const found = await new Promise<dns.LookupAddress[]>((resolve) => {
+    const timer = setTimeout(() => resolve([]), 3000);
+    dns.lookup(host, { all: true, verbatim: true }, (err, addresses) => (clearTimeout(timer), resolve(err ? [] : addresses)));
+  });
+  for (const a of found) {
+    const why = thisHostRefusal(a.address);
+    if (why) return `${host} resolves to ${why}`;
+  }
+  return null;
+}
+
 /** Saves a target; its name. A key made here keeps its public half for the page to show. */
 export async function save(given: Given): Promise<string> {
   const label = nameOf(given.label);
@@ -131,6 +149,8 @@ export async function save(given: Given): Promise<string> {
   const onNetwork = given.private === true;
   const why = hostRefused(host, new Set());
   if (why && why !== "lookup" && !onNetwork) throw new LibraryError(`${why}: tick "On my network" to reach it as this target`);
+  const itself = await thisMachine(host);
+  if (itself) throw new LibraryError(`${itself}, whatever the tick`);
   const was = found(label);
   let key = given.key.trim();
   let pub: string | null = null;
@@ -140,8 +160,11 @@ export async function save(given: Given): Promise<string> {
     const parsed = utils.parseKey(key);
     if (parsed instanceof Error || Array.isArray(parsed) || !parsed.isPrivateKey()) throw new LibraryError(`that isn't a private key ssh can sign in with, without a passphrase (ssh-keygen -p -N "" -f <file> removes one)${parsed instanceof Error ? `: ${parsed.message}` : ""}`);
     key = `${key}\n`;
-  } else if (was) [key, pub] = [was.key, was.public];
+  } else if (was && was.site === host && was.port === port && was.login === login) [key, pub] = [was.key, was.public];
   else {
+    // A new target, or an old one moved to another host, port or account: the saved key doesn't
+    // follow it (an edit must not aim the user's key at another machine), a new one is made, whose
+    // public line goes into the new account's authorized_keys.
     const made = utils.generateKeyPairSync("ed25519", { comment: `library-lean ${label}` });
     [key, pub] = [made.private, made.public.trim()];
   }
@@ -200,7 +223,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
   const outOfTime = () => new LibraryError(`the target "${label}" (${e.site}:${e.port}) wasn't signed in to in time: the call's time ran out first`);
   const left = () => Math.min(LIMITS.connectMs, until - Date.now());
   if (left() <= 0) throw outOfTime();
-  const sock = await connect({ host: e.site, port: e.port, allow: e.private ? [e.site] : [], timeout: left(), signal });
+  const sock = await connect({ host: e.site, port: e.port, allow: e.private ? [e.site] : [], timeout: left(), signal, refuse: thisHostRefusal });
   const timeout = left();
   if (timeout <= 0) {
     sock.destroy();

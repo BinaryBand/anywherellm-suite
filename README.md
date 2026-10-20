@@ -11,7 +11,7 @@ Agent skills that a stock AnythingLLM runs itself, and the command that installs
 
 ## Install
 
-You need a stock AnythingLLM (Desktop, or the Docker image) and Node 18 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the skills; build it with `npm install` once in `packages/`, then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
+You need a stock AnythingLLM (Desktop, or the Docker image) and Node 18 or later on the machine it runs on. The command is one file, `anywherellm-suite.cjs`, which carries the skills; build it with `npm ci` once in `packages/` (its `.npmrc` skips packages' install scripts: ssh2 and cpu-features have some, and the bundle leaves their native parts out), then `node build.mjs install` there (it lands in `packages/install/dist/`), or `make install` from a checkout.
 
 ```sh
 node anywherellm-suite.cjs install                     # AnythingLLM Desktop

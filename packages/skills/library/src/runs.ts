@@ -239,11 +239,15 @@ async function ssh(call: SshCall, kit: Toolkit, f: Fn, req: Record<string, unkno
   if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests and commands`);
   const name = String(req.target ?? "").trim().toLowerCase();
   if (!kit.targets.includes(name)) throw new LibraryError(`"${name}" isn't one of the ${kit.service} toolkit's targets (${kit.targets.join(", ") || "none"}): name it in the toolkit's targets`);
+  const bar = store.targetBar(kit, name);
+  if (bar) throw new LibraryError(`the target "${name}" can't be used by the ${kit.service} toolkit: ${bar}. A target a locked toolkit uses is for locked toolkits only, and a locked toolkit's target must be as it was when the user locked it: ask the user to lock ${kit.service} again on the Library page, or to unlock the toolkit that holds the target`);
   const detail = String(req[by] ?? "");
   const fn = `${kit.service}.${f.name}`;
   check({ op: "ssh", fn, target: name, action: call, detail });
-  const made = { method: "SSH", host: name, path: ` ${mark} ${detail.split("\n")[0].slice(0, 80)}`, ms: 0 };
-  const use = { deadline: budget.deadline, job: budget.trigger === "job", signal };
+  // A command is not recorded (a function can put anything in one); a path is, masked as kit.log is.
+  const shown = call === "exec" ? `(${detail.length} characters)` : mask(detail.split("\n")[0], budget.secrets).slice(0, 80);
+  const made = { method: "SSH", host: name, path: ` ${mark} ${shown}`, ms: 0 };
+  const use = { deadline: budget.deadline, job: budget.trigger === "job" || jobTimeLeft() !== null, signal };
   const t0 = Date.now();
   try {
     const out = await targets[call](name, req, use);
