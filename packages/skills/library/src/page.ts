@@ -26,7 +26,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mask } from "#shared/answer";
-import { updateJson } from "#shared/atomic";
+import { locked, updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { inTurn, listPublic, newSecret, pageHtml, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import { linksHidden, noteLink } from "#shared/page-links";
@@ -127,6 +127,21 @@ function keysState(p: PageFile | null) {
 
 const writeState = (p: PageFile, base: string | null) => putPublic(`${p.token}.json`, JSON.stringify(state(p, base)));
 
+/** The state written under the token `p` holds, which was read without the lock: a rotation that
+ *  replaced the names meanwhile removes the old token's files, and a write that came after would put
+ *  the old token's state back, at an address the agent may have had, holding the new Vault link. After
+ *  writing it looks again, and if the token moved on it removes what it wrote. */
+function writeStateChecked(p: PageFile, base: string | null): void {
+  writeState(p, base);
+  afterStateWrite();
+  if (read()?.token !== p.token) removePublic(pub(`${p.token}.json`));
+}
+
+/** A test seam, to make a rotation come between a state write and the look at the names that follows
+ *  it; nothing shipped sets it. */
+const AFTER_STATE_WRITE = Symbol.for("anywherellm-suite.library.after-state-write");
+const afterStateWrite = (): void => (globalThis as unknown as Record<symbol, (() => void) | undefined>)[AFTER_STATE_WRITE]?.();
+
 /** Writes the Library page and its state into AnythingLLM's public folder, watches for its events
  *  for a while, and answers its address (absolute when AnythingLLM's address, `base`, is known). */
 export async function show(base: string | null): Promise<string> {
@@ -139,12 +154,20 @@ export async function show(base: string | null): Promise<string> {
  *  the switch went on, not at the next one that shows the page. A page replaced is written again at
  *  once, so the link kept for whoever shows it is a page that is there. */
 export async function settleNow(base: string | null): Promise<void> {
-  if (await settle(base)) await write(base, true);
-  else {
-    const kept = read();
-    if (kept) sweep(kept.token); // a crash between new names and the old files' removal is repaired here
-  }
+  const kept = read();
+  // No page, or the switch off and the names unmarked (as every page was before the switch): nothing
+  // to settle, and nothing to sweep either, so a call is what it was, jobs included.
+  if (!kept || (!linksHidden() && kept.hidden !== true)) return;
+  if (await settle(base)) return void (await write(base, true));
+  if (linksHidden()) await sweepLocked(); // a crash between new names and the old files' removal is repaired here
 }
+
+/** sweep under page.json's lock, so it never meets the names being replaced. */
+const sweepLocked = (): Promise<void> =>
+  locked(`${pageFile()}.lock`, "page.json", () => {
+    const kept = read();
+    if (kept) sweep(kept.token);
+  });
 
 /** Removes the page folder's page files that aren't under `token`: <token>.html and <token>.json of
  *  an earlier token, left by a crash or by a writer that read the names before a rotation. Anything
@@ -167,15 +190,22 @@ async function write(base: string | null, rotated = false): Promise<string> {
     const p = kept && kept.watchUntil - Date.now() > WATCH_MS / 2 ? kept : await change((p) => ((p.watchUntil = Date.now() + WATCH_MS), p));
     putPublic(`${p.token}.html`, await pageHtml(template(), { token: p.token, secret: p.secret, title: TITLE }));
     writeState(p, base);
-    if (read()?.token !== p.token) {
+    afterStateWrite();
+    // The look at the names, the link kept and the sweep are one step under page.json's lock: a
+    // rotation can't come between the look and what follows it.
+    const current = await locked(`${pageFile()}.lock`, "page.json", async () => {
+      if (read()?.token !== p.token) return false;
+      // A hint for whoever shows the page to the user: a failure is only logged.
+      await noteLink("library", `/${pub(`${p.token}.html`)}`, rotated ? { rotated: true } : undefined).catch((e) => console.error(`library-lean couldn't keep the page's link: ${(e as Error).message}`));
+      if (linksHidden()) sweep(p.token); // with the switch off nothing is removed: the pages are as they always were
+      return true;
+    });
+    if (!current) {
       removePublic(pub(`${p.token}.html`));
       removePublic(pub(`${p.token}.json`));
       continue;
     }
     watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
-    sweep(p.token);
-    // A hint for whoever shows the page to the user: a failure is only logged.
-    await noteLink("library", `/${pub(`${p.token}.html`)}`, rotated ? { rotated: true } : undefined).catch((e) => console.error(`library-lean couldn't keep the page's link: ${(e as Error).message}`));
     return `${base ?? ""}/${pub(`${p.token}.html`)}`;
   }
   throw new LibraryError("the Library page was replaced while it was written: call again");
@@ -223,7 +253,7 @@ export function showVault(base: string | null): Promise<string> {
 export function refresh(base: string | null): void {
   try {
     const p = read();
-    if (p) writeState(p, base);
+    if (p) writeStateChecked(p, base);
     vaultPage.refresh("keys", keysState(p));
   } catch (e) {
     console.error(`library-lean couldn't refresh the pages: ${(e as Error).message}`);
@@ -324,15 +354,39 @@ export const caughtUp = async (base: string | null): Promise<void> => {
   await vaultPage.inTurnFor("keys", drainKeys);
 };
 
-/** `text` fit to go back to the agent: while the links are kept from it, the pages' tokens and secrets
- *  and any page path with a token in it (a Node file error names its path, and a failed rename the
- *  new token) are hidden; as it is otherwise. */
+/** What goes back to the agent when masking the text can't be done: nothing of the error. */
+const PAGES_WRONG = "something went wrong with the pages: see the log";
+
+/** A names file as the pages read it: none where there is none; an error where it can't be read or
+ *  isn't an object with a token and a secret (the caller then says nothing of the file's text: a
+ *  parse error can quote it). */
+function namesIn(file: string): { token: string; secret: string } | null {
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+  const names = JSON.parse(text) as { token?: unknown; secret?: unknown };
+  if (typeof names?.token !== "string" || typeof names?.secret !== "string") throw new Error("not a names file");
+  return { token: names.token, secret: names.secret };
+}
+
+/** `text` fit to go back to the agent: while the links are kept from it, both pages' tokens and
+ *  secrets and any page path with a token in it (a Node file error names its path, and a failed rename
+ *  the new token) are hidden; as it is otherwise. If the names can't be read to hide them, nothing of
+ *  the text goes back: a generic line, and the detail is in the log. It never throws. */
 export function plain(text: string): string {
   if (!linksHidden()) return text;
-  const mine = read();
-  const link = vaultPage.linkOf(null); // "/vault-lean/<token>.html" where the Vault has a page
-  const known = [...(mine ? [mine.token, mine.secret] : []), ...(link ? [link.replace(/^.*\/|\.html$/g, "")] : [])];
-  return mask(text, known).replace(/\b((?:library|vault)-lean\/)[\w-]{12,}/g, "$1•••");
+  try {
+    const known = [namesIn(pageFile()), namesIn(path.join(vault.vaultDir(), "vault-page.json"))].flatMap((n) => (n ? [n.token, n.secret] : []));
+    return mask(text, known).replace(/\b((?:library|vault)-lean\/)[\w-]{12,}/g, "$1•••");
+  } catch (e) {
+    // Why, but not what the file said: a parse error can quote it.
+    console.error(`library-lean couldn't hide the pages' names in a text for the agent (${(e as Error)?.name ?? "error"} ${(e as NodeJS.ErrnoException)?.code ?? ""}); it is told only that something went wrong`);
+    return PAGES_WRONG;
+  }
 }
 
 /** Applies every event the Library page posted since the last time, in order, then writes its state
@@ -368,7 +422,7 @@ async function drain(base: string | null): Promise<void> {
   if (rotate) {
     await rotatePage();
     await write(base, true);
-  } else if (result || applied.some(Boolean)) writeState(read() ?? page, base);
+  } else if (result || applied.some(Boolean)) writeStateChecked(read() ?? page, base);
   // A sign-in takes up to 20 s: tried after the turn, so neither the page nor the agent waits on it.
   const checks = new Set(applied.flatMap((a) => (a?.check ? [a.check] : [])));
   if (checks.size) void Promise.all([...checks].map((l) => targets.check(l, base))).then(() => refresh(base), (e) => console.error(`library-lean couldn't try a target: ${(e as Error).message}`));

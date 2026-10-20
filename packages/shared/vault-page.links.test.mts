@@ -2,6 +2,7 @@
 // are replaced once when the switch goes on, the links file follows the page whatever the switch.
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -295,6 +296,7 @@ test("with the switch on a failed write says nothing of a token; with it off the
 });
 
 test("a show removes every page file that isn't under the current token, and keeps what isn't a page file", async () => {
+  hide(true);
   await show(async () => {});
   const token = names().token;
   // what a rotation that died between its steps, or a writer that read the names too early, left
@@ -337,4 +339,73 @@ test("take reads the events before it reads the names", () => {
   }
   assert.ok(order.indexOf("events") >= 0, order.join(","));
   assert.ok(order.indexOf("names") < 0 || order.indexOf("events") < order.indexOf("names"), order.join(","));
+});
+
+const GAP = Symbol.for("anywherellm-suite.vaultpage.gap");
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("a call that comes while a rotation holds the names lock waits for it: the moved sections and the new page are all there after", async () => {
+  seedOld();
+  hide(true);
+  const g = globalThis as unknown as Record<symbol, (() => Promise<void>) | undefined>;
+  let second: Promise<unknown> | undefined;
+  g[GAP] = async () => {
+    g[GAP] = undefined; // once
+    // a settle and a show from "another process", started in the old gap between the new names and the moved files
+    second = Promise.all([vaultPage.settleVault("logins", async () => {}), show(async () => {})]);
+    await sleep(200);
+  };
+  try {
+    await show(async () => {});
+    await second;
+  } finally {
+    g[GAP] = undefined;
+  }
+  const { token } = names();
+  assert.notEqual(token, "oldtoken");
+  assert.equal(fs.readFileSync(inPublic(`${token}-logins.json`), "utf8"), "old oldtoken-logins.json", "the logins section was moved, not swept before its move");
+  assert.ok(fs.existsSync(inPublic(`${token}.html`)), "the new page is written");
+  assert.deepEqual(fs.readdirSync(path.join(publicDir, "vault-lean")).filter((f) => f.startsWith("oldtoken")), [], "no file of the old token");
+  assert.equal(readLinks().vault, `/vault-lean/${token}.html`);
+});
+
+test("with the switch off and no mark, a settle removes nothing and doesn't touch the names lock", async () => {
+  seedOld();
+  for (const f of ["stalestalestale.html", "stalestalestale-keys.json"]) fs.writeFileSync(inPublic(f), "stray");
+  const lock = `${namesFile()}.lock`;
+  fs.mkdirSync(lock); // held by "someone else": a settle that took it would wait and fail as busy
+  try {
+    const done = await Promise.race([vaultPage.settleVault("keys", async () => {}).then(() => "done"), sleep(1500).then(() => "waited")]);
+    assert.equal(done, "done", "returned without taking the lock");
+  } finally {
+    fs.rmSync(lock, { recursive: true, force: true });
+  }
+  assert.deepEqual(names(), { token: "oldtoken", secret: "oldsecret" });
+  for (const f of ["stalestalestale.html", "stalestalestale-keys.json", "oldtoken.html", "oldtoken-keys.json", "oldtoken-logins.json"]) assert.ok(fs.existsSync(inPublic(f)), f);
+  await show(async () => {}); // a show with the switch off writes the page and sweeps nothing either
+  for (const f of ["stalestalestale.html", "stalestalestale-keys.json"]) assert.ok(fs.existsSync(inPublic(f)), `${f} after a show`);
+});
+
+test("calls from several processes at the switch-on all end with one rotation and every file where it belongs", async () => {
+  const child = `const vp = require(process.argv[1]); vp.show(process.argv[2], { ok: 1 }, async () => {}, null).then(() => process.exit(0), (e) => { console.error(e.message); process.exit(1); });`;
+  const run = (section: string) =>
+    new Promise<number>((resolve) => {
+      const p = spawn(process.execPath, ["-e", child, path.join(built, "vault-page.cjs"), section], { env: process.env, stdio: ["ignore", "ignore", "inherit"] });
+      p.on("exit", (code) => resolve(code ?? 1));
+    });
+  for (let round = 0; round < 3; round++) {
+    seedOld();
+    hide(true);
+    const codes = await Promise.all([run("keys"), run("logins"), run("keys"), run("logins")]);
+    assert.deepEqual(codes, [0, 0, 0, 0], `round ${round}`);
+    const { token } = names();
+    assert.notEqual(token, "oldtoken", `round ${round}`);
+    assert.equal(fs.readFileSync(inPublic(`${token}-logins.json`), "utf8").length > 0, true, `round ${round}`);
+    const files = fs.readdirSync(path.join(publicDir, "vault-lean")).sort();
+    assert.deepEqual(files, [`${token}-keys.json`, `${token}-logins.json`, `${token}.html`].sort(), `round ${round}`);
+    assert.equal(readLinks().vault, `/vault-lean/${token}.html`, `round ${round}`);
+    for (const f of files) fs.rmSync(inPublic(f)); // the next round starts from the old form
+    fs.rmSync(namesFile(), { force: true });
+    fs.rmSync(linksFile(), { force: true });
+  }
 });

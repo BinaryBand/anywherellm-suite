@@ -168,6 +168,7 @@ test("every call settles the names, one that shows no page too, for a chat and f
 });
 
 test("the page's folder keeps nothing from an earlier token: a crash or a late writer's files are removed at the next call, and other files stay", async () => {
+  hideLinks(true);
   await call({ action: "library" });
   const { token } = names();
   const stale = ["Zm9vYmFyYmF6cXV4MTIzNDU2", "b2xkb2xkb2xkb2xkb2xkb2xk"];
@@ -208,4 +209,106 @@ test("while the links are kept from the agent an error that names a page's path 
   } finally {
     fs.chmodSync(dir, 0o755);
   }
+});
+
+const SEAM = Symbol.for("anywherellm-suite.library.after-state-write");
+const seamed = globalThis as unknown as Record<symbol, (() => void) | undefined>;
+test.afterEach(() => void delete seamed[SEAM]);
+
+test("with the switch off no call removes anything from either folder, a job's call included", async () => {
+  await call({ action: "library" });
+  const stray = ["library-lean", "vault-lean"].flatMap((dir) => ["Zm9vYmFyYmF6cXV4MTIzNDU2.html", "Zm9vYmFyYmF6cXV4MTIzNDU2.json"].map((f) => path.join(publicDir, dir, f)));
+  for (const f of stray) fs.writeFileSync(f, "someone else's page");
+  await job({ action: "guide" });
+  await job();
+  await call({ action: "library" });
+  await call({ action: "guide" });
+  for (const f of stray) assert.ok(fs.existsSync(f), `${path.basename(path.dirname(f))}/${path.basename(f)} was removed with the switch off`);
+  assert.ok(!fs.existsSync(path.join(library, "page.json.lock")), "no lock left behind");
+});
+
+test("a call that can't settle the Vault still applies what the user did on the Library page", async () => {
+  await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" } });
+  await call({ action: "save", service: "ex", function: { name: "two", description: "Two.", source: "async function main() { return 2; }" } });
+  hideLinks(true);
+  await call({ action: "library" }); // the pages are made, marked
+  fs.writeFileSync(path.join(storage, "vault-lean", "vault-page.json"), '{"token": "LEAKYTOKENVALUE123456", "secret": "LEAKYSECRETVALUE1234');
+  post({ ev: "fn-delete", fn: "ex.one" });
+  const listing = await call({ action: "library", service: "ex" });
+  assert.match(listing, /Functions:\n- ex\.two\(\)(?!.*ex\.one)/s, "the event was applied although the Vault's names are damaged");
+});
+
+test("a page state written under a token a rotation has replaced is removed again, not left at an address the agent had", async () => {
+  hideLinks(true);
+  await call({ action: "library" });
+  const old = names();
+  // A rotation lands between the state being written and the look at the names, as another process's would.
+  seamed[SEAM] = () => {
+    delete seamed[SEAM];
+    fs.writeFileSync(path.join(library, "page.json"), JSON.stringify({ ...names(), token: "bmV3dG9rZW5uZXd0b2tlbjEy", secret: "bmV3c2VjcmV0bmV3c2VjcmV0" }));
+  };
+  await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" } });
+  await call({ action: "run", name: "ex.one" }); // a run's end writes the state again
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(names().token, "bmV3dG9rZW5uZXd0b2tlbjEy", "the seam's rotation happened");
+  assert.ok(!fs.existsSync(pub(`${old.token}.json`)), "the old token's state is gone");
+});
+
+test("a writer that read the names before a rotation removes what it wrote and writes under the new ones", async () => {
+  hideLinks(true);
+  await call({ action: "library" });
+  const old = names();
+  fs.rmSync(pub(`${old.token}.html`)); // the next show writes the page again
+  seamed[SEAM] = () => {
+    delete seamed[SEAM];
+    fs.writeFileSync(path.join(library, "page.json"), JSON.stringify({ ...names(), token: "bmV3dG9rZW5uZXd0b2tlbjEy", secret: "bmV3c2VjcmV0bmV3c2VjcmV0" }));
+  };
+  await call({ action: "library" });
+  const now = names();
+  assert.equal(now.token, "bmV3dG9rZW5uZXd0b2tlbjEy");
+  assert.ok(!fs.existsSync(pub(`${old.token}.html`)) && !fs.existsSync(pub(`${old.token}.json`)), "nothing of the old token");
+  assert.ok(fs.existsSync(pub(`${now.token}.html`)) && fs.existsSync(pub(`${now.token}.json`)), "the page is under the new token");
+  assert.equal(readLinks().library, `/library-lean/${now.token}.html`, "the link kept is the new one, never the old");
+});
+
+test("when the pages' names can't be read to hide them, nothing of an error goes back to the agent", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("a folder can't be made unwritable for root");
+  hideLinks(true);
+  await call({ action: "library" });
+  const dir = path.join(publicDir, "library-lean");
+  const vaultNames = path.join(storage, "vault-lean", "vault-page.json");
+  const good = fs.readFileSync(vaultNames, "utf8");
+  fs.chmodSync(dir, 0o500); // an error that names a path is what the agent would get
+  try {
+    // A damaged Vault names file: reading it to hide its token fails, and its text is in the error.
+    fs.writeFileSync(vaultNames, '{"token": "LEAKYTOKENVALUE123456", "secret": "LEAKYSECRETVALUE1234');
+    const a = await call({ action: "library" });
+    assert.match(a, /something went wrong with the pages: see the log/, a);
+    assert.ok(!/LEAKY/.test(a) && !a.includes(names().token), a);
+    // A damaged Library names file, the same.
+    fs.writeFileSync(vaultNames, good);
+    fs.writeFileSync(path.join(library, "page.json"), '{"token": "LEAKYTOKENVALUE123456", "secret": "LEAKYSECRETVALUE1234');
+    const b = await call({ action: "library" });
+    assert.ok(!/LEAKY/.test(b), b);
+    assert.match(b, /something went wrong with the pages: see the log/, b);
+  } finally {
+    fs.chmodSync(dir, 0o755);
+  }
+});
+
+test("both pages' secrets are hidden from an error text, not only the tokens", async () => {
+  hideLinks(true);
+  await call({ action: "library" });
+  const vaultSecret = (JSON.parse(fs.readFileSync(path.join(storage, "vault-lean", "vault-page.json"), "utf8")) as { secret: string }).secret;
+  const pageSecret = names().secret;
+  // A failure inside the page's write whose message holds both secrets, as a damaged file's parse error can.
+  seamed[SEAM] = () => {
+    delete seamed[SEAM];
+    throw new Error(`broke on ${vaultSecret} and ${pageSecret}`);
+  };
+  fs.rmSync(pub(`${names().token}.html`)); // the next show writes the page again, and meets the seam
+  const said = await call({ action: "library" });
+  assert.match(said, /aren't available here/, said);
+  assert.ok(!said.includes(vaultSecret), `the Vault's secret is in the answer: ${said}`);
+  assert.ok(!said.includes(pageSecret), `the Library page's secret is in the answer: ${said}`);
 });

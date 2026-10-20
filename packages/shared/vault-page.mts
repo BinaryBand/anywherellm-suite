@@ -22,7 +22,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mask } from "./answer.mts";
-import { locked, readJson, updateJson } from "./atomic.mts";
+import { locked, readJson, updateJson, writeAtomic } from "./atomic.mts";
 import { Told } from "./errors.mts";
 import { linksHidden, noteLink } from "./page-links.mts";
 import { inTurn, listPublic, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "./pages.mts";
@@ -116,7 +116,8 @@ async function publish(write: (names: Names) => void | Promise<void>, rotated = 
     await writePage(names);
     await write(names);
     await keepLink(`/${pub(`${names.token}.html`)}`, rotated);
-    sweep(names.token);
+    // Only while the links are kept from the agent: with the switch off nothing of the Vault's is removed.
+    if (linksHidden()) sweep(names.token);
     return names;
   });
 }
@@ -128,13 +129,16 @@ async function publish(write: (names: Names) => void | Promise<void>, rotated = 
 async function settle(section: Section, drain: () => Promise<void>): Promise<void> {
   const names = readNames();
   if (!names) return;
-  if (!!names.hidden !== linksHidden()) {
-    if (!linksHidden()) await updateJson(namesFile(), fresh, (n) => void delete n.hidden);
-    else {
-      await inTurn(titleOf(section), drain);
-      const { replaced } = await quiet("replace the page", () => rotateNames((n) => !n.hidden));
-      if (replaced) return void (await quiet("write the page", () => publish(() => {}, true)));
-    }
+  if (!linksHidden()) {
+    // Switch off: the mark goes, since the links go out again. Nothing is replaced, swept or locked
+    // beyond that: the Vault behaves as it did before the switch.
+    if (names.hidden) await updateJson(namesFile(), fresh, (n) => void delete n.hidden);
+    return;
+  }
+  if (!names.hidden) {
+    await inTurn(titleOf(section), drain);
+    const { replaced } = await quiet("replace the page", () => rotateNames((n) => !n.hidden));
+    if (replaced) return void (await quiet("write the page", () => publish(() => {}, true)));
   }
   await quiet("clear the old page", () => locked(namesLock(), "the Vault's page", () => void (readNames() && sweep(readNames()!.token))));
 }
@@ -178,27 +182,47 @@ export function take(section: Section): Record<string, unknown>[] {
 /** Runs `pass` in turn with the section's watch (#shared/pages inTurn). */
 export const inTurnFor = (section: Section, pass: () => Promise<void>): Promise<void> => inTurn(titleOf(section), pass);
 
+/** The test seam: awaited inside the names lock after the new names are written and before the old
+ *  page's files move, so a test can start another call in what used to be a gap. Nothing shipped sets it. */
+export const VAULTPAGE_GAP = Symbol.for("anywherellm-suite.vaultpage.gap");
+
+/** Moves each section's state from under the old token to the new one and removes the old page. A
+ *  file already gone is nothing to move; one that can't be moved is logged (masked) and left for the
+ *  next sweep, since the sections' state is written again at every show. Called holding the names lock. */
+function moveSections(old: Names, now: Names): void {
+  for (const file of listPublic(pub("")).filter((f) => f.startsWith(`${old.token}-`) && f.endsWith(".json"))) {
+    try {
+      fs.renameSync(publicPath(pub(file)), publicPath(pub(`${now.token}${file.slice(old.token.length)}`)));
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
+      console.error(`vault-lean couldn't move a section to the new page: ${mask(String((e as Error)?.message ?? e), [old.token, old.secret, now.token, now.secret])}`);
+    }
+  }
+  removePublic(pub(`${old.token}.html`));
+}
+
 /** New names when `due` says so of the names as they are under the lock (always, by default); the
- *  old page goes, and each section's state moves under the new name. Answers the names now and
+ *  old page goes, and each section's state moves under the new name. All of it, from reading the names
+ *  to removing the old page, happens under the one names lock, so no other call (a sweep, a show from
+ *  another process) can run between the new names and the moved files. Answers the names now and
  *  whether they were replaced. */
 async function rotateNames(due: (names: Names) => boolean = () => true): Promise<{ now: Names; replaced: boolean }> {
-  const existed = readNames() !== null;
-  let old: Names | null = null;
-  const now = await updateJson(namesFile(), fresh, (n) => {
-    if (!due(n)) return { ...n };
-    old = existed ? { token: n.token, secret: n.secret } : null;
-    delete n.hidden;
-    Object.assign(n, fresh());
-    return { ...n };
-  });
-  if (old) {
-    const { token } = old as Names;
-    for (const file of listPublic(pub("")).filter((f) => f.startsWith(`${token}-`) && f.endsWith(".json"))) {
-      fs.renameSync(publicPath(pub(file)), publicPath(pub(`${now.token}${file.slice(token.length)}`)));
+  return locked(namesLock(), "the Vault's page", async () => {
+    const current = readNames();
+    const now: Names = current ? { ...current } : fresh();
+    let old: Names | null = null;
+    if (due(now)) {
+      old = current ? { token: current.token, secret: current.secret } : null;
+      delete now.hidden;
+      Object.assign(now, fresh());
     }
-    removePublic(pub(`${token}.html`));
-  }
-  return { now, replaced: old !== null };
+    writeAtomic(namesFile(), JSON.stringify(now, null, 2) + "\n", 0o600);
+    if (old) {
+      await (globalThis as unknown as Record<symbol, (() => Promise<void>) | undefined>)[VAULTPAGE_GAP]?.();
+      moveSections(old, now);
+    }
+    return { now: { ...now }, replaced: old !== null };
+  });
 }
 
 /** A new link: new names; the old page goes, and each section's state moves under the new name. */

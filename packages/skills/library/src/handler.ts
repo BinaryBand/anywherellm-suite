@@ -358,16 +358,27 @@ const ACTIONS: Record<string, (args: Args, self: HandlerContext) => Promise<stri
  *  scheduled job's leaves it to the chat's watch). With no public folder where AnythingLLM runs,
  *  there's no page and nothing to apply. */
 async function fromPage(self: HandlerContext): Promise<void> {
+  let base: string | null = null;
   try {
-    const base = baseOf(self);
-    // Every call, a chat's or a job's, makes the pages' names fit the switch first: with it on, the
-    // links the agent held go dead at the first call after, not at one that happens to show a page.
-    await page.settleNow(base);
-    await page.settleVault();
-    if (!workspaceOf(self)) return;
-    await page.caughtUp(base);
-  } catch (e) {
-    self.logger?.(`library-lean couldn't apply the Library page's events: ${(e as Error)?.message || e}`);
+    base = baseOf(self);
+  } catch {
+    // no address known: the pages are relative
+  }
+  // Every call, a chat's or a job's, makes the pages' names fit the switch first: with it on, the
+  // links the agent held go dead at the first call after, not at one that happens to show a page.
+  // Each step has its own try: one that fails (a busy lock, a damaged names file) must not keep the
+  // call from applying what the user did on the pages. The log is the server's, not the answer.
+  const steps: [string, () => Promise<void>][] = [
+    ["settle the Library page", () => page.settleNow(base)],
+    ["settle the Vault", () => page.settleVault()],
+    ["apply the Library page's events", async () => (workspaceOf(self) ? page.caughtUp(base) : undefined)],
+  ];
+  for (const [what, step] of steps) {
+    try {
+      await step();
+    } catch (e) {
+      self.logger?.(`library-lean couldn't ${what}: ${page.plain((e as Error)?.message || String(e))}`);
+    }
   }
 }
 
