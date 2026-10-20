@@ -16,7 +16,7 @@ import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
 import { runAs } from "#shared/ask";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
-import { notify } from "#shared/notify";
+import { notify, type Ntfy } from "#shared/notify";
 import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
 import { askDevices, askNow, startDevice } from "./device";
@@ -277,15 +277,16 @@ async function within<T>(done: Promise<T>, ms: number): Promise<T | null> {
 
 /** Runs a function: in a scheduled job to its end (the job's process ends with the job); in a chat as
  *  long as the chat waits, then on in the background, and its end is shown to the next chat that
- *  calls library or run, on the Library page, and by a notification (ntfy). A run stays marked not shown until an
- *  answer shows how it ended: a scheduled job's that didn't end well stays so, for the next chat. */
+ *  calls library or run, on the Library page, and on the user's ntfy topic. A run stays marked not
+ *  shown until an answer shows how it ended: a scheduled job's that didn't end well stays so, for
+ *  the next chat. */
 async function runNow(name: string, inputs: unknown, self: HandlerContext): Promise<string> {
   const workspace = workspaceOf(self);
   const trigger = workspace ? "chat" : "job";
   const { running, done } = runs.begin(name, inputs, { trigger, workspace });
   // Only what the end needs, so a background run doesn't hold on to the agent that started it.
   const base = baseOf(self);
-  const settings = { ...self.runtimeArgs };
+  const ntfy = { url: clean(self.runtimeArgs?.NTFY_URL), token: clean(self.runtimeArgs?.NTFY_TOKEN) };
   void done.then(() => page.refresh(base));
   const record = trigger === "job" ? await done : await within(done, waitMs());
   if (record) {
@@ -293,15 +294,16 @@ async function runNow(name: string, inputs: unknown, self: HandlerContext): Prom
     return runs.runText(record);
   }
   page.refresh(base);
-  void done.then((r) => (listing.refresh(console.error), notified(r, settings, base)));
+  void done.then((r) => (listing.refresh(console.error), notified(r, ntfy, base)));
   return `Still running ${running.fn} in the background (${running.id}): carry on. When it ends, the user is notified (if they set NTFY_URL), the Library page shows it, and it's at the top of the next library or run answer. run with run_id "${running.id}" shows it now; add stop: true to stop it.`;
 }
 
 /** Tells the user, on their ntfy topic, how a run the chat stopped waiting for ended; its click opens
  *  the workspace it ran in, when AnythingLLM's address is known. */
-async function notified(run: store.RunRecord, settings: Record<string, string | undefined>, base: string | null): Promise<void> {
+async function notified(run: store.RunRecord, ntfy: Ntfy, base: string | null): Promise<void> {
+  const at = run.workspace ? `/workspace/${run.workspace}` : "/";
   try {
-    await notify(settings, { title: `${run.fn}: ${run.status}`, body: runs.outcomeOf(run).slice(0, 100), click: base ? `${base}${run.workspace ? `/workspace/${run.workspace}` : "/"}` : undefined });
+    await notify(ntfy, { title: `${run.fn}: ${run.status}`, body: runs.outcomeOf(run).slice(0, 100), click: base ? base + at : undefined });
   } catch (e) {
     console.error(`library-lean couldn't notify of the end of ${run.id}: ${(e as Error).message}`);
   }

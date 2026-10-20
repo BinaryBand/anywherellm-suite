@@ -1,4 +1,4 @@
-// What the apps tests share: AnythingLLM's storage, public folder and server modules standing in,
+// What the apps tests share: AnythingLLM's storage, public folder standing in,
 // the skill's static files as the build inlines them (for the tests that import a module from src),
 // the built handler.js called as AnythingLLM's agent calls it, what a page posts, written as
 // AnythingLLM's collector writes it, and sample apps as an agent would create them.

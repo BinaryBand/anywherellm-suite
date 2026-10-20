@@ -43,9 +43,6 @@ export async function until(ok: () => boolean, ms = 4000): Promise<void> {
   assert.ok(ok(), `not within ${ms} ms`);
 }
 
-/** The skill's settings beyond ANYTHINGLLM_URL (NTFY_URL...), for every call: a test sets what it needs. */
-export const settings: Record<string, string> = {};
-
 /** The question cards the skill showed: none, ever (a card shows its answers in the chat). */
 export const cardsShown: unknown[] = [];
 
@@ -57,6 +54,8 @@ export interface Call {
   said?: string[];
   /** The agent run the call is part of (self.super), to call again in the same run. */
   run?: object;
+  /** The skill's other settings (NTFY_URL...), as the user set them. */
+  settings?: Record<string, string>;
 }
 
 /** An agent run for `call`'s `run`, in workspace `slug`; through the developer API when `api`. */
@@ -69,7 +68,7 @@ export function agentRun(slug: string | null = "work", api = false): object {
  *  alone, or in a Call), in a chat that could show a question card, and with ANYTHINGLLM_URL set to
  *  `base`. */
 export function call(args: Record<string, unknown>, at: Call | string | null = {}): Promise<string> {
-  const { slug = "work", base, said, run } = at === null || typeof at === "string" ? { slug: at } : at;
+  const { slug = "work", base, said, run, settings } = at === null || typeof at === "string" ? { slug: at } : at;
   const self = { super: run ?? agentRun(slug, !!said), runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {}, ...(said ? { introspect: (m: string) => said.push(m) } : {}) };
   return handler().call(self, args);
 }

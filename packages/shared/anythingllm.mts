@@ -13,8 +13,8 @@ export function storageDir(): string {
   return path.resolve(__dirname, "..", "..", "..");
 }
 
-/** AnythingLLM's server folder: ANYTHINGLLM_SERVER_DIR, else the working directory AnythingLLM runs
- *  in (/app/server in its image). */
+/** AnythingLLM's server folder, where its public folder is: ANYTHINGLLM_SERVER_DIR, else the working
+ *  directory AnythingLLM runs in (/app/server in its image). */
 export const serverDir = (): string => process.env.ANYTHINGLLM_SERVER_DIR || process.cwd();
 
 /** One value per process, made the first time: kept on globalThis, since AnythingLLM loads a
@@ -70,7 +70,7 @@ export const SAVED_NOW = "\n\nSaved now:";
  *  AnythingLLM's own web UI has the invocation's `uuid` and `thread_id`; one through its developer
  *  API has neither. */
 export interface Invoked {
-  super?: { handlerProps?: { invocation?: { workspace?: { slug?: string } | null; user_id?: number | null; uuid?: string | null; thread_id?: number | null } } };
+  super?: { handlerProps?: { invocation?: { workspace?: { slug?: string } | null; uuid?: string | null; thread_id?: number | null } } };
 }
 
 /** The workspace a skill was called from, from AnythingLLM's invocation, never from what the model

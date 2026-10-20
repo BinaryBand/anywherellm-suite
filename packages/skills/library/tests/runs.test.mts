@@ -1,8 +1,7 @@
 // Runs that outlive the chat's wait, and scheduled jobs' runs: a run goes on in the background and
-// its end is shown once (at the top of the next library or run answer, and by a notification to the
-// user's ntfy topic); a run whose
-// process ended first reads as interrupted; a scheduled job's run never goes to the background, and
-// gets only the time the job has left. The chat waits LIBRARY_WAIT_MS, short here.
+// its end is shown once (at the top of the next library or run answer, and on the user's ntfy
+// topic); a run whose process ended first reads as interrupted; a scheduled job's run never goes to
+// the background, and gets only the time the job has left. The chat waits LIBRARY_WAIT_MS, short here.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -11,20 +10,21 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, idOf, installed, library, reset, runRecord as recordOf, settings, until } from "./harness.mts";
+import { call as callAs, idOf, installed, library, reset, runRecord as recordOf, until, type Call } from "./harness.mts";
 
 process.env.LIBRARY_WAIT_MS = "300";
 
 /** What the user's ntfy topic (a server on 127.0.0.1) was sent. */
-const pushes: { title?: string; click?: string; authorization?: string; body: string }[] = [];
+const sent: { title?: string; click?: string; authorization?: string; body: string }[] = [];
 const ntfy = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
-    pushes.push({ title: req.headers.title as string, click: req.headers.click as string, authorization: req.headers.authorization, body });
+    sent.push({ title: req.headers.title as string, click: req.headers.click as string, authorization: req.headers.authorization, body });
     res.end("{}");
   });
 });
+const settings: Record<string, string> = {};
 test.before(async () => {
   await new Promise<void>((resolve) => ntfy.listen(0, "127.0.0.1", resolve));
   settings.NTFY_URL = `http://127.0.0.1:${(ntfy.address() as AddressInfo).port}/mine`;
@@ -32,13 +32,16 @@ test.before(async () => {
 });
 test.after(() => ntfy.close());
 
+/** `callAs`, with the ntfy topic set. */
+const call = (args: Record<string, unknown>, at: Call | string | null = {}) => callAs(args, at === null || typeof at === "string" ? { slug: at, settings } : { settings, ...at });
+
 const SLOW = "async function main(i, kit) { for (let n = 0; n < (i.n || 1); n++) await kit.sleep(i.ms || 400); if (i.fail) throw new Error('it failed'); return { slept: i.n || 1 }; }";
 const inputs = { n: { type: "number" }, ms: { type: "number" }, fail: { type: "boolean" } };
 const runsDir = () => path.join(library, "runs");
 
 test.beforeEach(async () => {
   reset();
-  pushes.length = 0;
+  sent.length = 0;
   assert.match(await call({ action: "save", service: "clock", toolkit: { base_urls: ["https://example.com"] }, function: { name: "slow", description: "Sleeps.", inputs, source: SLOW } }), /Saved clock\.slow/);
 });
 
@@ -52,8 +55,8 @@ test("a run the chat stops waiting for goes on, is notified, and is shown once a
   assert.match(meanwhile, new RegExp(`- clock\\.slow: running, .*\\[${id}\\]`));
   assert.doesNotMatch(meanwhile, /Finished since/, "not until it ends");
 
-  await until(() => pushes.length === 1);
-  assert.deepEqual(pushes[0], { title: "clock.slow: ok", click: "https://llm.example.com/workspace/work", authorization: "Bearer tk_1", body: '{"slept":2}' });
+  await until(() => sent.length === 1);
+  assert.deepEqual(sent[0], { title: "clock.slow: ok", click: "https://llm.example.com/workspace/work", authorization: "Bearer tk_1", body: '{"slept":2}' });
   const next = await call({ action: "library" });
   assert.match(next, new RegExp(`^Finished since last shown [^\\n]*\\n- clock\\.slow: ok, [^\\n]*\\[${id}\\]: \\{"slept":2\\}\\n`));
   assert.doesNotMatch(await call({ action: "library" }), /Finished since/, "shown once");
@@ -79,7 +82,8 @@ test("run with run_id waits for a background run again and shows it; stop: true 
   assert.match(await call({ action: "run", run_id: long }), /is still running .*stop it with stop: true/);
   assert.match(await call({ action: "run", run_id: long, stop: true }), new RegExp(`^Ran clock\\.slow \\(${long}\\): stopped, `));
   assert.equal(recordOf(long).status, "stopped");
-  await until(() => pushes.length === 2);
+  await until(() => sent.length === 2);
+  assert.equal(sent[0].click, undefined, "no click without ANYTHINGLLM_URL");
 });
 
 test("a run whose process ended first reads as interrupted; a scheduled job's is shown", async () => {
@@ -103,22 +107,7 @@ test("a scheduled job's run goes to its end; one that fails is shown in the next
   assert.doesNotMatch(await call({ action: "library" }), /Finished since/, "AnythingLLM shows the job's own answer");
   const failed = idOf(await call({ action: "run", name: "clock.slow", inputs: { fail: true, ms: 10 } }, null));
   assert.match(await call({ action: "library" }), new RegExp(`^Finished since last shown [^\\n]*\\n- clock\\.slow: error \\(Error: it failed\\).*from a scheduled job \\[${failed}\\]`));
-  assert.equal(pushes.length, 0, "a job pushes its own end");
-});
-
-test("without NTFY_URL nothing is sent, and without AnythingLLM's address the notification has no click", async (t) => {
-  const url = settings.NTFY_URL;
-  t.after(() => void (settings.NTFY_URL = url));
-  delete settings.NTFY_URL;
-  const id = idOf(await call({ action: "run", name: "clock.slow", inputs: { n: 2 } }));
-  await until(() => recordOf(id).status === "ok");
-  await new Promise((r) => setTimeout(r, 100)); // time enough for a notification to arrive, were one sent
-  assert.equal(pushes.length, 0);
-
-  settings.NTFY_URL = url;
-  assert.match(await call({ action: "run", name: "clock.slow", inputs: { n: 2 } }), /Still running clock\.slow/, "after the first run's end, shown now");
-  await until(() => pushes.length === 1);
-  assert.equal(pushes[0].click, undefined);
+  assert.equal(sent.length, 0, "AnythingLLM pushes a job's own end, not the library");
 });
 
 test("in a scheduled job's process, a run gets only the time the job has left", async (t) => {
