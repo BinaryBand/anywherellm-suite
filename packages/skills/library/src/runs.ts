@@ -2,7 +2,8 @@
 // only through kit.http, and only its own toolkit's hosts, with its own toolkit's keys, which are
 // added outside the script (request.ts) and hidden in everything the script and the agent are shown.
 // A function runs another (a flow) with kit.run; that one gets its own toolkit's kit, and shares the
-// run's deadline, its budget of requests and its log. A refusal here is a LibraryError, which the
+// run's deadline, its budget of requests and its log. kit.crypto only computes (extensions/); with
+// kit.secret a function signs with a key it names and never sees (signing.ts), each use recorded. A refusal here is a LibraryError, which the
 // script sees as it is (sandbox.ts).
 //
 // A run is recorded as running when it starts and again when it ends, and goes on in the process
@@ -14,9 +15,11 @@ import { DATA, clipped, mask, shownHeaders, textOf } from "#shared/answer";
 import { quietly } from "#shared/ask";
 import { checkUrl, onSite } from "#shared/fence";
 import { LibraryError } from "./errors";
+import { bytesOf, cryptoKit } from "./extensions/crypto";
 import { check } from "./policy";
 import { send } from "./request";
 import { failureText, run as runScript, type Kit, type Outcome } from "./sandbox";
+import * as signing from "./signing";
 import * as store from "./store";
 import type { Fn, RunRecord, Toolkit } from "./store";
 
@@ -43,6 +46,8 @@ interface Budget {
   made: RunRecord["calls"];
   /** Every key a request sent, to hide wherever it shows. */
   secrets: string[];
+  trigger: Start["trigger"];
+  signed: NonNullable<RunRecord["signed"]>;
 }
 
 /** The runs going in this process, by id: their record once they end, and how to stop them. Kept per
@@ -79,9 +84,9 @@ export function begin(qualifiedName: string, input: unknown, start: Start): { ru
   const values = store.inputChecked(f, input);
   check({ op: "run", fn: `${service}.${name}`, trigger: start.trigger });
   const deadline = deadlineFor(start);
-  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [] };
+  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [], trigger: start.trigger, signed: [] };
   const started = new Date();
-  const base = { id: store.runId(started), fn: `${service}.${name}`, trigger: start.trigger, workspace: start.workspace, started: started.toISOString(), logs: budget.logs, calls: budget.made };
+  const base = { id: store.runId(started), fn: `${service}.${name}`, trigger: start.trigger, workspace: start.workspace, started: started.toISOString(), logs: budget.logs, calls: budget.made, signed: budget.signed };
   const running: RunRecord = { ...base, pid: process.pid, until: new Date(deadline).toISOString(), ended: base.started, ms: 0, status: "running" };
   store.record(running);
   store.markUnseen(base.id);
@@ -191,6 +196,18 @@ function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: FnSta
         Object.assign(state, { read: true, value: value ?? null, changed: true });
       },
     },
+    crypto: cryptoKit,
+    secret: {
+      sign: (a) => {
+        const { key, data } = (a ?? {}) as { key?: unknown; data?: unknown };
+        const fn = `${kit.service}.${f.name}`;
+        const bytes = bytesOf(data, "data");
+        const out = signing.sign(String(key ?? ""), bytes, { fn, trigger: budget.trigger });
+        budget.signed.push({ key: String(key), namespace: out.namespace, fn, bytes: bytes.length });
+        return out;
+      },
+      publicKey: (a) => signing.publicKeyOf(String((a as { key?: unknown } | null)?.key ?? "")),
+    },
     sleep: (ms) =>
       new Promise((resolve, reject) => {
         const stopped = () => (clearTimeout(timer), reject(new LibraryError("the run stopped")));
@@ -214,6 +231,7 @@ interface Request {
 /** One request a function sends: to its toolkit's hosts only, with its toolkit's key. */
 async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: AbortSignal) {
   if (++budget.requests > LIMITS.requests) throw new LibraryError(`a run sends at most ${LIMITS.requests} requests`);
+  if (!req.url && !kit.base_urls.length) throw new LibraryError(`the ${kit.service} toolkit has no base_urls: give the request a url on one of its hosts, or add base_urls to the toolkit`);
   const target = new URL(req.url ? checkUrl(req.url) : `${kit.base_urls[0]}/${String(req.path ?? "").replace(/^\//, "")}`);
   const hosts = store.hostsOf(kit);
   if (!hosts.some((h) => onSite(target.hostname, h))) throw new LibraryError(`${target.hostname} isn't one of the ${kit.service} toolkit's hosts (${hosts.join(", ")}): add it to the toolkit's hosts if its API sends there`);
@@ -249,6 +267,10 @@ export function runText(run: RunRecord): string {
   if (run.calls.length) {
     lines.push("", "Requests:");
     for (const c of run.calls.slice(-20)) lines.push(`- ${c.method} ${c.host}${c.path}: ${c.status ?? c.error} (${c.ms} ms)`);
+  }
+  if (run.signed?.length) {
+    lines.push("", "Signed:");
+    for (const s of run.signed.slice(-20)) lines.push(`- ${s.bytes} bytes with the key "${s.key}" in ${s.namespace}, by ${s.fn}`);
   }
   lines.push("", DATA);
   return lines.join("\n");

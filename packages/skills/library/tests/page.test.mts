@@ -140,6 +140,7 @@ test("every field the pages read from their state is one the skill writes", asyn
   await call({ action: "secret", site: "api.other.example", label: "other" });
   await saveSignIn("api.example.com", "demo", { token_url: "https://auth.example.com/token", device_url: "https://auth.example.com/device/code", scopes: "read" }, "client-1");
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" }, test: {} });
+  postVault({ ev: "signing-new", label: "signer", namespace: "test-ns" });
   await call({ action: "library" });
   const state = pageState();
   const html = pageSource("library.html");
@@ -149,7 +150,7 @@ test("every field the pages read from their state is one the skill writes", asyn
   const keys = vaultState();
   const vault = vaultSource();
   for (const [, field] of vault.matchAll(/\bks\.([a-z_]+)/g)) assert.ok(field in keys, `ks.${field}`);
-  const vaultItems = { k: keys.secrets.find((x: { kind: string }) => x.kind === "key"), o: keys.secrets.find((x: { kind: string }) => x.kind === "oauth"), n: keys.needs[0] };
+  const vaultItems = { k: keys.secrets.find((x: { kind: string }) => x.kind === "key"), o: keys.secrets.find((x: { kind: string }) => x.kind === "oauth"), n: keys.needs[0], g: keys.signing[0] };
   for (const [name, item] of Object.entries(vaultItems)) {
     assert.ok(item, name);
     for (const [, field] of vault.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);

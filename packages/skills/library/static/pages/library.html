@@ -83,7 +83,7 @@
     for (const t of s.toolkits) {
       toolkits.append(el("div", { className: "card" },
         el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: "cap", textContent: t.service })),
-        el("p", { className: "cap", textContent: `${t.base_urls.join(", ")}; keys: ${t.secrets.join(", ") || "none"}` }),
+        el("p", { className: "cap", textContent: `${t.base_urls.join(", ") || "no base address"}; keys: ${t.secrets.join(", ") || "none"}` }),
         ...t.functions.map((f) => el("details", {}, el("summary", { textContent: `${f.name}: ${f.description} (v${f.version})` }), el("pre", { textContent: f.source }), remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))),
         remove("Delete the toolkit", "toolkit-delete", { service: t.service })));
     }

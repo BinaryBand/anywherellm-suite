@@ -1,8 +1,9 @@
 // The library's pages, the user's own view of it on any device, served by AnythingLLM from its
 // public folder (#shared/pages):
 // - The Vault's keys section (#shared/vault-page, the page every skill that keeps secrets shares):
-//   the API keys and OAuth sign-ins by name, never their values. The user adds a key there, sealed
-//   on their device with the vault's public key, and deletes a key or a sign-in. It's where the
+//   the API keys, OAuth sign-ins and signing keys by name, never their values. The user adds a key
+//   there, sealed on their device with the vault's public key, and deletes a key or a sign-in; makes
+//   a signing key or imports its seed, sealed the same way (signing.ts). It's where the
 //   user gives a key, from any chat (AnywhereLLM Lite too): the agent asks, the need shows at the
 //   top of Keys, and the user enters it there.
 // - The Library page (static/pages/library.html): the toolkits, their functions' sources and the
@@ -25,6 +26,7 @@ import { LibraryError } from "./errors";
 import * as listing from "./listing";
 import { outcomeOf, recentRuns } from "./runs";
 import * as secrets from "./secrets";
+import * as signing from "./signing";
 import * as store from "./store";
 
 const TITLE = "library-lean-event";
@@ -90,6 +92,7 @@ function keysState(p: PageFile | null) {
   return {
     needs: (p?.needs ?? []).filter((n) => n.until > now).map(({ label, site }) => ({ label, site })),
     secrets: secrets.secrets(),
+    signing: signing.signingKeys(),
   };
 }
 
@@ -165,6 +168,18 @@ async function applyKeys(e: Record<string, unknown>): Promise<string | null> {
       return label;
     case "key-delete":
       await secrets.removeSecret(label);
+      return null;
+    case "signing-new":
+      await signing.create(secrets.labelOf(label), signing.namespaceOf(e.namespace));
+      return null;
+    case "signing-import":
+      await signing.importSeed(secrets.labelOf(label), signing.namespaceOf(e.namespace), vault.openSealed(text(e.sealed, 20000)));
+      return null;
+    case "signing-delete":
+      await signing.removeSigning(label);
+      return null;
+    case "signing-unattended":
+      await signing.setUnattended(label, e.on === true);
       return null;
     case "rotate":
       await vaultPage.rotate();

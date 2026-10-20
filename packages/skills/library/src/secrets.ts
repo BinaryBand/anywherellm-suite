@@ -111,18 +111,24 @@ export function labelForHost(host: string): string {
   return found[0].label;
 }
 
-/** The refusal for a name that is the other kind of secret already: a name is one secret. */
-const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${isSignIn(e) ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
+/** The refusal for a name that is another kind of secret already: a name is one secret. */
+const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${e.kind === "signing" ? "a signing key" : isSignIn(e) ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
 
-/** Refuses a key's name that is a sign-in's already (before the user is asked for the key). */
+/** The signing key (signing.ts) named `label` (any case), if any. */
+const signingNamed = (entries: readonly Readonly<vault.Entry>[], label: string) => entries.find((e) => e.kind === "signing" && e.user.toLowerCase() === label.toLowerCase());
+
+/** Refuses a key's name that is a sign-in's or a signing key's already (before the user is asked
+ *  for the key). */
 export function assertKeyName(label: string): void {
-  const taken = signIn(label);
+  const taken = signIn(label) ?? signingNamed(vault.entries(), label);
   if (taken) throw nameTaken(taken);
 }
 
 /** Saves `entry` under its label, replacing whole the secret of that name (keeping only its id), when
  *  that is the same kind of secret. */
 function put(v: vault.Vault, entry: { kind: string; site: string; user: string; [field: string]: unknown }): void {
+  const signing = signingNamed(v.entries, entry.user);
+  if (signing) throw nameTaken(signing);
   const at = v.entries.findIndex(named(entry.user));
   const there = v.entries[at];
   if (!there) return void v.entries.push({ id: vault.newId(), ...entry });

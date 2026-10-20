@@ -1,6 +1,6 @@
 // The Vault: one page where the user sees every secret the instance's vault keeps, by name and
-// never by value, and deletes it: the browser's logins and passkeys, the library's API keys and
-// OAuth sign-ins. Each skill that keeps secrets bundles this module and serves the page itself, so
+// never by value, and deletes it: the browser's logins and passkeys, the library's API keys, OAuth
+// sign-ins and signing keys. Each skill that keeps secrets bundles this module and serves the page itself, so
 // either skill works installed alone; installed together, they serve the same page.
 //
 // The page (vault.html) lives under one random name in AnythingLLM's public folder
@@ -24,7 +24,7 @@ import template from "./vault.html";
 export type Section = "logins" | "keys";
 
 /** The page's version: a skill writes the page unless the one there is newer. */
-const VERSION = 3;
+const VERSION = 4;
 /** How long a section's events are watched for after the page was last shown for it. */
 const WATCH_MS = 30 * 60 * 1000;
 const MARKER = "vault_lean_event";

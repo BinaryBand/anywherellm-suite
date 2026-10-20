@@ -11,7 +11,7 @@ A toolkit is one service's API, as you found it. Save it with save, service (its
 }
 ```
 
-- base_urls: where the API is; a function's path is relative to the first.
+- base_urls: where the API is; a function's path is relative to the first. Leave it out for a toolkit with no API, whose functions only compute or sign (kit.crypto, kit.secret).
 - hosts: any other host its functions must reach (the base addresses' hosts are in already). A function reaches nothing else.
 - secrets: the keys its functions send (topic secrets); the first goes with a request unless it names another.
 - notes: what a function needs to know and the docs don't make easy to find: endpoints, paging, limits, quirks. Keep them short; you'll read them again before writing the next function.

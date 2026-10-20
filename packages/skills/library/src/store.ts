@@ -42,7 +42,8 @@ export interface KeyUse {
 export interface Toolkit {
   service: string;
   title: string;
-  /** Where its API is; a function's path is relative to the first. */
+  /** Where its API is; a function's path is relative to the first. None for a toolkit whose
+   *  functions only compute or sign. */
   base_urls: string[];
   /** Hosts its functions may reach besides the base addresses' (hostsOf has them all). */
   hosts: string[];
@@ -87,6 +88,8 @@ export interface RunRecord {
   error?: { name: string; message: string; line?: number };
   logs: string[];
   calls: { method: string; host: string; path: string; status?: number; error?: string; ms: number }[];
+  /** What it signed (signing.ts): with which key, in which namespace, by which function, how much. */
+  signed?: { key: string; namespace: string; fn: string; bytes: number }[];
 }
 
 /** The library's folder in AnythingLLM's storage. */
@@ -154,7 +157,6 @@ export function saveToolkit(service: string, given: Record<string, unknown>): To
   const was = toolkit(service);
   const pick = <T,>(key: keyof Toolkit, make: (v: unknown) => T, fallback: T): T => (given[key] !== undefined ? make(given[key]) : was ? (was[key] as T) : fallback);
   const base_urls = pick("base_urls", (v) => strings(v, "base_urls").map(urlChecked), [] as string[]);
-  if (!base_urls.length) throw new LibraryError('a toolkit needs base_urls, where its API is, like ["https://api.github.com"]');
   const hosts = pick(
     "hosts",
     (v) =>

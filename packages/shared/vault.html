@@ -8,7 +8,7 @@
 <title>Vault</title>
 <style>
 /* The Vault, shared by the skills that keep secrets (packages/shared/vault-page.mts): a tab for each
-   section a skill wrote, the keys and sign-ins (the library's) and the logins (the browser's). What's
+   section a skill wrote, the keys, sign-ins and signing keys (the library's) and the logins (the browser's). What's
    done in a section is posted under its title and applied by the skill that owns it. The look is
    AnywhereLLM Lite's, as the browser's tab page has it; ?theme=light or dark keeps it to one. */
 :root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--accentbg:oklch(0.94 0.028 272);--onaccent:oklch(1 0 0);--hover:oklch(0.925 0.016 75);--badfg:oklch(0.47 0.16 20);--okfg:oklch(0.42 0.08 165);--okbg:oklch(0.945 0.04 165);--warnfg:oklch(0.45 0.1 70);--warnbg:oklch(0.95 0.045 80);
@@ -75,14 +75,16 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   <h1>Vault</h1>
 </header>
 <main>
-  <p class="lead">What the agent signs in and calls with. Encrypted on your AnythingLLM server and shared by every workspace. The agent uses each one on its own site only, and never reads it.</p>
+  <p class="lead">What the agent signs in, calls and signs with. Encrypted on your AnythingLLM server and shared by every workspace. The agent uses each one only on its own site, or in its own namespace, and never reads it.</p>
   <nav class="seg" role="tablist" aria-label="Show">
     <button role="tab" data-tab="keys" data-section="keys" hidden>Keys</button>
     <button role="tab" data-tab="signins" data-section="keys" hidden>Sign-ins</button>
+    <button role="tab" data-tab="signing" data-section="keys" hidden>Signing</button>
     <button role="tab" data-tab="logins" data-section="logins" hidden>Logins</button>
   </nav>
   <section id="keys" hidden></section>
   <section id="signins" hidden></section>
+  <section id="signing" hidden></section>
   <section id="logins" hidden></section>
   <div class="foot" id="foot"><p class="cap">Anyone with this page's link can see what it shows and act on it.</p></div>
 </main>
@@ -204,6 +206,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
       if (!v.value || !v.label || !v.site) return toast("Fill in every field"), false;
       if (ks.secrets.some((x) => x.kind === "oauth" && x.label.toLowerCase() === v.label.trim().toLowerCase())) return toast("That name is a sign-in's: use another"), false;
+      if ((ks.signing ?? []).some((x) => x.label.toLowerCase() === v.label.trim().toLowerCase())) return toast("That name is a signing key's: use another"), false;
       const went = await post("keys", "key-save", { label: v.label, site: v.site, sealed: await seal(v.value) });
       if (went) (adding = false), drawKeys(ks);
       return went;
@@ -223,6 +226,44 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     signins.replaceChildren(el("div", { className: "lab", textContent: "Sign-ins" }),
       el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No sign-ins yet. The agent starts one when a task needs it." })])),
       el("p", { className: "cap", textContent: "One sign-in for each provider. Its tokens go only to the site named, and are renewed by themselves as they run out." }));
+    drawSigning(ks);
+  }
+
+  // ---- Signing keys: the library's too. A function signs with one by its name and gets the
+  // signature, never the key. Not a checkbox for scheduled jobs: an input with a value reads as busy.
+  let addingSigning = false;
+  function drawSigning(ks) {
+    const list = ks.signing ?? [];
+    count("signing", "Signing", list.length);
+    const items = list.map((g) => {
+      const { del, box } = remove(`Delete the signing key ${g.label}? Nothing signs as it after, and it can't be made again: its peers would need a new public key.`, `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
+      const copy = g.public && el("button", { className: "btn", type: "button", textContent: "Copy public key", onclick: async () => {
+        try { await navigator.clipboard.writeText(g.public); toast("Copied"); } catch (e) { toast("Can't copy here: select the key above and copy it"); }
+      } });
+      const jobs = el("button", { className: "btn", type: "button", textContent: g.unattended ? "Stop it signing in scheduled jobs" : "Let it sign in scheduled jobs", onclick: () => post("keys", "signing-unattended", { label: g.label, on: !g.unattended }) });
+      const tag = el("span", { className: "tag" + (g.public ? " ok" : ""), textContent: !g.public ? "Damaged" : g.unattended ? "Chats and jobs" : "Chats" });
+      return el("details", {},
+        el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: g.label }), el("small", { textContent: g.namespace })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
+        el("div", { className: "body" },
+          el("dl", { className: "kv" }, el("dt", { textContent: "Signs in" }), el("dd", { textContent: g.namespace }),
+            el("dt", { textContent: "Public key" }), el("dd", { textContent: g.public ?? "damaged: delete it and import it again" }),
+            ...(g.fingerprint ? [el("dt", { textContent: "Fingerprint" }), el("dd", { textContent: g.fingerprint })] : []),
+            el("dt", { textContent: "Scheduled jobs" }), el("dd", { textContent: g.unattended ? "may sign" : "may not sign" })),
+          el("div", { className: "pair" }, copy, jobs), del, box));
+    });
+    const taken = (name) => [...ks.secrets, ...list].some((x) => x.label.toLowerCase() === name.toLowerCase());
+    const addForm = form([["label", "Name, like muse"], ["namespace", "The namespace it signs in, like muse-coordination", "text", true], ["seed", "Seed to import, base64 (empty: make a new key)", "password"]], "Save signing key", async (v) => {
+      if (!v.label || !v.namespace) return toast("Fill in the name and the namespace"), false;
+      if (taken(v.label)) return toast("That name is taken: use another"), false;
+      const fields = { label: v.label, namespace: v.namespace };
+      const went = v.seed ? await post("keys", "signing-import", { ...fields, sealed: await seal(v.seed) }) : await post("keys", "signing-new", fields);
+      if (went) (addingSigning = false), drawSigning(ks);
+      return went;
+    }, [el("p", { className: "cap", style: "padding:0", textContent: "A new key is made on your AnythingLLM server. A seed you import is sealed on this device before it is sent. The agent never sees either." })]);
+    const add = el("button", { className: "add", type: "button", onclick: () => ((addingSigning = !addingSigning), drawSigning(ks)) }, icon(addingSigning ? "M4 8h8" : "M8 3v10M3 8h10"), addingSigning ? "Cancel" : "Add a signing key");
+    $("signing").replaceChildren(el("div", { className: "lab", textContent: "Signing keys" }),
+      el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No signing keys yet. Make one here when a function needs to sign." })]), el("div", {}, add, addingSigning ? addForm : null)),
+      el("p", { className: "cap", textContent: "A function signs with a key by its name and gets the signature, never the key. A key signs only in its own namespace, at most 60 times a minute, and in a scheduled job only when you let it. Give its peers the public key." }));
   }
 
   // ---- Logins and passkeys: the browser's section, saved as the user signs in on a tab's page.
@@ -249,7 +290,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
     for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
   };
-  for (const s of ["keys", "signins"]) $(s).dataset.section = "keys";
+  for (const s of ["keys", "signins", "signing"]) $(s).dataset.section = "keys";
   $("logins").dataset.section = "logins";
   for (const b of document.querySelectorAll("nav button")) b.onclick = () => select(b);
   async function load() {

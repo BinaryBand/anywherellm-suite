@@ -28,6 +28,7 @@ import { send } from "./request";
 import * as runs from "./runs";
 import { check as compiles, failureText } from "./sandbox";
 import * as secrets from "./secrets";
+import * as signing from "./signing";
 import * as store from "./store";
 
 type Args = Record<string, unknown>;
@@ -65,7 +66,7 @@ function keyStatus(kit: store.Toolkit, saved: Saved): string {
 async function library(args: Args, self: HandlerContext): Promise<string> {
   const saved: Saved = new Map(secrets.secrets().map((s) => [s.label.toLowerCase(), s]));
   const service = clean(args.service) ? store.serviceOf(args.service) : "";
-  const lines = service ? toolkitLines(service, saved) : listingLines(saved);
+  const lines = service ? toolkitLines(service, saved) : [...listingLines(saved), ...signingLines()];
   const recent = runs.recentRuns(5, service);
   if (recent.length && lines.length > 1) lines.push("", "Recent runs:", ...recent.map(runLine));
   lines.push("", await pageLine(self));
@@ -88,8 +89,8 @@ function toolkitLines(service: string, saved: Saved): string[] {
   const fns = store.functions(service);
   return [
     `Toolkit ${service}: ${kit.title}`,
-    `Base addresses: ${kit.base_urls.join(", ")}`,
-    `Hosts its functions reach: ${store.hostsOf(kit).join(", ")}`,
+    `Base addresses: ${kit.base_urls.join(", ") || "none"}`,
+    `Hosts its functions reach: ${store.hostsOf(kit).join(", ") || "none"}`,
     `Keys: ${keyStatus(kit, saved)}`,
     ...(kit.docs.length ? [`Docs: ${kit.docs.join(", ")}`] : []),
     "",
@@ -110,6 +111,14 @@ function listingLines(saved: Saved): string[] {
     lines.push(`- ${service}: ${kit.title}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved)}`);
   }
   return lines;
+}
+
+/** The signing keys a function signs with by name (kit.secret), never their seeds; none, no lines. */
+function signingLines(): string[] {
+  const keys = signing.signingKeys();
+  if (!keys.length) return [];
+  const line = (k: signing.SigningKey) => `- ${k.label}: signs in ${k.namespace}, ${k.public ? `public key ${k.public} (${k.fingerprint})` : "damaged: the user deletes it on the Vault and imports it again"}${k.unattended ? "; signs in scheduled jobs too" : ""}`;
+  return ["", "Signing keys (kit.secret.sign; the user makes them on the Vault, under Signing):", ...keys.map(line)];
 }
 
 /** Whether secret is asked for a sign-in: a preset is given, or the label names one (with no site);
@@ -207,7 +216,7 @@ async function save(args: Args, self: HandlerContext): Promise<string> {
   const lines: string[] = [];
   if (args.toolkit !== undefined) {
     const kit = store.saveToolkit(service, objectOf(args.toolkit, "toolkit"));
-    lines.push(`Saved the toolkit ${service}: ${kit.base_urls.join(", ")}; keys: ${kit.secrets.map((s) => s.label).join(", ") || "none"}.`);
+    lines.push(`Saved the toolkit ${service}: ${kit.base_urls.join(", ") || "no base address"}; keys: ${kit.secrets.map((s) => s.label).join(", ") || "none"}.`);
   }
   let saved = "";
   if (args.function !== undefined) {
