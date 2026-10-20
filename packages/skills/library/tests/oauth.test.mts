@@ -188,6 +188,25 @@ test("a code for a sign-in nobody waits for is ignored, and a refused sign-in sa
   assert.notEqual(linkIn(elsewhere).searchParams.get("state"), linkIn(again).searchParams.get("state"));
 });
 
+test("a forged code deletes nothing: its state names no file outside, nor another sign-in's", async () => {
+  const q = Object.fromEntries((await link()).searchParams);
+  const outside = "/../../../storage/vault-lean/vault"; // as s-<state>.json from public/library-lean/: the vault
+  const unknown = "A".repeat(32); // a state's shape, which no sign-in waits for
+  fs.writeFileSync(path.join(publicDir, "library-lean", `s-${unknown}.json`), "{}");
+  // As anyone with the pages' key can post it: no page secret, on either page.
+  post({ ev: "oauth-code", state: outside, code: "" });
+  postVault({ ev: "oauth-code", state: outside, code: "", secret: "" });
+  postVault({ ev: "oauth-code", state: unknown, code: "", secret: "" });
+  await call({ action: "library" });
+  // A vault removed is made again, empty, by the next change: its sign-in shows it was kept.
+  assert.equal(statusIn("demo"), "waiting for the user to sign in at its link", "the vault and its sign-in are still there");
+  assert.ok(fs.existsSync(path.join(publicDir, "library-lean", `s-${unknown}.json`)), "a state no sign-in took removes nothing");
+  postVault({ ev: "oauth-code", state: q.state, code: "good-code", secret: "" }); // the real state, with no secret either
+  await call({ action: "library" });
+  assert.equal(secretIn("demo")?.tag?.text, "Signed in");
+  assert.ok(!fs.existsSync(path.join(publicDir, "library-lean", `s-${q.state}.json`)), "the state's own file goes with its sign-in");
+});
+
 test("with ANYTHINGLLM_URL unset, the address the Vault was opened at is learned with the client", async () => {
   const said = await call({ action: "secret", kind: "oauth", label: "demo", definition });
   assert.match(said, /with the redirect address the Vault shows registered/);

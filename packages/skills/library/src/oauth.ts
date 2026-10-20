@@ -126,6 +126,10 @@ export const waiting = (): string[] =>
     .filter(isSignIn)
     .flatMap((e) => (e.pending && e.pending.until > Date.now() ? [e.pending.state] : []));
 
+/** A state as start makes it (24 random bytes, base64url): what a page posts back is taken for one
+ *  only when it has that shape, since it names the sign-in's public file. */
+export const isState = (given: string): boolean => /^[\w-]{32}$/.test(given);
+
 /** Starts the sign-in `given`: answers the provider's sign-in address and the state it comes back
  *  with, which the vault keeps (with the PKCE verifier) until the code comes back or it runs out. */
 export async function start(given: Readonly<SignIn>, redirect: string): Promise<SignInLink> {
@@ -267,8 +271,9 @@ const tokenRequest = async (signIn: Readonly<SignIn>, form: Record<string, strin
 
 /** After the provider sent the user back with `code` (or `error`) for `state`: takes the sign-in
  *  waiting with that state (once: a state no sign-in waits for is ignored), trades the code for
- *  tokens and keeps them, or keeps why it didn't work, for library and the page to show. */
-export async function finish(state: string, code: string | null, error: string | null): Promise<void> {
+ *  tokens and keeps them, or keeps why it didn't work, for library and the page to show. Answers
+ *  whether it took one. */
+export async function finish(state: string, code: string | null, error: string | null): Promise<boolean> {
   const taken = await vault.update((v) => {
     const found = v.entries.find((e) => isSignIn(e) && e.pending?.state === state && e.pending.until > Date.now()) as SignIn | undefined;
     if (!found) return null;
@@ -276,7 +281,7 @@ export async function finish(state: string, code: string | null, error: string |
     found.pending = null;
     return copy;
   });
-  if (!taken?.pending) return;
+  if (!taken?.pending) return false;
   let outcome: { tokens: Tokens } | { error: string };
   try {
     if (error || !code) throw new LibraryError(`the provider didn't give a code${error ? `: ${error.slice(0, 200)}` : ""}`);
@@ -288,6 +293,7 @@ export async function finish(state: string, code: string | null, error: string |
     const kept = v.entries.find((e) => e.id === taken.id);
     if (kept) Object.assign(kept, "tokens" in outcome ? { tokens: outcome.tokens, error: null } : { error: outcome.error });
   });
+  return true;
 }
 
 /** The access token to send for `signIn`, renewed first when it has run out or is about to. In this
