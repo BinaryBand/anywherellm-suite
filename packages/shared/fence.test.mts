@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { NetError, allowedFile, allowedFor, allowedHosts, alwaysAllowed, checkUrl, makeFence, onSite, originOf, privateAddress, privateName, secureFor, siteOf } from "./fence.mts";
+import { NetError, allowedFile, allowedFor, allowedHosts, alwaysAllowed, checkUrl, makeFence, onSite, originOf, pathRefused, privateAddress, privateName, secureFor, siteOf } from "./fence.mts";
 
 test("addresses outside the public internet are private", () => {
   for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.10", "169.254.169.254", "100.64.0.1", "100.101.102.103", "0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "::", "fd7a:115c:a1e0::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:192.168.0.1", "ff02::1"]) {
@@ -107,4 +107,14 @@ test("a site as a person writes it is a host, and its subdomains are on it", () 
   assert.ok(onSite("github.com", "https://github.com/"));
   assert.ok(!onSite("evilgithub.com", "github.com"));
   assert.ok(!onSite("", "github.com"));
+});
+
+test("the skills' own pages and AnythingLLM's upload for them are never reached, on any host, however written", async () => {
+  const never = ["/vault-lean/abc.html", "/library-lean/abc.json", "/browser-lean/x", "/api/browser-extension/upload-content", "/API/Browser-Extension/upload-content", "//vault-lean//abc.html", "/%76ault-lean/abc.html", "/library-lean%2Fabc.html", "/vault-lean"];
+  for (const p of never) assert.match(pathRefused(new URL(`https://ai.example.com${p}`)) ?? "", /never reaches: the user acts on them/, p);
+  for (const p of ["/", "/api/v1/workspaces", "/vault-leaner/x", "/docs/library-lean/x", "/api/browser-extensions"]) assert.equal(pathRefused(new URL(`https://ai.example.com${p}`)), null, p);
+  const refused = makeFence({ allow: () => new Set(["127.0.0.1"]), lookup: async () => [{ address: "93.184.216.34" }] });
+  assert.match((await refused("http://127.0.0.1:3001/library-lean/t.html"))!, /never reaches/, "even let through");
+  assert.match((await refused("https://ai.example.com/api/browser-extension/upload-content"))!, /never reaches/, "even public");
+  assert.equal(await refused("https://ai.example.com/"), null);
 });

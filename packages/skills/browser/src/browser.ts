@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { perProcess } from "#shared/anythingllm";
 import { withAsk } from "#shared/ask";
-import { FENCED, Fenced, allowedFor, bareHost, makeFence, outsideRun } from "#shared/fence";
+import { FENCED, Fenced, allowedFor, bareHost, makeFence, outsideRun, pathRefused } from "#shared/fence";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
 import type { Browser, Page, Puppeteer } from "./host";
@@ -265,6 +265,7 @@ export function through(entry: Entry, url: string, what: string): Promise<void> 
     const refused = await entry.fence(url);
     if (!refused) return;
     const parsed = new URL(url);
+    if (pathRefused(parsed)) throw new BrowserError(`${url} ${what}: ${refused}`); // nothing to let through
     throw new Fenced(`${url} ${what}: ${refused}. The browser reaches the public web only, the hosts the user lets through in FENCE_ALLOW, and the addresses they let through in AnywhereLLM, which asks the user during a chat there. ${FENCED}`, bareHost(parsed).toLowerCase(), parsed.origin);
   });
 }

@@ -128,3 +128,16 @@ test("requests to the same host reuse a kept connection, opened through the fenc
   assert.notEqual(other, first, "another allow-list has connections of its own");
   s.close();
 });
+
+test("a request never reaches the skills' pages or AnythingLLM's upload for them, even to a host let through, nor by a redirect", async () => {
+  const s = await serve({ "/": (req, res) => res.end("hi"), "/go": (req, res) => ((res.statusCode = 302), res.setHeader("location", "/Library-Lean/t.html"), res.end()) });
+  for (const p of ["/library-lean/t.html", "/API/browser-extension/upload-content", "//vault-lean/t.html"]) {
+    const e = await net.send({ url: `${s.url}${p}`, allow: ["127.0.0.1"] }).catch((err) => err);
+    assert.match(e.message, /isn't reached: that's one of the skills' own pages/, p);
+    assert.ok(!(e instanceof Fenced), "nothing to let through");
+  }
+  await assert.rejects(net.send({ url: `${s.url}/go`, allow: ["127.0.0.1"] }), /one of the skills' own pages/);
+  assert.equal((await net.send({ url: `${s.url}/`, allow: ["127.0.0.1"] })).body.toString(), "hi");
+  assert.deepEqual(s.seen.map((r) => r.url), ["/go", "/"], "nothing was sent to a page");
+  s.close();
+});

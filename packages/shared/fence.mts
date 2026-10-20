@@ -37,6 +37,25 @@ export class Fenced extends NetError {
 /** What the agent is told whenever the fence refuses an address. */
 export const FENCED = "That's final: don't reach it another way, with another tool or another address for the same place.";
 
+/** The paths the agent never reaches, on any host and whatever the user lets through: the skills'
+ *  own pages (the Vault, the Library page, the browser's), which act for whoever holds their link,
+ *  and AnythingLLM's upload the pages post with. The user acts on them; the agent, which is given
+ *  their links, mustn't (a toolkit the user locked would be unlocked by it). As AnythingLLM matches
+ *  a path: any case, decoded, a run of slashes as one. */
+const NEVER = /^\/(?:api\/browser-extension|vault-lean|library-lean|browser-lean)(?:\/|$)/;
+
+/** Why the agent never reaches `url`'s path, or null. */
+export function pathRefused(url: URL): string | null {
+  let pathname = url.pathname;
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // a malformed escape is matched as it is
+  }
+  if (!NEVER.test(pathname.toLowerCase().replace(/\/{2,}/g, "/"))) return null;
+  return `that's one of the skills' own pages or AnythingLLM's upload for them, which the agent never reaches: the user acts on them, not you. ${FENCED}`;
+}
+
 /** Schemes a page may load besides http(s), which the fence checks by host. */
 const LOCAL_SCHEMES = new Set(["data:", "blob:", "about:"]);
 const DNS_TTL_MS = 60 * 1000;
@@ -252,6 +271,8 @@ export function makeFence({
     }
     if (LOCAL_SCHEMES.has(parsed.protocol)) return null;
     if (!["http:", "https:"].includes(parsed.protocol)) return `${parsed.protocol} addresses aren't loaded`;
+    const never = pathRefused(parsed);
+    if (never) return never;
     const host = bareHost(parsed);
     const why = hostRefused(host, NONE);
     const refusal = why === "lookup" ? await byAddress(host) : why;

@@ -14,7 +14,7 @@ import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
 import zlib from "node:zlib";
-import { FENCED, Fenced, NetError, addressesRefused, allowedFor, bareHost, hostRefused, httpUrl } from "./fence.mts";
+import { FENCED, Fenced, NetError, addressesRefused, allowedFor, bareHost, hostRefused, httpUrl, pathRefused } from "./fence.mts";
 
 /** A server that didn't answer, or whose answer couldn't be read: worth trying again later. */
 export class Unreachable extends NetError {
@@ -99,6 +99,8 @@ function agentsFor(allowed: ReadonlySet<string>): Agents {
  *  origin are (or `allow`'s, which tests fix). */
 function once({ method, url, headers, body, timeout, maxBytes, allow, resolve, signal }: Once): Promise<Answer> {
   const parsed = httpUrl(url);
+  const never = pathRefused(parsed);
+  if (never) throw new NetError(`${parsed.origin}${parsed.pathname} isn't reached: ${never}`);
   const host = bareHost(parsed).toLowerCase();
   const allowed = allow ? new Set(allow) : allowedFor(parsed.origin);
   const why = hostRefused(host, allowed);
