@@ -17,6 +17,8 @@
 //   App.onchange(fn)        fn(App.data) after every change: this page's own, and one from
 //                           elsewhere (another tab, the agent)
 //   App.onstatus(fn)        fn(state, text): saving, saved, offline, conflict, error
+//   App.cue(el, cue)        say what just happened to el, for motion.js to show if the page has it:
+//                           done, added, reveal, success, miss; App.oncue(fn) hears them
 //   App.mount(name, fn)     run a component: fn({root, at, q}) once for each element with
 //                           data-part=name, `at` the data it stands for (its data-at, "" for
 //                           the whole data) and q(ref) its element with data-ref=ref; the
@@ -347,7 +349,15 @@ const App = (() => {
     }, true);
   }
 
+  const oncue = [];
+
   return {
+    cue(el, what) {
+      for (const fn of oncue) fn(el, what);
+    },
+    oncue(fn) {
+      oncue.push(fn);
+    },
     /** `data` with `ops` applied, as a new value; throws when one doesn't apply. */
     apply,
     start(embedded) {

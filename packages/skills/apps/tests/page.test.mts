@@ -26,9 +26,9 @@ test("a page is rendered with this skill's stand-in for a server", () => {
   const outside = html.replace(/<script[^>]*>[\s\S]*?<\/script>|<style>[\s\S]*?<\/style>/g, "");
   assert.ok(!outside.includes('src="app.js"') && !outside.includes('href="app.css"'), "every library is inline");
   assert.ok(html.indexOf("var AppsLean") < html.indexOf("const App = (() =>"), "the stand-in comes before the runtime");
-  // The app's data, the stand-in, the patch library, app.js, the template's script and item-list's:
-  // no inlined text ends a script early.
-  assert.equal(html.split("</script>").length - 1, 6);
+  // The app's data, the stand-in, the patch library, app.js, motion.js, the template's script and
+  // item-list's: no inlined text ends a script early.
+  assert.equal(html.split("</script>").length - 1, 7);
   assert.equal(render({ ...groceries(), page: undefined }, "home", "k"), null, "an app with no page has none to render");
 });
 

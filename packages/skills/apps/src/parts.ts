@@ -310,10 +310,14 @@ export function starter(name: string): { line: string; template: string; parts: 
   };
 }
 
-/** The libraries a page may name, as a page gets them inline: parts.js with every figure. */
+/** The libraries a page may name, as a page gets them inline: parts.js with every figure, and
+ *  motion.js with its motion.css, which show the cues the parts give (App.cue). */
 export function libraries(): Record<string, string> {
   const figures = Object.values(parts()).filter((p) => p.kind === "figure").map((p) => p.body);
-  return { "app.js": file("app.js"), "app.css": file("app.css"), "parts.js": [file("parts.js"), ...figures].join("\n") };
+  return {
+    "app.js": file("app.js"), "app.css": file("app.css"), "parts.js": [file("parts.js"), ...figures].join("\n"),
+    "motion.js": file("motion.js"), "motion.css": file("motion.css"),
+  };
 }
 
 // What a page may use without declaring it: the browser's own globals. A name starting with a
@@ -363,7 +367,7 @@ try {
     var App = {
       data: __anything(), title: "", line: 0, card: {}, start: function () { return __anything(); }, get: function () { return __anything(); },
       set: function () { return Promise.resolve(true); }, patch: function () { return Promise.resolve(true); }, log: function () { return Promise.resolve([]); },
-      onchange: function (fn) { __later.push(fn); }, onstatus: function () {},
+      onchange: function (fn) { __later.push(fn); }, onstatus: function () {}, cue: function () {}, oncue: function () {},
       mount: function (_name, fn) { __later.push(function () { var draw = fn({ root: __anything(), at: "", q: function () { return __anything(); } }); if (typeof draw === "function") draw(); }); },
     };
     var window = globalThis, self = globalThis;

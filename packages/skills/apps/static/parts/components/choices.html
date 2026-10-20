@@ -1,5 +1,5 @@
 <!--part
-{"name":"choices","line":"a question with choices and a note: the agent asks, the user answers","schema":{"type":"object","required":["question","choices","answer"],"properties":{"question":{"type":"string","minLength":1,"maxLength":200},"choices":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"string","minLength":1,"maxLength":80}},"answer":{"type":["object","null"],"required":["choice"],"properties":{"choice":{"type":"string","maxLength":80},"note":{"type":"string","maxLength":500},"at":{"type":"string"}}}}},"data":{"question":"Which one?","choices":["This","That"],"answer":null},"events":["answer"]}
+{"name":"choices","line":"a question with choices and a note: the agent asks, the user answers; with correct, a quiz","schema":{"type":"object","required":["question","choices","answer"],"properties":{"question":{"type":"string","minLength":1,"maxLength":200},"choices":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"string","minLength":1,"maxLength":80}},"correct":{"type":"string","maxLength":80},"answer":{"type":["object","null"],"required":["choice"],"properties":{"choice":{"type":"string","maxLength":80},"note":{"type":"string","maxLength":500},"at":{"type":"string"}}}}},"data":{"question":"Which one?","choices":["This","That"],"answer":null},"events":["answer"]}
 -->
 <form class="stack wide" data-part="choices">
 <h2 data-ref="q"></h2>
@@ -16,18 +16,21 @@ App.mount("choices", ({ root, at, q }) => {
     if (!picked) return (q("sent").textContent = "Pick one first.");
     const answer = { choice: picked.value, note: q("note").value.trim(), at: new Date().toISOString() };
     App.patch([{ op: "test", path: at + "/question", value: App.get(at + "/question") }, { op: "replace", path: at + "/answer", value: answer }], { ev: "answer", text: answer.choice });
+    const { correct } = App.get(at);
+    if (correct) App.cue(root.querySelector(answer.choice === correct ? "label.right" : "label.wrong"), answer.choice === correct ? "success" : "miss");
   };
   return () => {
-    const { question, choices, answer } = App.get(at);
+    const { question, choices, answer, correct } = App.get(at), quiz = answer && correct;
     q("q").textContent = question;
     q("choices").replaceChildren(...choices.map((c) => {
-      const label = el("label", { className: "row" });
+      const label = el("label", { className: "row" + (quiz ? (c === correct ? " right" : c === answer.choice ? " wrong" : "") : "") });
       label.append(el("input", { type: "radio", name: "choice", value: c, checked: answer?.choice === c }), el("span", { textContent: c }));
       return label;
     }));
     if (answer && !q("note").value) q("note").value = answer.note || "";
     q("send").textContent = answer ? "Change my answer" : "Send my answer";
-    q("sent").textContent = answer ? `Sent: ${answer.choice}. Tell the chat you've answered.` : "";
+    q("sent").className = quiz ? (answer.choice === correct ? "right" : "wrong") : "";
+    q("sent").textContent = !answer ? "" : quiz ? (answer.choice === correct ? "Right!" : `Not quite: it's ${correct}.`) : `Sent: ${answer.choice}. Tell the chat you've answered.`;
   };
 });
 </script>

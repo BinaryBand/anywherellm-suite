@@ -3,14 +3,24 @@
 -->
 <div class="days wide" data-part="date-grid"></div>
 <script>
+// This week and the three before it, from the locale's first weekday; days to come can't be marked.
 App.mount("date-grid", ({ root, at }) => () => {
   const days = App.get(at + "/days"), noon = new Date(); noon.setUTCHours(12, 0, 0, 0);
-  root.replaceChildren(...Array.from({ length: 28 }, (_, i) => {
-    const d = new Date(+noon - (27 - i) * 864e5), day = d.toISOString().slice(0, 10), on = !!days[day];
-    const b = el("button", { type: "button", textContent: d.getUTCDate(), ariaLabel: day });
+  const loc = new Intl.Locale(navigator.language || "en"), first = ((loc.getWeekInfo?.() ?? loc.weekInfo)?.firstDay ?? 1) % 7;
+  const start = +noon - ((noon.getUTCDay() - first + 7) % 7 + 21) * 864e5;
+  const f = (o, d) => new Intl.DateTimeFormat(undefined, { timeZone: "UTC", ...o }).format(d);
+  const cells = Array.from({ length: 28 }, (_, i) => new Date(start + i * 864e5)), key = (d) => d.toISOString().slice(0, 10);
+  const past = cells.filter((d) => d <= noon), marked = past.filter((d) => days[key(d)]).length;
+  const head = el("p", {}), month = el("b", { textContent: f({ month: "long", year: "numeric" }, noon) });
+  head.append(month, el("small", { textContent: `${marked} of ${past.length} days` }));
+  root.replaceChildren(head, ...cells.slice(0, 7).map((d) => el("abbr", { textContent: f({ weekday: "short" }, d), title: f({ weekday: "long" }, d) })), ...cells.map((d) => {
+    const day = key(d), on = !!days[day];
+    const b = el("button", { type: "button", textContent: d.getUTCDate(), ariaLabel: day, disabled: d > noon });
     b.setAttribute("aria-pressed", on);
-    b.onclick = () => App.patch([on ? { op: "remove", path: `${at}/days/${day}` } : { op: "add", path: `${at}/days/${day}`, value: true }],
-      { ev: on ? "unmark" : "mark", day });
+    if (+d === +noon) b.setAttribute("aria-current", "date");
+    if (d.getUTCMonth() !== noon.getUTCMonth()) b.dataset.other = "";
+    b.onclick = () => (on || App.cue(b, "done"), App.patch([on ? { op: "remove", path: `${at}/days/${day}` } : { op: "add", path: `${at}/days/${day}`, value: true }],
+      { ev: on ? "unmark" : "mark", day }));
     return b;
   }));
 });

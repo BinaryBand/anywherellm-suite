@@ -1,0 +1,12 @@
+/* motion.css: the motions motion.js plays, named by what they look like; motion.js maps cues to them. */
+@keyframes pop{45%{transform:scale(1.22)}}
+@keyframes flip{from{transform:perspective(700px) rotateY(-90deg)}}
+@keyframes shake{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+@keyframes cheer{0%{box-shadow:0 0 0 0 color-mix(in oklch,var(--ok) 55%,#0000)}35%{transform:scale(1.05)}100%{box-shadow:0 0 0 16px #0000}}
+.play-pop{animation:pop .22s cubic-bezier(.3,1.5,.5,1)}
+.play-flip{animation:flip .3s cubic-bezier(.2,.9,.3,1)}
+.play-shake{animation:shake .32s ease-in-out}
+.play-rise{animation:rise .26s ease-out}
+.play-cheer{animation:cheer .55s cubic-bezier(.3,1.4,.5,1)}
+@media (prefers-reduced-motion:reduce){[class*=play-]{animation:none}}

@@ -10,7 +10,7 @@ App.mount("entry-form", ({ at, q }) => {
   q("form").onsubmit = (e) => {
     e.preventDefault();
     const text = q("text").value.trim();
-    if (text) App.patch([{ op: "add", path: at + "/entries/-", value: { text, at: new Date().toISOString() } }], { ev: "add", text });
+    if (text) App.patch([{ op: "add", path: at + "/entries/-", value: { text, at: new Date().toISOString() } }], { ev: "add", text }), App.cue(q("entries").firstElementChild, "added");
     q("text").value = "";
   };
   return () => q("entries").replaceChildren(...App.get(at + "/entries").slice(-20).reverse().map((e) => {

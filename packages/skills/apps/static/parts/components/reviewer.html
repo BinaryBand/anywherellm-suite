@@ -16,7 +16,7 @@ App.mount("reviewer", ({ at, q }) => {
     q("grade").hidden = !n || !back;
     if (c) q("card").textContent = back ? c.back : c.front;
   };
-  q("card").onclick = () => { back = !back; draw(); };
+  q("card").onclick = () => { back = !back; draw(); App.cue(q("card"), "reveal"); };
   const grade = (ok) => {
     const all = App.get(at + "/cards"), k = i++ % all.length, c = all[k], p = `${at}/cards/${k}/`;
     back = false;
@@ -24,7 +24,7 @@ App.mount("reviewer", ({ at, q }) => {
       { op: "replace", path: p + "right", value: c.right + ok }], { ev: "review", card: c.front, ok: !!ok });
   };
   q("again").onclick = () => grade(0);
-  q("right").onclick = () => grade(1);
+  q("right").onclick = () => (grade(1), App.cue(q("card"), "success"));
   return draw;
 });
 </script>

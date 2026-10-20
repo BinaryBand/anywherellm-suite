@@ -12,15 +12,15 @@ App.mount("item-list", ({ at, q }) => {
     e.preventDefault();
     const text = q("new").value.trim();
     q("new").value = "";
-    if (text) App.patch([{ op: "add", path: at + "/items/-", value: { text, done: false } }], { ev: "add", text });
+    if (text) App.patch([{ op: "add", path: at + "/items/-", value: { text, done: false } }], { ev: "add", text }), App.cue(q("items").lastElementChild, "added");
   };
   return () => {
     const items = App.get(at + "/items");
     q("none").hidden = items.length > 0;
     q("items").replaceChildren(...items.map((it, i) => {
       const p = `${at}/items/${i}/`, box = el("input", { type: "checkbox", checked: it.done }), label = el("label");
-      box.onchange = () => App.patch([{ op: "test", path: p + "text", value: it.text },
-        { op: "replace", path: p + "done", value: !it.done }], { ev: it.done ? "untick" : "tick", text: it.text });
+      box.onchange = () => (it.done || App.cue(box, "done"), App.patch([{ op: "test", path: p + "text", value: it.text },
+        { op: "replace", path: p + "done", value: !it.done }], { ev: it.done ? "untick" : "tick", text: it.text }));
       label.append(box, el("span", { textContent: it.text, className: it.done ? "done" : "" }));
       return el("li").appendChild(label).parentNode;
     }));

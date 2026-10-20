@@ -56,6 +56,8 @@ export function render(app: Json, workspace: string, key: string, version = vers
     [RUNTIME_TAG]: `<script id="apps-lean" type="application/json">${embed(lean)}</script>` + HOST_SCRIPTS.map((name) => inlineScript(file(name))).join("") + inlineScript(libs["app.js"]),
     [tag("app.css")]: inlineStyle(libs["app.css"]),
     [tag("parts.js")]: inlineScript(libs["parts.js"]),
+    [tag("motion.js")]: inlineScript(libs["motion.js"]),
+    [tag("motion.css")]: inlineStyle(libs["motion.css"]),
   };
   // The app first: the runtime's own comments mention the placeholder. The libraries go in last,
   // in one pass, so no library's text is read for another's tag.

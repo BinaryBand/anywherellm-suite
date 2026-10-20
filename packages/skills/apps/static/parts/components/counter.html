@@ -12,6 +12,7 @@ App.mount("counter", ({ at, q }) => {
     const count = App.get(at + "/count");
     App.patch([{ op: "test", path: at + "/count", value: count },
       { op: "replace", path: at + "/count", value: Math.max(0, count + by) }], { ev: "step", change: by });
+    if (by > 0 && count + by === App.get(at + "/target")) App.cue(q("meter"), "success");
   };
   q("less").onclick = () => step(-1);
   q("more").onclick = () => step(1);
