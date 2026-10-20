@@ -109,7 +109,9 @@ hr{margin:0;border:0;border-top:1px solid var(--well)}
 .days button[aria-pressed=true]{background:var(--soft);color:color-mix(in oklch,var(--accent) 70%,var(--ink));font-weight:700}
 .days button[aria-pressed=true][aria-current=date]{background:var(--accent);color:var(--on-accent);box-shadow:var(--glow)}
 .days button:disabled{opacity:.3}
-.flip{min-height:220px;display:grid;place-items:center;text-align:center;font-size:26px;font-weight:600}
+/* a flashcard keeps a card's shape, portrait, and its grade buttons its width */
+[data-part=reviewer]{width:min(100%,380px);margin-inline:auto}
+.flip{width:100%;aspect-ratio:3/4;padding:24px;display:grid;place-items:center;text-align:center;font-size:30px;font-weight:650;line-height:1.25}
 .fig{border-radius:calc(var(--radius) + 8px);background:var(--bg);box-shadow:var(--lift);padding:10px}
 .fig svg{display:block;width:100%;height:auto}
 .fig .ln{fill:none;stroke:var(--ink);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
