@@ -11,7 +11,7 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 | `edit` | `app.json` or `page.html`: replaces text found exactly once (`find`), or with no `find` the whole file |
 | `undo` | takes back the newest change, to the data or a file; with `file`, that file's newest change |
 | `page` | publishes the app's page; the card's title is its link |
-| `delete` | moves the app to the trash (the newest 20 are kept); never in a scheduled job |
+| `delete` | moves the app to the trash, where it stays 30 days (a full trash of 100 refuses the delete rather than drop one); never in a scheduled job |
 | `guide` | this edition's notes, the starters, the parts and design rules; with `query`, each topic or part it names |
 
 ## Where it keeps things

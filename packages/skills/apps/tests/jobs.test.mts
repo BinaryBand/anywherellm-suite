@@ -41,13 +41,54 @@ test("what pages did is told to a chat, never to a job", async () => {
   assert.match(await call("home", { action: "list" }), /^Changes made on app pages since the last call[^\n]*\n- add Jam on shop\n/);
 });
 
-test("delete keeps the app in the trash, the newest twenty", async () => {
-  for (let i = 0; i < store.TRASH_KEPT + 2; i++) {
-    await call("home", { action: "create", name: `gone-${i}`, title: "Gone", starter: "checklist" });
-    assert.match(await call("home", { action: "delete", name: `gone-${i}` }), /^Deleted the app gone-\d+, its changes and its page\. It's kept in AnythingLLM's storage for now, under apps-lean\/\.trash/);
+const DAY = 24 * 60 * 60 * 1000;
+const trashDir = () => path.join(root, ".trash");
+/** A file in the trash as if its app was deleted `daysAgo` days ago. */
+const trashed = (daysAgo: number, name: string) => {
+  fs.mkdirSync(trashDir(), { recursive: true });
+  fs.writeFileSync(path.join(trashDir(), `${String(Date.now() - daysAgo * DAY).padStart(13, "0")}-home-${name}.json`), "{}");
+};
+const emptyTrash = () => fs.rmSync(trashDir(), { recursive: true, force: true });
+
+test("delete moves the app to the trash", async () => {
+  emptyTrash();
+  await call("home", { action: "create", name: "gone", title: "Gone", starter: "checklist" });
+  assert.match(await call("home", { action: "delete", name: "gone" }), /^Deleted the app gone, its changes and its page\. It's kept in AnythingLLM's storage for now, under apps-lean\/\.trash/);
+  assert.deepEqual(fs.readdirSync(trashDir()).map((f) => f.replace(/^\d{13}-home-/, "")), ["gone.json"]);
+  assert.ok(!store.list("home").some((a) => a.name === "gone"));
+});
+
+test("deleting more apps than the trash used to keep pushes none out", async () => {
+  emptyTrash();
+  for (let i = 0; i < 25; i++) {
+    await call("home", { action: "create", name: `churn-${i}`, title: "Churn", starter: "checklist" });
+    await call("home", { action: "delete", name: `churn-${i}` });
   }
-  const trash = fs.readdirSync(path.join(root, ".trash"));
-  assert.equal(trash.length, store.TRASH_KEPT);
-  assert.deepEqual(trash.map((f) => f.replace(/^\d{13}-home-/, "")).sort(), Array.from({ length: store.TRASH_KEPT }, (_, i) => `gone-${i + 2}.json`).sort(), "the two deleted first went");
-  assert.ok(!store.list("home").some((a) => a.name.startsWith("gone-")));
+  assert.equal(fs.readdirSync(trashDir()).length, 25, "every one deleted within the 30 days is still there");
+});
+
+test("an app is swept from the trash once it's past 30 days, the oldest first, and not before", async () => {
+  emptyTrash();
+  trashed(31, "old");
+  trashed(29, "recent");
+  await call("home", { action: "create", name: "now", title: "Now", starter: "checklist" });
+  await call("home", { action: "delete", name: "now" });
+  assert.deepEqual(fs.readdirSync(trashDir()).map((f) => f.replace(/^\d{13}-home-/, "")).sort(), ["now.json", "recent.json"], "the 31-day-old one went, the 29-day-old one stayed");
+});
+
+test("a trash full of apps within their 30 days refuses a delete and keeps the app", async () => {
+  emptyTrash();
+  for (let i = 0; i < store.TRASH_MAX; i++) trashed(1 + (i % 20), `held-${i}`);
+  await call("home", { action: "create", name: "keep", title: "Keep", starter: "checklist" });
+  assert.match(await call("home", { action: "delete", name: "keep" }), /^Apps: the trash is full: it holds 100 deleted apps, each kept 30 days, so keep stays; the oldest leaves the trash on \d{4}-\d\d-\d\d\./);
+  assert.equal(fs.readdirSync(trashDir()).length, store.TRASH_MAX, "none was dropped");
+  assert.ok(store.list("home").some((a) => a.name === "keep"), "the app is still there");
+  fs.rmSync(path.join(trashDir(), fs.readdirSync(trashDir()).find((f) => f.endsWith("-home-held-0.json"))!));
+  trashed(31, "stale");
+  assert.equal(fs.readdirSync(trashDir()).length, store.TRASH_MAX, "still full, but one of them is past its days");
+  assert.match(await call("home", { action: "delete", name: "keep" }), /^Deleted the app keep/, "a place frees once one is past its days");
+  const names = fs.readdirSync(trashDir()).map((f) => f.replace(/^\d{13}-home-/, ""));
+  assert.equal(names.length, store.TRASH_MAX, "the stale one went, the new one came");
+  assert.ok(names.includes("keep.json") && !names.includes("stale.json"));
+  emptyTrash();
 });
