@@ -30,18 +30,18 @@ export function bytesOf(v: unknown, what: string): Buffer {
   return bytes;
 }
 
-/** How bytes come out: `as` checked. */
-function asOf(opts: unknown): As {
-  const as = (opts as { as?: unknown } | undefined)?.as ?? "hex";
+/** How bytes come out: `as` checked, `fallback` when there's none. */
+function asOf(opts: unknown, fallback: As = "hex"): As {
+  const as = (opts as { as?: unknown } | undefined)?.as ?? fallback;
   if (!AS.includes(as as As)) throw new LibraryError(`as is ${AS.join(", ")}`);
   return as as As;
 }
 
 /** 32 raw bytes given as base64: an Ed25519 key, `what` naming it. */
 function key32(v: unknown, what: string): Buffer {
-  const bytes = typeof v === "string" && /^[A-Za-z0-9+/_-]+={0,2}$/.test(v.trim()) ? Buffer.from(v.trim(), "base64") : Buffer.alloc(0);
-  if (bytes.length !== 32) throw new LibraryError(`${what} is 32 bytes as base64`);
-  return bytes;
+  const key = sshsig.seedOf(String(v ?? ""));
+  if (!key) throw new LibraryError(`${what} is 32 bytes as base64`);
+  return key;
 }
 
 const args = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
@@ -59,7 +59,7 @@ export const cryptoKit = {
   random: (n: unknown, opts?: unknown) => {
     const count = Number(n);
     if (!Number.isInteger(count) || count < 1 || count > MAX_RANDOM) throw new LibraryError(`random takes a number of bytes, 1 to ${MAX_RANDOM}`);
-    return crypto.randomBytes(count).toString((opts as { as?: unknown } | undefined)?.as === undefined ? "base64" : asOf(opts));
+    return crypto.randomBytes(count).toString(asOf(opts, "base64"));
   },
   uuid: () => crypto.randomUUID(),
   ed25519: {

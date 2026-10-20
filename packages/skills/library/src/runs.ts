@@ -15,11 +15,11 @@ import { DATA, clipped, mask, shownHeaders, textOf } from "#shared/answer";
 import { quietly } from "#shared/ask";
 import { checkUrl, onSite } from "#shared/fence";
 import { LibraryError } from "./errors";
-import { bytesOf, cryptoKit } from "./extensions/crypto";
+import { cryptoKit } from "./extensions/crypto";
 import { check } from "./policy";
 import { send } from "./request";
 import { failureText, run as runScript, type Kit, type Outcome } from "./sandbox";
-import * as signing from "./signing";
+import { secretKit } from "./signing";
 import * as store from "./store";
 import type { Fn, RunRecord, Toolkit } from "./store";
 
@@ -197,17 +197,7 @@ function kitFor(kit: Toolkit, f: Fn, budget: Budget, depth: number, state: FnSta
       },
     },
     crypto: cryptoKit,
-    secret: {
-      sign: (a) => {
-        const { key, data } = (a ?? {}) as { key?: unknown; data?: unknown };
-        const fn = `${kit.service}.${f.name}`;
-        const bytes = bytesOf(data, "data");
-        const out = signing.sign(String(key ?? ""), bytes, { fn, trigger: budget.trigger });
-        budget.signed.push({ key: String(key), namespace: out.namespace, fn, bytes: bytes.length });
-        return out;
-      },
-      publicKey: (a) => signing.publicKeyOf(String((a as { key?: unknown } | null)?.key ?? "")),
-    },
+    secret: secretKit({ fn: `${kit.service}.${f.name}`, trigger: budget.trigger }, budget.signed),
     sleep: (ms) =>
       new Promise((resolve, reject) => {
         const stopped = () => (clearTimeout(timer), reject(new LibraryError("the run stopped")));

@@ -111,29 +111,41 @@ export function labelForHost(host: string): string {
   return found[0].label;
 }
 
-/** The refusal for a name that is another kind of secret already: a name is one secret. */
-const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${e.kind === "signing" ? "a signing key" : isSignIn(e) ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
+/** The kinds of the library's secrets: keys, sign-ins and signing keys (signing.ts). A name is one
+ *  of them. */
+const KINDS = ["key", "oauth", "signing"];
 
-/** The signing key (signing.ts) named `label` (any case), if any. */
-const signingNamed = (entries: readonly Readonly<vault.Entry>[], label: string) => entries.find((e) => e.kind === "signing" && e.user.toLowerCase() === label.toLowerCase());
+/** The refusal for a name that is another kind of secret already. */
+export const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${e.kind === "signing" ? "a signing key" : isSignIn(e) ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
 
-/** Refuses a key's name that is a sign-in's or a signing key's already (before the user is asked
- *  for the key). */
+/** The secret named `label` (any case) that is of another kind than `kind`, if any. */
+export const otherNamed = (entries: readonly Readonly<vault.Entry>[], label: string, kind: string): Readonly<vault.Entry> | undefined =>
+  entries.find((e) => KINDS.includes(e.kind) && e.kind !== kind && e.user.toLowerCase() === label.toLowerCase());
+
+/** Refuses a key's name that is another kind of secret's already (before the user is asked for the key). */
 export function assertKeyName(label: string): void {
-  const taken = signIn(label) ?? signingNamed(vault.entries(), label);
+  const taken = otherNamed(vault.entries(), label, "key");
   if (taken) throw nameTaken(taken);
 }
 
 /** Saves `entry` under its label, replacing whole the secret of that name (keeping only its id), when
  *  that is the same kind of secret. */
 function put(v: vault.Vault, entry: { kind: string; site: string; user: string; [field: string]: unknown }): void {
-  const signing = signingNamed(v.entries, entry.user);
-  if (signing) throw nameTaken(signing);
+  const other = otherNamed(v.entries, entry.user, entry.kind);
+  if (other) throw nameTaken(other);
   const at = v.entries.findIndex(named(entry.user));
-  const there = v.entries[at];
-  if (!there) return void v.entries.push({ id: vault.newId(), ...entry });
-  if (there.kind !== entry.kind) throw nameTaken(there);
-  v.entries[at] = { id: there.id, ...entry };
+  if (at < 0) return void v.entries.push({ id: vault.newId(), ...entry });
+  v.entries[at] = { id: v.entries[at].id, ...entry };
+}
+
+/** Counts a use of the secret `id` (its vault entry's) in `bucket`: refused with `refusal(PER_MINUTE)`
+ *  when it was used PER_MINUTE times in the last minute in this process. */
+export function countUse(bucket: string, id: string, refusal: (max: number) => string): void {
+  const now = Date.now();
+  const recent = perProcess(bucket, () => new Map<string, number[]>());
+  const times = (recent.get(id) || []).filter((t) => now - t < 60 * 1000);
+  if (times.length >= PER_MINUTE) throw new LibraryError(refusal(PER_MINUTE));
+  recent.set(id, [...times, now]);
 }
 
 /** Saves a key under `label`, replacing a key of that name. */
@@ -188,11 +200,7 @@ export async function credentialed(label: string, as: string, url: string, heade
   if (!secret) throw new LibraryError(`no key named "${label}" is saved: ask the user for it with secret`);
   const target = new URL(url);
   if (!mayGo(secret.site, target)) throw new LibraryError(`the key "${label}" is for ${secret.site} over https, and goes nowhere else: not to ${target.origin}`);
-  const now = Date.now();
-  const recent = perProcess("library-lean.key-calls", () => new Map<string, number[]>());
-  const times = (recent.get(secret.id) || []).filter((t) => now - t < 60 * 1000);
-  if (times.length >= PER_MINUTE) throw new LibraryError(`the key "${label}" was used ${PER_MINUTE} times in the last minute: wait a minute, and make fewer requests`);
-  recent.set(secret.id, [...times, now]);
+  countUse("library-lean.key-calls", secret.id, (max) => `the key "${label}" was used ${max} times in the last minute: wait a minute, and make fewer requests`);
   const value = isSignIn(secret) ? await accessToken(secret) : String(secret.value);
   const sent = { ...headers };
   const [kind, ...rest] = as.split(":");

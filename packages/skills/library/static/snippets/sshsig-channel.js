@@ -17,8 +17,8 @@ const BEGIN = "-----BEGIN SSH SIGNATURE-----";
 const SKEW_MS = 10 * 60 * 1000;
 // What Python's str.rstrip() takes as space, which a JavaScript trim doesn't quite: a body is
 // normalized as sig.py does it, or a signature won't match.
-const SPACE = "\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
-const rstrip = (t) => t.replace(new RegExp(`[${SPACE}]+$`), "");
+const TRAILING = new RegExp("[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+$");
+const rstrip = (t) => t.replace(TRAILING, "");
 
 /** Text as it is signed: line ends as \n, no space at line ends, no blank lines around, one \n at the end. */
 const norm = (text) => `${text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").map(rstrip).join("\n").replace(/^\n+|\n+$/g, "")}\n`;

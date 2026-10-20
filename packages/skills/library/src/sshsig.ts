@@ -5,14 +5,15 @@
 
 import crypto from "node:crypto";
 
-export const BEGIN = "-----BEGIN SSH SIGNATURE-----";
-export const END = "-----END SSH SIGNATURE-----";
+const BEGIN = "-----BEGIN SSH SIGNATURE-----";
+const END = "-----END SSH SIGNATURE-----";
 // The DER around a raw Ed25519 seed (PKCS #8) and public key (SPKI).
 const PKCS8 = Buffer.from("302e020100300506032b657004220420", "hex");
 const SPKI = Buffer.from("302a300506032b6570032100", "hex");
 // What Python's str.strip() and str.splitlines() take as space and as line ends: an armored block is
 // read as sig.py reads it.
-const SPACE = new RegExp("^[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+|[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+$", "g");
+const WS = "[\\t\\n\\v\\f\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+";
+const SPACE = new RegExp(`^${WS}|${WS}$`, "g");
 const strip = (t: string) => t.replace(SPACE, "");
 const LINE_END = /\r\n|[\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029]/;
 

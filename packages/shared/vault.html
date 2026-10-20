@@ -186,6 +186,9 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   /** A tab's label, with how many it holds. */
   const count = (tab, label, n) => (document.querySelector(`nav [data-tab="${tab}"]`).textContent = `${label} · ${n}`);
 
+  /** The library's secret named `name` (any case) in `ks`, if any: a name is one secret. */
+  const named = (ks, name) => [...ks.secrets, ...(ks.signing ?? []).map((g) => ({ ...g, kind: "signing" }))].find((x) => x.label.toLowerCase() === name.trim().toLowerCase());
+
   function drawKeys(ks) {
     const keys = $("keys"), signins = $("signins");
     count("keys", "Keys", ks.secrets.filter((x) => x.kind === "key").length);
@@ -205,8 +208,8 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     });
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
       if (!v.value || !v.label || !v.site) return toast("Fill in every field"), false;
-      if (ks.secrets.some((x) => x.kind === "oauth" && x.label.toLowerCase() === v.label.trim().toLowerCase())) return toast("That name is a sign-in's: use another"), false;
-      if ((ks.signing ?? []).some((x) => x.label.toLowerCase() === v.label.trim().toLowerCase())) return toast("That name is a signing key's: use another"), false;
+      const taken = named(ks, v.label);
+      if (taken && taken.kind !== "key") return toast(`That name is ${taken.kind === "oauth" ? "a sign-in's" : "a signing key's"}: use another`), false;
       const went = await post("keys", "key-save", { label: v.label, site: v.site, sealed: await seal(v.value) });
       if (went) (adding = false), drawKeys(ks);
       return went;
@@ -243,7 +246,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
       const jobs = el("button", { className: "btn", type: "button", textContent: g.unattended ? "Stop it signing in scheduled jobs" : "Let it sign in scheduled jobs", onclick: () => post("keys", "signing-unattended", { label: g.label, on: !g.unattended }) });
       const tag = el("span", { className: "tag" + (g.public ? " ok" : ""), textContent: !g.public ? "Damaged" : g.unattended ? "Chats and jobs" : "Chats" });
       return el("details", {},
-        el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: g.label }), el("small", { textContent: g.namespace })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
+        el("summary", {}, row(g.label, g.namespace, tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
         el("div", { className: "body" },
           el("dl", { className: "kv" }, el("dt", { textContent: "Signs in" }), el("dd", { textContent: g.namespace }),
             el("dt", { textContent: "Public key" }), el("dd", { textContent: g.public ?? "damaged: delete it and import it again" }),
@@ -251,10 +254,9 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
             el("dt", { textContent: "Scheduled jobs" }), el("dd", { textContent: g.unattended ? "may sign" : "may not sign" })),
           el("div", { className: "pair" }, copy, jobs), del, box));
     });
-    const taken = (name) => [...ks.secrets, ...list].some((x) => x.label.toLowerCase() === name.toLowerCase());
     const addForm = form([["label", "Name, like muse"], ["namespace", "The namespace it signs in, like muse-coordination", "text", true], ["seed", "Seed to import, base64 (empty: make a new key)", "password"]], "Save signing key", async (v) => {
       if (!v.label || !v.namespace) return toast("Fill in the name and the namespace"), false;
-      if (taken(v.label)) return toast("That name is taken: use another"), false;
+      if (named(ks, v.label)) return toast("That name is taken: use another"), false;
       const fields = { label: v.label, namespace: v.namespace };
       const went = v.seed ? await post("keys", "signing-import", { ...fields, sealed: await seal(v.seed) }) : await post("keys", "signing-new", fields);
       if (went) (addingSigning = false), drawSigning(ks);
