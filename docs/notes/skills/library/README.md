@@ -51,4 +51,4 @@ make e2e-skill SKILL=library
 
 It printed ok. The bundle is 982 KB.
 
-On 2026-10-17, SSH targets: `tests/targets.test.mts` (10 tests, against ssh2's `Server` in the test) and the targets part of `tests/e2e/inside.js` against OpenSSH 10 beside the 1.16 image (`tests/e2e/beside.sh`). Both printed ok. The bundle is 1.78 MB. Why ssh2 and what is refused: [docs/notes](../../README.md), "SSH targets for the library".
+On 2026-10-17, SSH targets: `tests/targets.test.mts` (against ssh2's `Server` in the test) and the targets part of `tests/e2e/inside.js` against OpenSSH 10 beside the 1.16 image (`tests/e2e/beside.sh`). Both printed ok. The bundle was 1.78 MB then, and is 1.85 MB with what main has gained since (2026-10-20). Why ssh2 and what is refused: [docs/notes](../../README.md), "SSH targets for the library".

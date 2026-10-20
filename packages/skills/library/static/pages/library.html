@@ -39,15 +39,15 @@
 <header>
   <h1>Library</h1>
   <nav role="tablist">
-    <button role="tab" data-tab="targets" aria-selected="true">Targets</button>
-    <button role="tab" data-tab="toolkits">Toolkits</button>
+    <button role="tab" data-tab="toolkits" aria-selected="true">Toolkits</button>
+    <button role="tab" data-tab="targets">Targets</button>
     <button role="tab" data-tab="runs">Runs</button>
   </nav>
 </header>
 <main>
   <p class="cap" id="vault" hidden>The keys and sign-ins the toolkits call with are in the <a id="vaultlink">Vault</a>.</p>
-  <section id="targets"></section>
-  <section id="toolkits" hidden></section>
+  <section id="targets" hidden></section>
+  <section id="toolkits"></section>
   <section id="runs" hidden></section>
   <p class="cap">What you type for a target's key is sealed on this device; the agent never sees it. Anyone with this page's link can see what it shows and act on it.
     <button class="act quiet" id="rotate">New link</button></p>
@@ -105,16 +105,22 @@
     return type === "checkbox" ? el("label", { className: "check" }, input, label) : el("label", { textContent: label }, input);
   };
 
-  function form(title, fields, submit, onsubmit, need = false) {
+  // `clears`: the form is emptied once its event is posted; a target's waits for the skill to say
+  // it saved it (answered), so a refusal leaves what the user typed.
+  function form(title, fields, submit, onsubmit, need = false, clears = true) {
     const inputs = {};
-    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type]) => field(inputs, name, label, type)), el("button", { className: "act", type: "submit", textContent: submit }));
+    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type]) => field(inputs, name, label, type)), el("p", { className: "bad err", hidden: true }), el("button", { className: "act", type: "submit", textContent: submit }));
     node.onsubmit = async (e) => {
       e.preventDefault();
+      node.querySelector(".err").hidden = true;
       const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.type === "checkbox" ? i.checked : i.value.trim()]));
-      if (await onsubmit(v)) node.reset();
+      if ((await onsubmit(v, node)) && clears) node.reset();
     };
     return node;
   }
+
+  // The target form waiting to hear whether the skill saved what it posted.
+  let waiting = null;
 
   // A target: the machine's address and account, its host key's fingerprint, and a key, pasted here
   // (sealed on this device) or made by the skill, which then shows the public line for the machine.
@@ -126,12 +132,15 @@
         ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
         ["private", "On my network: a private address, or a port this machine forwards", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
       "Save",
-      async (v) => {
+      async (v, node) => {
         const label = need ? need.label : v.label;
         if (!label || !v.host || !v.login || !v.fingerprint) return toast("Give a name, the host, the account and the fingerprint"), false;
-        return post("target-save", { label, host: v.host, port: v.port, login: v.login, fingerprint: v.fingerprint, private: v.private, unattended: v.unattended, sealed: v.key ? await seal(v.key) : "" });
+        const sent = await post("target-save", { label, host: v.host, port: v.port, login: v.login, fingerprint: v.fingerprint, private: v.private, unattended: v.unattended, sealed: v.key ? await seal(v.key) : "" });
+        if (sent) (waiting = node), setTimeout(() => waiting === node && (waiting = null), 30000); // not for ever if no answer comes
+        return false;
       },
       !!need,
+      false,
     );
 
   // Copies `text`; where the clipboard is refused, selects it to copy by hand.
@@ -143,10 +152,8 @@
 
   const remove = (text, ev, fields, asked = `${text}?`) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
 
-  function draw(s) {
-    $("vault").hidden = !s.vault;
-    if (s.vault) $("vaultlink").href = s.vault;
-    const machines = $("targets"), toolkits = $("toolkits"), runs = $("runs");
+  function drawTargets(s) {
+    const machines = $("targets");
     machines.replaceChildren(...s.needs.map((n) => targetForm(n)));
     for (const m of s.targets) {
       machines.append(el("div", { className: "card" },
@@ -157,7 +164,10 @@
         remove("Delete", "target-delete", { label: m.label })));
     }
     machines.append(targetForm(null));
+  }
 
+  function drawToolkits(s) {
+    const toolkits = $("toolkits");
     toolkits.replaceChildren(...(s.toolkits.length ? [] : [el("p", { className: "cap", textContent: "No toolkits yet." })]));
     for (const t of s.toolkits) {
       // A locked toolkit: the agent can't change or remove it, nor this page delete in it, until it's unlocked.
@@ -172,6 +182,10 @@
         lock, " ", t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service })));
     }
 
+  }
+
+  function drawRuns(s) {
+    const runs = $("runs");
     runs.replaceChildren(...(s.runs.length ? [] : [el("p", { className: "cap", textContent: "No runs yet." })]));
     for (const r of s.runs) {
       runs.append(el("details", { className: "card" },
@@ -181,13 +195,45 @@
     }
   }
 
-  let last = "";
+  // The Targets form isn't drawn over while the user is in one of its fields, or while a save is
+  // out and the skill hasn't said how it went (answered): a pasted key would go with it.
+  const busy = () => {
+    const at = document.activeElement;
+    return !!waiting || (["INPUT", "TEXTAREA"].includes(at?.tagName) && $("targets").contains(at));
+  };
+
+  // What the skill said of the last thing it was asked: a refusal in its words, or a target saved.
+  // The first state read has an old one at most, which isn't news.
+  let seen = null;
+  function answered(s) {
+    const n = s.result ? s.result.n : 0;
+    const news = seen !== null && n > seen;
+    seen = n;
+    if (!news) return;
+    const said = s.result, form = waiting && waiting.isConnected && said.ev === "target-save" ? waiting : null;
+    if (said.error) {
+      toast(said.error);
+      if (form) (form.querySelector(".err").textContent = said.error), (form.querySelector(".err").hidden = false);
+    } else if (form) form.reset();
+    if (said.ev === "target-save") waiting = null;
+  }
+
+  // Each part is drawn when it changes, so an open function or a typed form stays as it is.
+  const parts = { targets: (s) => JSON.stringify([s.needs, s.targets]), toolkits: (s) => JSON.stringify(s.toolkits), runs: (s) => JSON.stringify(s.runs) };
+  const drawn = { targets: drawTargets, toolkits: drawToolkits, runs: drawRuns };
+  const shown = {};
   async function load() {
     try {
       const res = await fetch(cfg.token + ".json", { cache: "no-cache" });
       if (res.status === 404) return toast("This link was replaced: ask the agent for the Library page again");
-      const text = await res.text();
-      if (text !== last) (last = text), draw(JSON.parse(text));
+      const s = JSON.parse(await res.text());
+      $("vault").hidden = !s.vault;
+      if (s.vault) $("vaultlink").href = s.vault;
+      answered(s);
+      for (const name of Object.keys(parts)) {
+        const key = parts[name](s);
+        if (key !== shown[name] && !(name === "targets" && busy())) (shown[name] = key), drawn[name](s);
+      }
     } catch (e) {
       toast("Can't reach AnythingLLM");
     }

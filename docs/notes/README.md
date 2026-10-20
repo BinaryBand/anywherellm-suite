@@ -90,7 +90,7 @@ Details: [skills/apps](skills/apps/README.md).
 ## Notebook and archived skills
 
 - **Notebook** (`packages/skills/notebook`) is leaner than the memory skill on purpose: no embedder or vectors (a paraphrase can miss; the agent can try other words), no scopes, no two-call `apply`. If agents don't think to read it, the first thing to try is listing notes in the skill's description, as the library lists its functions.
-- **Archived, not shipped:** the memory skill (it wrote into AnythingLLM's vector database through server modules, no real agent had called it, and AnythingLLM 1.16 has memory of its own) and the SSH targets. If memory comes back: its facts in its own file, its vectors in a file of its own, embeddings from `POST /v1/openai/embeddings`, keyword search when no key is set. `install` doesn't remove a skill it no longer carries, and the live instance keeps its `memory-lean/` data.
+- **Archived, not shipped:** the memory skill (it wrote into AnythingLLM's vector database through server modules, no real agent had called it, and AnythingLLM 1.16 has memory of its own). The SSH targets were archived with it on 2026-10-18 and came back on 2026-10-20, merged onto the Vault, the per-origin fence and locking (next section). If memory comes back: its facts in its own file, its vectors in a file of its own, embeddings from `POST /v1/openai/embeddings`, keyword search when no key is set. `install` doesn't remove a skill it no longer carries, and the live instance keeps its `memory-lean/` data.
 
 ## SSH targets for the library, and ssh2, 2026-10-17
 
@@ -102,9 +102,9 @@ Details: [skills/apps](skills/apps/README.md).
 - **Files (phase 2):** `kit.ssh.put` and `kit.ssh.get` over SFTP (`client.sftp`), at most 1 MB a call, paged with `append` and `offset`/`bytes`. A put writes `<path>.part-<random>` and moves it over the path with `posix-rename@openssh.com`, so a reader never sees half a file and a failed one leaves nothing; a server without that extension (ssh2's own, which the unit tests use) gets a plain rename, or a remove and then a rename, and if that last step fails the new content stays in its part file. One write and one read a call: ssh2 splits them into requests the server takes (254 KB for OpenSSH); `get` answers text when the page is valid UTF-8, else base64, with the page's sha256. A transfer has no TERM: when its time runs out or the run stops, its connection is ended. Paths are the account's own (a relative one, or `~/`, from its home); the machine's permissions are the only jail.
 - **Scheduled jobs** use a target only when the user ticked "May run unattended" for it. The page tries signing in after a save, outside its events' turn, so neither it nor the agent waits up to 20 s on a slow machine.
 - **Tested:** `tests/targets.test.mts` against ssh2's own `Server` as a stand-in machine; `make e2e-skill SKILL=library` against OpenSSH 10 in an Alpine container sharing AnythingLLM's network namespace (`tests/e2e/beside.sh`, a hook `tools/e2e-skill` now sources): a pasted key signs in, output and exit codes come back, and `sleep 30` with a 2 s limit ends on TERM (`signal` "SIGTERM", gone from the machine). ssh2's server ignores a signal after the client's EOF, which OpenSSH doesn't, so TERM is checked only there.
-- **Measured:** `handler.js` grew from 982 KB to 1.78 MB.
+- **Measured:** `handler.js` grew from 982 KB to 1.78 MB (1.85 MB on 2026-10-20, with the Vault, signing and the rest of main).
 - **Left as they are, from the /simplify pass:** a connection per command (one kept per run would save handshakes; later, with the job phase), the vendored code unminified (about 280 KB more than minified), one sidecar in `tools/e2e-skill`, the sign-in status kept in the vault entry.
-- **Not done (later phases):** long jobs (`kit.job`), `target-check`, the stress table. Not tried: a target behind `command=`, which OpenSSH won't send signals to.
+- **Not done (later phases):** long jobs (`kit.job`) and the stress table. (`target-check` is the page's "Try signing in".) Not tried: a target behind `command=`, which OpenSSH won't send signals to.
 
 ## House rules
 

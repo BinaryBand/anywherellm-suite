@@ -7,6 +7,7 @@
 
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import dns from "node:dns";
 import fs from "node:fs";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -33,6 +34,11 @@ function seal(text: string): string {
 const hostKey = utils.generateKeyPairSync("ed25519");
 const otherHostKey = utils.generateKeyPairSync("ed25519");
 const fingerprint = (pub: string) => `SHA256:${crypto.createHash("sha256").update(Buffer.from(pub.split(" ")[1], "base64")).digest("base64").replace(/=+$/, "")}`;
+
+/** Misbehaviour of the stand-in's SFTP, by the path it concerns: removing it fails, and a rename to it
+ *  is answered that many times before the next ones never are. */
+const failRemove = new Set<string>();
+const stallRenames = new Map<string, number>();
 
 /** The stand-in's files, by path, as its SFTP keeps them. */
 const files = new Map<string, { data: Buffer; mode: number }>();
@@ -84,8 +90,13 @@ function serveFiles(sftp: ssh2.SFTPWrapper): void {
     const real = links.get(path) ?? path;
     sftp.name(id, [{ filename: real, longname: real, attrs: {} as ssh2.Attributes }]);
   });
-  sftp.on("REMOVE", (id, path) => sftp.status(id, files.delete(path) ? S.OK : S.NO_SUCH_FILE));
+  sftp.on("REMOVE", (id, path) => sftp.status(id, failRemove.has(path) ? S.FAILURE : files.delete(path) ? S.OK : S.NO_SUCH_FILE));
   sftp.on("RENAME", (id, from, to) => {
+    const left = stallRenames.get(to);
+    if (left !== undefined) {
+      if (left <= 0) return; // never answered
+      stallRenames.set(to, left - 1);
+    }
     if (!files.has(from) || files.has(to)) return sftp.status(id, S.FAILURE);
     files.set(to, files.get(from)!);
     files.delete(from);
@@ -95,7 +106,7 @@ function serveFiles(sftp: ssh2.SFTPWrapper): void {
 
 /** What the stand-in saw, for the tests to check: sign-ins tried, naps going at once, channels
  *  refused, hung commands started, and their connections closed. */
-const seen = { auths: 0, open: 0, most: 0, refused: [] as string[], hung: 0, closed: 0 };
+const seen = { auths: 0, open: 0, most: 0, refused: [] as string[], hung: 0, closed: 0, execs: 0, unanswered: 0, authDelay: 0 };
 let allowed: ssh2.ParsedKey | null = null;
 
 const standIn = (key: string) =>
@@ -105,6 +116,7 @@ const standIn = (key: string) =>
       seen.auths++;
       if (ctx.method !== "publickey" || !allowed || ctx.key.algo !== allowed.type || !ctx.key.data.equals(allowed.getPublicSSH())) return ctx.reject(["publickey"]);
       if (ctx.signature && !allowed.verify(ctx.blob!, ctx.signature, ctx.hashAlgo)) return ctx.reject(["publickey"]);
+      if (ctx.signature && seen.authDelay) return void setTimeout(() => ctx.accept(), seen.authDelay);
       ctx.accept();
     });
     client.on("ready", () => {
@@ -116,6 +128,8 @@ const standIn = (key: string) =>
         });
         session.on("exec", (acceptExec, _reject, info) => {
           const command = info.command;
+          seen.execs++;
+          if (command === "unanswered") return void seen.unanswered++; // neither accepted nor refused
           const s = acceptExec();
           const done = (code: number) => (s.exit(code), s.end());
           if (command === "echo hi") return s.write("hi\n"), done(0);
@@ -126,6 +140,7 @@ const standIn = (key: string) =>
             return s.on("end", () => (s.write(got.toUpperCase()), done(0)));
           }
           if (command === "big") return s.write("x".repeat(300 * 1024)), s.stderr.write("y".repeat(10)), done(0);
+          if (command === "huge") return s.write("x".repeat(1536 * 1024)), done(0);
           if (command === "nap") return void (seen.open++, (seen.most = Math.max(seen.most, seen.open)), setTimeout(() => (seen.open--, done(0)), 300));
           if (command === "open channels") {
             const tries: [string, (cb: (err: Error | undefined) => void) => void][] = [
@@ -176,11 +191,14 @@ const result = (said: string) => JSON.parse(said.match(/Result \(JSON\):\n([\s\S
 
 test.beforeEach(() => {
   reset();
-  Object.assign(seen, { auths: 0, open: 0, most: 0, refused: [], hung: 0, closed: 0 });
+  Object.assign(seen, { auths: 0, open: 0, most: 0, refused: [], hung: 0, closed: 0, execs: 0, unanswered: 0, authDelay: 0 });
+  failRemove.clear();
+  stallRenames.clear();
   files.clear();
   links.clear();
   allowed = null;
   delete process.env.LIBRARY_WAIT_MS;
+  delete process.env.LIBRARY_RUN_MS;
 });
 
 test("a target is asked for and registered on the page, with a key made there whose private half nobody is shown", async () => {
@@ -288,7 +306,7 @@ test("scheduled jobs use a target only when the user ticked it, and a target tak
   assert.match(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } }, null), /"stdout": "hi\\n"/);
   const naps = await Promise.all(Array.from({ length: 6 }, () => call({ action: "run", name: "ops.run", inputs: { req: { command: "nap" } } })));
   for (const n of naps) assert.match(n, /"exit": 0/);
-  assert.ok(seen.most <= 4, `${seen.most} at once`);
+  assert.equal(seen.most, 4, `${seen.most} at once: 4 is the limit, and 6 asked`);
 });
 
 test("the ssh2 internals term() sends TERM through are where it reaches for them, on an ended channel", async () => {
@@ -421,4 +439,175 @@ test("a toolkit saved before targets came is written again with none, once", asy
   assert.deepEqual(now, { ...old, targets: [] }, "everything else is as it was");
   await call({ action: "library", service: "old" });
   assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), now, "a second open changes nothing");
+});
+
+/** Runs the "ops.run" function on the target, as the agent does, with `req` for kit.ssh.exec. */
+const exec = (req: Record<string, unknown>) => call({ action: "run", name: "ops.run", inputs: { req } });
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("a machine that never answers the request to run a command ends at the command's time, and frees its slot and connection", async () => {
+  await register();
+  await ops();
+  process.env.LIBRARY_WAIT_MS = "4000"; // a call that doesn't end shows as "still running", which result() refuses
+  for (let i = 0; i < 5; i++) {
+    const ran = result(await exec({ command: "unanswered", timeout_s: 1 }));
+    assert.deepEqual([ran.killed, ran.exit, ran.remote_may_run], ["timeout", null, true], "the machine may still run it");
+    assert.ok(ran.ms >= 900 && ran.ms < 2500, `${ran.ms} ms`);
+  }
+  assert.equal(seen.unanswered, 5, "more than the 4 slots a target has: none was kept");
+  assert.match(await exec({ command: "echo hi" }), /"stdout": "hi\\n"/);
+});
+
+test("a stopped run frees the slot of a command the machine never answered", async () => {
+  await register();
+  await ops();
+  process.env.LIBRARY_WAIT_MS = "300";
+  for (let i = 1; i <= 4; i++) {
+    const id = (await exec({ command: "unanswered", timeout_s: 60 })).match(/\((r-[\w-]+)\)/)![1];
+    await until(() => seen.unanswered === i);
+    assert.match(await call({ action: "run", run_id: id, stop: true }), /ops\.run.*stopped/);
+  }
+  process.env.LIBRARY_WAIT_MS = "4000";
+  assert.match(await exec({ command: "echo hi" }), /"stdout": "hi\\n"/, "the 4 stopped ones kept no slot");
+});
+
+test("nothing is sent to the machine once the command's time is up, even when signing in took it", async () => {
+  await register();
+  await ops();
+  seen.execs = 0;
+  seen.authDelay = 500; // signing in takes longer than the 0.2 s the command has
+  const said = await exec({ command: "echo hi", timeout_s: 0.2 });
+  assert.match(said, /signing in/);
+  await sleep(700);
+  assert.equal(seen.execs, 0, "the command never reached the machine");
+  seen.authDelay = 0;
+  seen.execs = 0;
+  assert.match(await exec({ command: "echo hi", timeout_s: 0.001 }), /in time|"killed": "timeout"/);
+  assert.equal(seen.execs, 0, "a time that is up before the first try sends nothing");
+});
+
+test("an upload cut off after it removed the file it replaces keeps the new content, on a server without posix-rename", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  files.set("keep.txt", { data: Buffer.from("old"), mode: 0o100644 });
+  stallRenames.set("keep.txt", 1); // the first rename is refused (the file is there), the one after the remove never answered
+  process.env.LIBRARY_WAIT_MS = "300";
+  const id = (await call({ action: "run", name: "ops.file", inputs: { call: "put", req: { path: "keep.txt", content: "new" } } })).match(/\((r-[\w-]+)\)/)![1];
+  await until(() => !files.has("keep.txt") && [...files.keys()].some((k) => k.startsWith("keep.txt.part-")));
+  assert.match(await call({ action: "run", run_id: id, stop: true }), /ops\.file.*stopped/);
+  await sleep(1500); // time for the clean-up connection a cut-off upload opens
+  const part = [...files.keys()].filter((k) => k.startsWith("keep.txt.part-"));
+  assert.equal(part.length, 1, "the part file is kept: it holds the only copy");
+  assert.equal(files.get(part[0])!.data.toString(), "new");
+});
+
+test("an upload cut off after its remove failed leaves the old file and no part file", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  files.set("stay.txt", { data: Buffer.from("old"), mode: 0o100644 });
+  failRemove.add("stay.txt");
+  stallRenames.set("stay.txt", 1);
+  process.env.LIBRARY_WAIT_MS = "300";
+  const id = (await call({ action: "run", name: "ops.file", inputs: { call: "put", req: { path: "stay.txt", content: "new" } } })).match(/\((r-[\w-]+)\)/)![1];
+  await until(() => [...files.keys()].some((k) => k.startsWith("stay.txt.part-")));
+  await sleep(300); // past the failed remove, at the rename that never answers
+  assert.match(await call({ action: "run", run_id: id, stop: true }), /ops\.file.*stopped/);
+  await until(() => ![...files.keys()].some((k) => k.startsWith("stay.txt.part-")), 10_000);
+  assert.equal(files.get("stay.txt")!.data.toString(), "old", "nothing was lost, so nothing is kept");
+});
+
+test("a name that resolves to a private address is refused unless the target is ticked, FENCE_ALLOW naming it or not", async () => {
+  const lookup = dns.lookup;
+  const allow = process.env.FENCE_ALLOW;
+  process.env.FENCE_ALLOW = "127.0.0.1,box.example";
+  dns.lookup = ((host: string, options: unknown, cb: (...a: unknown[]) => void) => (host === "box.example" ? cb(null, [{ address: "127.0.0.1", family: 4 }]) : (lookup as (...a: unknown[]) => void)(host, options, cb))) as typeof dns.lookup;
+  try {
+    const refused = await register({ host: "box.example", private: false });
+    assert.match(refused.status, /box\.example resolves to 127\.0\.0\.1, which isn't a public address/);
+    assert.equal(seen.auths, 0, "no sign-in was tried");
+    const ticked = await register({ host: "box.example", private: true });
+    assert.equal(ticked.status, "signed in", "the tick is what lets it through, at its own host and port");
+  } finally {
+    dns.lookup = lookup;
+    process.env.FENCE_ALLOW = allow;
+  }
+});
+
+test("a target takes 60 uses a minute, a sign-in the page tried among them", async () => {
+  await register(); // its sign-in was the first use
+  const source = `async function main(input, kit) {
+    let ok = 0;
+    let error = null;
+    for (let i = 0; i < 16; i++) {
+      const got = await Promise.all([0, 1, 2, 3].map(() => kit.ssh.exec({ target: "box", command: "echo hi" }).then(() => 1, (e) => ((error = error || String(e.message || e)), 0))));
+      ok += got.reduce((a, b) => a + b, 0);
+    }
+    return { ok, error };
+  }`;
+  await call({ action: "save", service: "ops", toolkit: { title: "Ops", targets: ["box"] }, function: { name: "many", description: "Many commands.", source } });
+  const out = result(await call({ action: "run", name: "ops.many", inputs: {} }));
+  assert.equal(out.ok, 59, "64 asked: 59 and the page's sign-in make the 60");
+  assert.match(out.error, /the target "box" was used 60 times in the last minute/);
+});
+
+test("output and time are clamped, and what can't be one is refused before anything is sent", async () => {
+  await register();
+  await ops();
+  await call({ action: "save", service: "ops", function: { name: "measure", description: "How much output a command gave.", inputs: { req: { type: "object", required: true } }, source: "async function main(input, kit) { const r = await kit.ssh.exec(Object.assign({ target: 'box' }, input.req)); return { length: r.stdout.length, truncated: r.truncated }; }" } });
+  const measure = async (req: Record<string, unknown>) => result(await call({ action: "run", name: "ops.measure", inputs: { req } }));
+  assert.deepEqual(await measure({ command: "huge", max_bytes: 5_000_000 }), { length: 1024 * 1024, truncated: true }, "1 MB at most");
+  assert.deepEqual(await measure({ command: "big" }), { length: 256 * 1024, truncated: true }, "256 KB by default");
+  process.env.LIBRARY_RUN_MS = "2500";
+  const ended = await exec({ command: "hang", timeout_s: 300 }); // never past the run's own end
+  assert.match(ended, /ran past its time and was stopped/, "the run's own end, not the 300 s");
+  assert.ok(seen.hung >= 1);
+  delete process.env.LIBRARY_RUN_MS;
+  seen.execs = 0;
+  for (const [req, said] of [
+    [{ command: "echo hi", timeout_s: 0 }, /timeout_s is a positive number/],
+    [{ command: "echo hi", timeout_s: "soon" }, /timeout_s is a positive number/],
+    [{ command: "echo hi", max_bytes: -1 }, /max_bytes is a positive number/],
+    [{ command: "x".repeat(32 * 1024 + 1) }, /at most 32768 characters/],
+    [{ command: "echo\0hi" }, /kit\.ssh\.exec needs command/],
+    [{ command: "  " }, /kit\.ssh\.exec needs command/],
+    [{ command: "cat", stdin: "x".repeat(1024 * 1024 + 1) }, /stdin is at most 1 MB/],
+    [{ command: "cat", stdin: 5 }, /stdin is text/],
+  ] as [Record<string, unknown>, RegExp][]) assert.match(await exec(req), said, JSON.stringify(req).slice(0, 60));
+  assert.equal(seen.execs, 0, "none of them reached the machine");
+});
+
+test("a transfer that runs past its time is ended and its part file removed", async () => {
+  await register();
+  await ops();
+  await fileFn();
+  process.env.LIBRARY_RUN_MS = "2500";
+  process.env.LIBRARY_WAIT_MS = "6000";
+  const said = await call({ action: "run", name: "ops.file", inputs: { call: "put", req: { path: "stall.bin", content: "z" } } });
+  assert.match(said, /ran past its time and was stopped/, "the run's own end is the transfer's");
+  await until(() => ![...files.keys()].some((k) => k.startsWith("stall.bin.part-")), 10_000);
+});
+
+test("a pasted private key is in no run record, log, page or vault file", async () => {
+  const mine = utils.generateKeyPairSync("ed25519");
+  const body = mine.private.split("\n").filter((l) => l && !l.startsWith("-----"))[0];
+  await register({}, mine);
+  await ops();
+  await fileFn();
+  await exec({ command: "echo hi" });
+  await exec({ command: "fail" });
+  await file("put", { path: "a.txt", content: "x" });
+  await call({ action: "library", service: "ops" });
+  const seenIn: string[] = [];
+  const walk = (dir: string) => {
+    for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
+      const at = path.join(dir, f.name);
+      if (f.isDirectory()) walk(at);
+      else if (fs.readFileSync(at, "utf8").includes(body)) seenIn.push(at);
+    }
+  };
+  walk(storage);
+  walk(path.dirname(path.join(storage, "..", "public")));
+  assert.deepEqual(seenIn, [], "the key is nowhere in the clear");
 });

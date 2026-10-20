@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { call, giveKey, library, pageConfig, pageState, post, postVault, publicDir, reset, saveSignIn, seal, skillDir, storage, vaultConfig, vaultState } from "./harness.mts";
+import { call, giveKey, library, pageConfig, pageState, post, postVault, publicDir, reset, saveSignIn, seal, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
 
 const KEY = "page-key-0123456789";
 test.beforeEach(reset);
@@ -128,6 +128,65 @@ test("while the Vault is open, what the user does is applied without waiting for
     state = vaultState();
   }
   assert.deepEqual(state.secrets.map((s: { label: string }) => s.label), ["live"], "the section's state was written again by the watch");
+});
+
+const FINGERPRINT = `SHA256:${"A".repeat(43)}`;
+const saveTarget = (fields: Record<string, unknown> = {}) => post({ ev: "target-save", label: "box", host: "127.0.0.1", port: "1", login: "sandbox", fingerprint: FINGERPRINT, private: true, sealed: "", ...fields });
+
+test("a target the user deletes with the page open is gone from its state without the agent's next call", async () => {
+  await call({ action: "library" });
+  saveTarget();
+  // Once its sign-in has been tried: a try still going would write the state again after the delete, and hide that the delete doesn't.
+  await until(() => pageState().targets[0]?.status && pageState().targets[0].status !== "not tried yet", 15000);
+  post({ ev: "target-delete", label: "box" });
+  await until(() => pageState().targets.length === 0);
+});
+
+test("a save posted with another page's secret is dropped: no target, and no word of one saved", async () => {
+  await call({ action: "library" });
+  saveTarget({ label: "forged", secret: "not-the-secret" });
+  saveTarget({ label: "real" }); // after it, so that the forgery was taken before this was applied
+  await until(() => pageState().result?.n === 1);
+  assert.deepEqual(pageState().result, { n: 1, ev: "target-save", label: "real", error: null });
+  assert.deepEqual(pageState().targets.map((m: { label: string }) => m.label), ["real"]);
+  saveTarget({ label: "forged", secret: "not-the-secret" });
+  await new Promise((r) => setTimeout(r, 500));
+  assert.equal(pageState().result.n, 1, "a forgery alone makes no result");
+});
+
+test("what the skill refuses on a target the user saves reaches the page in its own words, one reason each; a save that works says so", async () => {
+  await call({ action: "library" });
+  assert.equal(pageState().result, null);
+  const refusals: [Record<string, unknown>, RegExp][] = [
+    [{ sealed: seal("not a key") }, /isn't a private key/],
+    [{ fingerprint: "SHA256:short" }, /needs its host key's fingerprint/],
+    [{ private: false }, /tick "On my network"/],
+    [{ host: "bad host!" }, /host is a name or an address/],
+  ];
+  let n = 0;
+  for (const [fields, why] of refusals) {
+    saveTarget({ label: "bad", ...fields });
+    n++;
+    await until(() => pageState().result?.n === n);
+    assert.equal(pageState().result.ev, "target-save");
+    assert.match(pageState().result.error, why);
+  }
+  assert.deepEqual(pageState().targets, [], "nothing was saved");
+  saveTarget();
+  n++;
+  await until(() => pageState().result?.n === n);
+  assert.deepEqual(pageState().result, { n, ev: "target-save", label: "box", error: null });
+});
+
+test("an event that breaks (not a refusal) is logged, and the events after it are still applied", async () => {
+  await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" } });
+  await call({ action: "save", service: "ex", function: { name: "two", description: "Two.", source: "async function main() { return 2; }" } });
+  await call({ action: "library" });
+  fs.mkdirSync(path.join(library, "toolkits", "ex", "state", "one.json", "x"), { recursive: true }); // removing one's state fails with EISDIR, not a refusal
+  post({ ev: "fn-delete", fn: "ex.one" });
+  post({ ev: "fn-delete", fn: "ex.two" });
+  const said = await call({ action: "library", service: "ex" });
+  assert.doesNotMatch(said, /ex\.two\(/, "the event after the one that broke was applied");
 });
 
 // Drift: what the pages post and read must be what the skill applies and writes.

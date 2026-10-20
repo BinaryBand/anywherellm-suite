@@ -46,11 +46,21 @@ interface Need {
   until: number;
 }
 
+/** How the last thing the page was asked to do that it can show went: a refusal (the skill's own
+ *  words), or a target saved. `n` counts them, so the page knows one is new. */
+interface Result {
+  n: number;
+  ev: string;
+  label: string;
+  error: string | null;
+}
+
 interface PageFile {
   token: string;
   secret: string;
   needs: Need[];
   watchUntil: number;
+  result?: Result;
 }
 
 const pageFile = () => path.join(store.libraryDir(), "page.json");
@@ -86,6 +96,7 @@ function state(p: PageFile, base: string | null) {
     vault: vaultPage.linkOf(base),
     needs: p.needs.filter((n) => n.kind === "target" && n.until > now).map(({ label, site }) => ({ label, site })),
     targets: targets.targets(),
+    result: p.result ?? null,
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
       return { service, title: kit.title, locked: kit.locked === true, reach: store.reach(kit), secrets: kit.secrets.map((s) => s.label), functions: store.functions(service).map((f) => ({ name: f.name, description: f.description, version: f.version, source: f.source })) };
@@ -151,8 +162,8 @@ export const need = (label: string, site: string, kind: Need["kind"] = "key"): P
 const text = (v: unknown, n = 500) => String(v ?? "").trim().slice(0, n);
 
 /** What applying an event did beyond the store: a need it met, a new link, a function gone from the
- *  skill's description, or a target to try signing in to. */
-type Applied = { met?: string; rotate?: true; relist?: true; check?: string } | null;
+ *  skill's description, a target to try signing in to, or a change the page shows. */
+type Applied = { met?: string; rotate?: true; relist?: true; check?: string; changed?: true } | null;
 
 /** Applies one event the Library page posted. */
 async function apply(e: Record<string, unknown>, secret: string): Promise<Applied> {
@@ -180,7 +191,7 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
       return { check: targets.nameOf(label) };
     case "target-delete":
       await targets.remove(label);
-      return null;
+      return { changed: true };
     case "rotate":
       return { rotate: true };
     default:
@@ -226,19 +237,27 @@ export const caughtUp = async (base: string | null): Promise<void> => {
 };
 
 /** Applies every event the Library page posted since the last time, in order, then writes its state
- *  again (or a new page, after a rotate). One that fails is skipped; the page shows the state. */
+ *  again (or a new page, after a rotate). One the skill refuses is skipped, and its words go to the
+ *  page in the state's `result`; so does a target saved, which tells the form it can clear. */
 async function drain(base: string | null): Promise<void> {
   const events = takeEvents(TITLE, "library_lean_event");
   if (!events.length) return;
   const page = read() ?? (await change((p) => p));
   const applied: Applied[] = [];
+  let result: Omit<Result, "n"> | null = null;
   for (const e of events) {
     try {
-      applied.push(await apply(e, page.secret));
+      const done = await apply(e, page.secret);
+      applied.push(done);
+      if (e.ev === "target-save" && done) result = { ev: "target-save", label: text(e.label, 60), error: null }; // a forgery is dropped, and says nothing
     } catch (err) {
-      if (!(err instanceof Told)) throw err;
+      // The events are taken already: one that breaks (not a refusal) is logged, and the rest go on.
+      if (!(err instanceof Told)) console.error(`library-lean couldn't apply a page event (${text(e.ev, 40)}): ${(err as Error).message}`);
+      else result = { ev: text(e.ev, 40), label: text(e.label, 60), error: err.message.slice(0, 400) };
     }
   }
+  const outcome = result;
+  if (outcome) await change((p) => void (p.result = { n: (p.result?.n ?? 0) + 1, ...outcome }));
   const met = new Set(applied.flatMap((a) => (a?.met ? [a.met] : [])));
   const rotate = applied.some((a) => a?.rotate);
   if (applied.some((a) => a?.relist)) listing.refresh();
@@ -248,7 +267,7 @@ async function drain(base: string | null): Promise<void> {
     removePublic(pub(`${page.token}.html`));
     removePublic(pub(`${page.token}.json`));
     await show(base);
-  } else if (applied.some(Boolean)) writeState(read() ?? page, base);
+  } else if (result || applied.some(Boolean)) writeState(read() ?? page, base);
   // A sign-in takes up to 20 s: tried after the turn, so neither the page nor the agent waits on it.
   const checks = new Set(applied.flatMap((a) => (a?.check ? [a.check] : [])));
   if (checks.size) void Promise.all([...checks].map(targets.check)).then(() => refresh(base), (e) => console.error(`library-lean couldn't try a target: ${(e as Error).message}`));
@@ -265,7 +284,7 @@ async function drainKeys(): Promise<void> {
       const label = await applyKeys(e);
       if (label) met.add(label);
     } catch (err) {
-      if (!(err instanceof Told)) throw err;
+      if (!(err instanceof Told)) console.error(`library-lean couldn't apply a Vault event (${text(e.ev, 40)}): ${(err as Error).message}`);
     }
   }
   if (met.size) await change((p) => void (p.needs = p.needs.filter((n) => !(n.kind === "key" && met.has(n.label)))));

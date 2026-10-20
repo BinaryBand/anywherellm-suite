@@ -193,11 +193,19 @@ async function turn(label: string, until: number, signal?: AbortSignal): Promise
 }
 
 /** A signed-in connection to the target `e`, by `until`: its host key checked against the pinned
- *  fingerprint before anything else is said. */
+ *  fingerprint before anything else is said. The connecting and the signing in share that time, and
+ *  none of it is waited for once it has passed. */
 async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Promise<Client> {
   const label = e.user;
-  const timeout = Math.max(1000, Math.min(LIMITS.connectMs, until - Date.now()));
-  const sock = await connect({ host: e.site, port: e.port, allow: e.private ? [e.site] : [], timeout, signal });
+  const outOfTime = () => new LibraryError(`the target "${label}" (${e.site}:${e.port}) wasn't signed in to in time: the call's time ran out first`);
+  const left = () => Math.min(LIMITS.connectMs, until - Date.now());
+  if (left() <= 0) throw outOfTime();
+  const sock = await connect({ host: e.site, port: e.port, allow: e.private ? [e.site] : [], timeout: left(), signal });
+  const timeout = left();
+  if (timeout <= 0) {
+    sock.destroy();
+    throw outOfTime();
+  }
   const client = new Client();
   let seen = "";
   return new Promise((resolve, reject) => {
@@ -209,7 +217,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
       sock.destroy();
       if (seen && seen !== e.fingerprint) return reject(new LibraryError(`the target "${label}" showed a host key that isn't the one saved for it (saved ${e.fingerprint}, shown ${seen}): nothing was sent. If the machine was set up again, the user saves its new fingerprint on the Library page`));
       if (err.level === "client-authentication") return reject(new LibraryError(`the target "${label}" refused its key: the public line goes in ~${e.login}/.ssh/authorized_keys on the machine (the Library page shows it)`));
-      if (err.level === "client-timeout") return reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) didn't finish signing in within ${Math.round(timeout / 1000)} s`));
+      if (err.level === "client-timeout") return reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) didn't finish signing in within ${Math.ceil(timeout / 1000)} s`));
       reject(new LibraryError(`the target "${label}" (${e.site}:${e.port}) couldn't be reached: ${err.message}`));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -330,9 +338,10 @@ class Ended extends LibraryError {}
 class Kept extends LibraryError {}
 
 /** Moves `from` over `to`: in one step with OpenSSH's posix-rename. On a server without it, a plain
- *  rename, which won't replace a file, so when `to` is there it's removed first; if the move then
- *  fails, `from` stays (Kept), since it holds the only copy. */
-async function moveOver(sftp: SFTPWrapper, from: string, to: string): Promise<void> {
+ *  rename, which won't replace a file, so when `to` is there it's removed first (`removed` says it
+ *  may be gone: from the request until it fails); if the move then fails, `from` stays (Kept), since
+ *  it holds the only copy. */
+async function moveOver(sftp: SFTPWrapper, from: string, to: string, removed: { yes: boolean }): Promise<void> {
   const what = `move ${from} to ${to}`;
   try {
     return await asked(what, (cb) => sftp.ext_openssh_rename(from, to, cb));
@@ -340,7 +349,8 @@ async function moveOver(sftp: SFTPWrapper, from: string, to: string): Promise<vo
     if (e instanceof LibraryError) throw e; // posix-rename is there, and the move failed
   }
   if (await asked(what, (cb) => sftp.rename(from, to, cb)).then(() => true, () => false)) return;
-  await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
+  removed.yes = true;
+  await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => (removed.yes = false));
   await asked(what, (cb) => sftp.rename(from, to, cb)).catch((e) => {
     throw new Kept(`${e.message}; the new content is kept at ${from}`);
   });
@@ -359,6 +369,7 @@ export async function put(label: string, req: Record<string, unknown>, use: Use)
   if (mode !== null && !/^[0-7]{3,4}$/.test(mode)) throw new LibraryError('mode is octal, like "644" or "755"');
   const append = req.append === true;
   let part: string | null = null;
+  const removed = { yes: false };
   try {
     return await withSftp(label, use, async (sftp) => {
       // A whole file goes over what the path leads to (a symlink stays one), keeping its mode unless one is given.
@@ -379,16 +390,20 @@ export async function put(label: string, req: Record<string, unknown>, use: Use)
         } finally {
           await asked(`close ${to}`, (cb) => sftp.close(handle, cb));
         }
-        if (!append) await moveOver(sftp, to, real);
+        if (!append) await moveOver(sftp, to, real, removed);
       } catch (e) {
-        if (!append && !(e instanceof Kept)) await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
+        if (!append && !removed.yes && !(e instanceof Kept)) await asked(`remove ${to}`, (cb) => sftp.unlink(to, cb)).catch(() => {});
         throw e;
       }
       return { path, size, sha256: sha256(bytes) };
     });
   } catch (e) {
-    // A transfer cut off has no connection left to remove its part file on: one is opened for that.
-    if (e instanceof Ended && part) await unlinkAfter(label, part);
+    // A transfer cut off has no connection left to remove its part file on: one is opened for that,
+    // unless the old file is gone already, and the part file then holds the only copy.
+    if (e instanceof Ended && part) {
+      if (!removed.yes) await unlinkAfter(label, part);
+      else throw new Kept(`${e.message}; the new content may be kept at ${part}`);
+    }
     throw e;
   }
 }
@@ -442,49 +457,64 @@ function term(stream: ClientChannel): void {
   if (channel.outgoing && ["open", "eof"].includes(channel.outgoing.state)) channel._client?._protocol?.signal(channel.outgoing.id, "TERM");
 }
 
-/** The command on a signed-in connection, to its end or until it's stopped. */
+/** The command on a signed-in connection, to its end or until it's stopped. Its time and the run's
+ *  stop count from before the machine is asked to run it: a machine that never answers that request
+ *  ends it as one that never ends the command does. Once the time is up, or the run stopped, nothing
+ *  more is sent. */
 function run(client: Client, command: string, stdin: string, max: number, until: number, signal: AbortSignal | undefined): Promise<Omit<Ran, "ms">> {
+  const unsent = (killed: "timeout" | "stopped"): Omit<Ran, "ms"> => ({ exit: null, signal: null, stdout: "", stderr: "", truncated: false, killed, remote_may_run: false });
+  if (signal?.aborted) return Promise.resolve(unsent("stopped"));
+  if (Date.now() >= until) return Promise.resolve(unsent("timeout"));
   return new Promise((resolve, reject) => {
-    client.exec(command, (err: Error | undefined, stream: ClientChannel) => {
-      if (err) return reject(new LibraryError(`the target didn't run it: ${err.message}`));
-      let truncated = false;
-      /** Keeps the first `max` bytes of a stream in `into`, and notes when there were more. */
-      const keep = (into: Buffer[]) => {
-        let n = 0;
-        return (chunk: Buffer) => {
-          if (n < max) into.push(chunk.subarray(0, max - n));
-          n += chunk.length;
-          if (n > max) truncated = true;
-        };
+    let stream: ClientChannel | undefined;
+    let truncated = false;
+    const out: Buffer[] = [];
+    const errs: Buffer[] = [];
+    /** Keeps the first `max` bytes of a stream in `into`, and notes when there were more. */
+    const keep = (into: Buffer[]) => {
+      let n = 0;
+      return (chunk: Buffer) => {
+        if (n < max) into.push(chunk.subarray(0, max - n));
+        n += chunk.length;
+        if (n > max) truncated = true;
       };
-      const out: Buffer[] = [];
-      const errs: Buffer[] = [];
+    };
+    let exit: number | null = null;
+    let sig: string | null = null;
+    let exited = false;
+    let killed: Ran["killed"] = null;
+    let settled = false;
+    let hard: NodeJS.Timeout | undefined;
+    const release = () => {
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(hard);
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const finish = () => {
+      if (settled) return;
+      release();
+      resolve({ exit, signal: sig, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(errs).toString("utf8"), truncated, killed, remote_may_run: killed !== null && !exited });
+    };
+    const stop = (why: "timeout" | "stopped") => {
+      if (killed || settled) return;
+      killed = why;
+      if (!stream) return finish(); // the machine hasn't answered the request: it may still run the command
+      term(stream);
+      hard = setTimeout(() => (stream!.close(), finish()), LIMITS.killMs);
+    };
+    const timer = setTimeout(() => stop("timeout"), Math.max(0, until - Date.now()));
+    const onAbort = () => stop("stopped");
+    signal?.addEventListener("abort", onAbort, { once: true });
+    client.exec(command, (err: Error | undefined, opened: ClientChannel) => {
+      if (settled) return opened?.close(); // answered after it was given up on
+      if (err) {
+        release();
+        return reject(new LibraryError(`the target didn't run it: ${err.message}`));
+      }
+      stream = opened;
       stream.on("data", keep(out));
       stream.stderr.on("data", keep(errs));
-      let exit: number | null = null;
-      let sig: string | null = null;
-      let exited = false;
-      let killed: Ran["killed"] = null;
-      let settled = false;
-      let hard: NodeJS.Timeout | undefined;
-      const finish = () => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        clearTimeout(hard);
-        signal?.removeEventListener("abort", onAbort);
-        resolve({ exit, signal: sig, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(errs).toString("utf8"), truncated, killed, remote_may_run: killed !== null && !exited });
-      };
-      const stop = (why: "timeout" | "stopped") => {
-        if (killed || settled) return;
-        killed = why;
-        term(stream);
-        hard = setTimeout(() => (stream.close(), finish()), LIMITS.killMs);
-      };
-      const timer = setTimeout(() => stop("timeout"), Math.max(0, until - Date.now()));
-      const onAbort = () => stop("stopped");
-      signal?.addEventListener("abort", onAbort, { once: true });
-      if (signal?.aborted) onAbort(); // stopped while the machine was starting it
       stream.on("exit", (code: number | null, name?: string) => ((exited = true), (exit = typeof code === "number" ? code : null), (sig = name ?? null)));
       stream.on("close", finish);
       stream.end(stdin || undefined);

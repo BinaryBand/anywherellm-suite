@@ -4,7 +4,7 @@ Pre-written host functions in `kit` (extensions), and functions that use a secre
 
 ## Why it was built
 
-SSH targets were planned, built, hardened and tested on a Pi, then archived a day later because they were used much less than expected (branch `archive/ssh-targets`). The one real use of signing then was the Muse email channel: its functions signed through `kit.ssh.exec` on the Pi, with the seed on the Pi, kept from the model only by an instruction in the toolkit's notes. It stopped with the archive. Muse signing was then wanted back, and was served for a while by a temporary skill outside the suite (`sshsig`, in `anythingllm-temp-skills`), which kept its key in this vault as an entry of kind `signing`. That is the "When to build" row for both, below.
+SSH targets were planned, built, hardened and tested on a Pi, then archived a day later because they were used much less than expected (branch `archive/ssh-targets`); they came back on 2026-10-20, for a VM the agent works on. The one real use of signing then was the Muse email channel: its functions signed through `kit.ssh.exec` on the Pi, with the seed on the Pi, kept from the model only by an instruction in the toolkit's notes. It stopped with the archive. Muse signing was then wanted back, and was served for a while by a temporary skill outside the suite (`sshsig`, in `anythingllm-temp-skills`), which kept its key in this vault as an entry of kind `signing`. That is the "When to build" row for both, below.
 
 ## Extensions: host functions that only compute
 
