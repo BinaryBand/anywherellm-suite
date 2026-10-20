@@ -56,7 +56,7 @@ test("a run the chat stops waiting for goes on, is notified, and is shown once a
   assert.doesNotMatch(meanwhile, /Finished since/, "not until it ends");
 
   await until(() => sent.length === 1);
-  assert.deepEqual(sent[0], { title: "clock.slow: ok", click: "https://llm.example.com/workspace/work", authorization: "Bearer tk_1", body: '{"slept":2}' });
+  assert.deepEqual(sent[0], { title: "clock.slow: ok", click: "https://llm.example.com/workspace/work", authorization: "Bearer tk_1", body: "Its result is on the Library page." });
   const next = await call({ action: "library" });
   assert.match(next, new RegExp(`^Finished since last shown [^\\n]*\\n- clock\\.slow: ok, [^\\n]*\\[${id}\\]: \\{"slept":2\\}\\n`));
   assert.doesNotMatch(await call({ action: "library" }), /Finished since/, "shown once");
@@ -71,6 +71,7 @@ test("a background run's end is in the installed skill's description, which the 
   assert.match(description(), new RegExp(`\\. Ended, not shown to the user yet: clock\\.slow \\(ok, ${id}\\): call library, which shows them\\.$`));
   assert.match(await call({ action: "library" }), /^Finished since last shown/);
   assert.doesNotMatch(description(), /Ended, not shown/, "shown now");
+  await until(() => sent.length === 1); // so its notification isn't left for the next test
 });
 
 test("run with run_id waits for a background run again and shows it; stop: true stops one", async () => {
