@@ -270,7 +270,7 @@ async function drain(base: string | null): Promise<void> {
   } else if (result || applied.some(Boolean)) writeState(read() ?? page, base);
   // A sign-in takes up to 20 s: tried after the turn, so neither the page nor the agent waits on it.
   const checks = new Set(applied.flatMap((a) => (a?.check ? [a.check] : [])));
-  if (checks.size) void Promise.all([...checks].map(targets.check)).then(() => refresh(base), (e) => console.error(`library-lean couldn't try a target: ${(e as Error).message}`));
+  if (checks.size) void Promise.all([...checks].map((l) => targets.check(l, base))).then(() => refresh(base), (e) => console.error(`library-lean couldn't try a target: ${(e as Error).message}`));
 }
 
 /** Applies every event of the Vault's keys section since the last time, in order, then writes the

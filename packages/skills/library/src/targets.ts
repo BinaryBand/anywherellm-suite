@@ -15,11 +15,15 @@
 import { isUtf8 } from "node:buffer";
 import crypto from "node:crypto";
 import dns from "node:dns";
+import fs from "node:fs";
 import net from "node:net";
+import os from "node:os";
+import path from "node:path";
 import { Client, utils, type ClientChannel, type SFTPWrapper } from "ssh2";
-import { perProcess } from "#shared/anythingllm";
+import { perProcess, storageDir } from "#shared/anythingllm";
 import { NetError, hostRefused } from "#shared/fence";
-import { connect } from "#shared/net";
+import { connect, send } from "#shared/net";
+import { removePublic, writePublic } from "#shared/pages";
 import { thisHostRefusal } from "#shared/thishost";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
@@ -29,6 +33,8 @@ const LIMITS = {
   connectMs: 10 * 1000,
   /** How long removing a cut-off upload's part file may take, sign-in included. */
   cleanupMs: 5 * 1000,
+  /** How long trying a target may take: signing in (connectMs) and what it can reach. */
+  checkMs: 30 * 1000,
   /** A command's time, in seconds as kit.ssh.exec's timeout_s: by default and at most. */
   execS: 30,
   execMaxS: 300,
@@ -65,6 +71,10 @@ export interface Target {
   public: string | null;
   /** How the last try went: "signed in", or why not; "not tried yet". */
   status: string;
+  /** Why it isn't used (it reaches this AnythingLLM's pages, or is this machine's account), or null. */
+  barred: string | null;
+  /** What the last try found that the user should know, short sentences. */
+  notes: string[];
 }
 
 interface Entry extends vault.Entry {
@@ -77,6 +87,10 @@ interface Entry extends vault.Entry {
   unattended: boolean;
   public: string | null;
   status: string | null;
+  barred: string | null;
+  notes: string[];
+  /** Whether what the machine reaches was looked at (check) since it was saved. */
+  probed: boolean;
 }
 
 const named = (label: string) => (e: Readonly<vault.Entry>): e is Entry => e.kind === "ssh" && e.user === label;
@@ -91,6 +105,8 @@ const shown = (e: Readonly<Entry>): Target => ({
   unattended: e.unattended,
   public: e.public,
   status: e.status ?? "not tried yet",
+  barred: e.barred,
+  notes: e.notes,
 });
 
 /** A target's name, checked. */
@@ -168,7 +184,7 @@ export async function save(given: Given): Promise<string> {
     const made = utils.generateKeyPairSync("ed25519", { comment: `library-lean ${label}` });
     [key, pub] = [made.private, made.public.trim()];
   }
-  const entry = { kind: "ssh" as const, site: host, user: label, port, login, key, fingerprint, private: onNetwork, unattended: given.unattended === true, public: pub, status: null };
+  const entry = { kind: "ssh" as const, site: host, user: label, port, login, key, fingerprint, private: onNetwork, unattended: given.unattended === true, public: pub, status: null, barred: null, notes: [], probed: false };
   await vault.update((v) => {
     const at = v.entries.findIndex(named(label));
     if (at >= 0) v.entries[at] = { id: v.entries[at].id, ...entry };
@@ -186,14 +202,124 @@ export const remove = (label: string): Promise<boolean> =>
     return v.entries.length < before;
   });
 
-/** Signs in to a target once, without running anything, and keeps how it went for the page and the
- *  agent to see. It counts as a use, with the rate and slots of one. */
-export async function check(label: string): Promise<void> {
+/** AnythingLLM's own address as the last call knew it (ANYTHINGLLM_URL), which a target is asked to
+ *  fetch a page from; null when it isn't known. Kept for the calls of this process. */
+const known = () => perProcess("library-lean.ssh-base", () => ({ base: null as string | null }));
+export const noteBase = (base: string | null): void => void (known().base = base);
+
+/** An address a fixed command can carry safely: scheme, host (or [IPv6]) and port, nothing else. */
+const ADDRESS = /^https?:\/\/(\[[0-9a-f:]+\]|[a-z0-9.-]+)(:\d{1,5})?$/i;
+
+/** What looking at a target's reach found: why it is barred (or null), and what the user should know. */
+interface Found {
+  barred: string | null;
+  notes: string[];
+  /** Whether its reach of AnythingLLM was looked at: not without AnythingLLM's address. */
+  probed: boolean;
+}
+
+const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+
+/** Whether the machine can fetch a page of this AnythingLLM: a random token is put in a file in the
+ *  library page's folder, and the machine is asked (curl or wget, a fixed command) to read it. */
+async function reaches(client: Client, base: string, until: number, signal?: AbortSignal): Promise<"yes" | "no" | string> {
+  const rel = `library-lean/reach-${crypto.randomBytes(8).toString("hex")}.txt`;
+  const token = crypto.randomBytes(16).toString("hex");
+  try {
+    writePublic(rel, token);
+    const url = quoted(`${base}/${rel}`);
+    const command = `if command -v curl >/dev/null 2>&1; then echo curl >&2; curl -fsS -m 5 ${url}; elif command -v wget >/dev/null 2>&1; then echo wget >&2; wget -qO- -T 5 ${url}; else exit 127; fi`;
+    const ran = await run(client, command, "", 4096, until, signal);
+    if (ran.stdout.trim() === token) return "yes";
+    if (ran.killed) return "its time ran out";
+    if (ran.exit === 127) return "it has neither curl nor wget";
+    const tool = ran.stderr.startsWith("wget") ? "wget" : "curl";
+    // Plain failures to connect: curl 6 (name), 7 (connect), 28 (time); wget 4 (network).
+    if (ran.exit !== null && (tool === "wget" ? ran.exit === 4 : [6, 7, 28].includes(ran.exit))) return "no";
+    return `${tool} ended with ${ran.exit ?? ran.signal}, which doesn't say`;
+  } catch (e) {
+    return (e as Error).message;
+  } finally {
+    try {
+      removePublic(rel);
+    } catch {}
+  }
+}
+
+/** Why the machine is this one's own, or what it can see of its storage; null when neither shows. A
+ *  marker file in the vault's folder is looked for over SFTP at the storage's path here and in the
+ *  container image, and the machine's hostname and user are compared with this one's. */
+async function ownsStorage(client: Client, until: number, signal?: AbortSignal): Promise<string | null> {
+  const marker = `.reach-marker-${crypto.randomBytes(8).toString("hex")}`;
+  const here = path.join(vault.vaultDir(), marker);
+  fs.writeFileSync(here, "x", { mode: 0o600 });
+  try {
+    const sftp = await asked<SFTPWrapper>("start SFTP", (cb) => client.sftp(cb)).catch(() => null);
+    for (const at of new Set([here, path.posix.join("/app/server/storage/vault-lean", marker)])) {
+      if (sftp && (await asked(`stat ${at}`, (cb) => sftp.stat(at, cb)).then(() => true, () => false))) return `it can see AnythingLLM's storage (${path.dirname(at)})`;
+    }
+  } finally {
+    fs.rmSync(here, { force: true });
+  }
+  const who = await run(client, "hostname; id -u", "", 1024, until, signal);
+  const [host, uid] = who.stdout.trim().split("\n");
+  if (host === os.hostname() && typeof process.getuid === "function" && Number(uid) === process.getuid()) return `it is this machine's own account (hostname ${host}, user ${uid})`;
+  return null;
+}
+
+/** AnythingLLM without a password, from its own unauthenticated answer; false when it can't tell. */
+async function openToAll(base: string): Promise<boolean> {
+  try {
+    const host = new URL(base).hostname.replace(/^\[|\]$/g, "");
+    const answer = await send({ url: `${base}/api/setup-complete`, allow: [host], timeout: 5000, maxBytes: 64 * 1024 });
+    const body = JSON.parse(answer.body.toString("utf8"));
+    const r = body?.results ?? body;
+    return r?.RequiresAuth === false && r?.MultiUserMode !== true;
+  } catch {
+    return false;
+  }
+}
+
+/** What a signed-in target can reach, and what the user should know about the setup. */
+async function looked(client: Client, base: string | null, until: number, signal?: AbortSignal): Promise<Found> {
+  const found: Found = { barred: null, notes: [], probed: false };
+  const own = await ownsStorage(client, until, signal).catch((e: Error) => {
+    found.notes.push(`couldn't tell whether it sees AnythingLLM's storage or is this account: ${e.message}`);
+    return null;
+  });
+  if (own) found.barred = `${own}, which holds the vault and the pages' secrets. Use another machine or account`;
+  if (base && ADDRESS.test(base)) {
+    found.probed = true;
+    const reach = await reaches(client, base, until, signal);
+    if (reach === "yes") found.barred ??= `it can fetch this AnythingLLM's pages (${base}), which carry the page secret. Change the machine's firewall (or the tailnet's access rules) so it can't reach ${new URL(base).host}, then try it again`;
+    else if (reach !== "no") found.notes.push(`couldn't tell whether it reaches this AnythingLLM: ${reach}`);
+    if (await openToAll(base)) found.notes.push("this AnythingLLM has no password: whoever reaches it is its administrator");
+  } else found.notes.push("couldn't tell whether it reaches this AnythingLLM: its address isn't known here (ANYTHINGLLM_URL)");
+  if (!process.env.VAULT_KEY_FILE) found.notes.push("the vault's key is kept beside the vault (VAULT_KEY_FILE isn't set): a machine that can read AnythingLLM's storage reads every key");
+  try {
+    const mode = fs.statSync(storageDir()).mode;
+    if (mode & 0o044) found.notes.push(`AnythingLLM's storage folder is readable by other accounts here (mode ${(mode & 0o777).toString(8)})`);
+  } catch {}
+  return found;
+}
+
+/** Keeps what looking at a target found. */
+const keep = (label: string, found: Found): Promise<void> =>
+  vault.update((v) => {
+    const now = v.entries.find(named(label));
+    if (now) Object.assign(now, { barred: found.barred, notes: found.notes, probed: found.probed });
+  });
+
+/** Signs in to a target once, without running anything else but what shows what it can reach, and
+ *  keeps how it went for the page and the agent to see. It counts as a use, with the rate and
+ *  slots of one. `base` is AnythingLLM's own address, when known. */
+export async function check(label: string, base: string | null = null): Promise<void> {
   if (!found(label)) return;
   let said = "signed in";
+  let seen: Found | null = null;
   try {
-    const until = Date.now() + LIMITS.connectMs;
-    await withTarget(label, { deadline: until, job: false }, until, async () => {});
+    const until = Date.now() + LIMITS.checkMs;
+    await withTarget(label, { deadline: until, job: false }, until, async (client) => void (seen = await looked(client, base ?? known().base, until)), true);
   } catch (err) {
     if (!(err instanceof NetError || err instanceof LibraryError)) throw err;
     said = err.message;
@@ -202,6 +328,7 @@ export async function check(label: string): Promise<void> {
     const now = v.entries.find(named(label));
     if (now) now.status = said;
   });
+  if (seen) await keep(label, seen);
 }
 
 /** A turn at one of a target's command slots: waits for one to free up, at most until `until`. */
@@ -287,15 +414,22 @@ export interface Use {
 
 /** Runs `use` on a signed-in connection to the target `label`, ended after: the target's own checks
  *  (saved; unattended only when ticked), its rate and its slots, by `until`. */
-async function withTarget<T>(label: string, { job, signal }: Use, until: number, use: (client: Client) => Promise<T>): Promise<T> {
+async function withTarget<T>(label: string, { job, signal }: Use, until: number, use: (client: Client) => Promise<T>, checking = false): Promise<T> {
   const e = found(label);
   if (!e) throw new LibraryError(`no target "${label}" is saved: ask the user for it with secret, kind "ssh"`);
+  if (e.barred && !checking) throw new LibraryError(`the target "${label}" isn't used: ${e.barred}`);
   if (job && !e.unattended) throw new LibraryError(`scheduled jobs don't use the target "${label}": the user ticks "May run unattended" for it on the Library page`);
   countUse("library-lean.ssh-uses", e.id, (max) => `the target "${label}" was used ${max} times in the last minute: wait a minute, and do more in each command`);
   const done = await turn(label, until, signal);
   try {
     const client = await open(e, until, signal);
     try {
+      // The first use since it was saved looks at what it reaches too, when AnythingLLM's address is known.
+      if (!checking && !e.probed && known().base) {
+        const seen = await looked(client, known().base, until, signal);
+        await keep(label, seen);
+        if (seen.barred) throw new LibraryError(`the target "${label}" isn't used: ${seen.barred}`);
+      }
       return await use(client);
     } finally {
       client.end();

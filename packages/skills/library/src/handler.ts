@@ -76,7 +76,7 @@ function targetStatus(kit: store.Toolkit, machines: Machines): string {
     .map((name) => {
       const t = machines.get(name);
       const bar = store.targetBar(kit, name);
-      return t ? `${name} (${t.login}@${t.host}:${t.port}, ${t.status}${t.unattended ? ", may run unattended" : ""}${bar ? `, not usable here: ${bar}` : ""})` : `${name} (not registered: ask for it with secret, kind "ssh")`;
+      return t ? `${name} (${t.login}@${t.host}:${t.port}, ${t.status}${t.unattended ? ", may run unattended" : ""}${t.barred ? `, not used: ${t.barred}` : ""}${bar ? `, not usable here: ${bar}` : ""})` : `${name} (not registered: ask for it with secret, kind "ssh")`;
     })
     .join(", ");
 }
@@ -364,6 +364,7 @@ export const runtime = {
     const act = ACTIONS[action];
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
+      targets.noteBase(baseOf(this));
       await fromPage(this);
       await askDevices(action === "library");
       // In a chat in AnywhereLLM, the agent's own call asks the user for a host the fence refuses.

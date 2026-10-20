@@ -11,6 +11,13 @@ import { tempDir } from "./fakes/tmp.mts";
 const PAYLOAD: Payload = { skills: [{ name: "library", hubId: "library-lean", files: { "handler.js": "// library\n" }, pages: true }] };
 const tmp = tempDir("install");
 
+/** A machine with one SSH host key, for the record install makes of it. */
+function standIn() {
+  const sshDir = fs.mkdtempSync(path.join(tmp, "ssh-"));
+  fs.writeFileSync(path.join(sshDir, "ssh_host_ed25519_key.pub"), `ssh-ed25519 ${Buffer.from("stand-in host key").toString("base64")} root@stand-in\n`);
+  return { sshDir, interfaces: { eth0: [{ address: "192.0.2.10" }] as never }, hostname: "stand-in" };
+}
+
 let fake: FakeAnythingLLM;
 let home: string;
 let storage: string;
@@ -29,6 +36,7 @@ beforeEach(async () => {
     print: (l) => printed.push(l),
     payload: PAYLOAD,
     platform: "linux", // paths as on Linux, whatever runs the tests
+    host: standIn(), // not this machine's own keys and addresses
   };
 });
 afterEach(() => fake.stop());
@@ -128,3 +136,106 @@ test("with no skill that has pages, no key is asked for or checked", async () =>
   assert.ok(!printed.some((l) => l.includes("the pages' key")), printed.join("\n"));
 });
 
+
+// The record of this machine, which the library reads to refuse a target that is this machine.
+import crypto from "node:crypto";
+import { fingerprintOf, recordOf, thisHostPath } from "../src/thishost.mts";
+
+const KEY_BLOB = Buffer.from("test host key").toString("base64");
+const KEY_PRINT = `SHA256:${crypto.createHash("sha256").update(Buffer.from(KEY_BLOB, "base64")).digest("base64").replace(/=+$/, "")}`;
+
+function host(keys: Record<string, string> = { "ssh_host_ed25519_key.pub": `ssh-ed25519 ${KEY_BLOB} root@gir\n` }, addresses = ["127.0.0.1", "192.168.0.29", "100.89.16.22", "fe80::1%wlp3s0"]) {
+  const sshDir = fs.mkdtempSync(path.join(tmp, "ssh-"));
+  for (const [name, text] of Object.entries(keys)) fs.writeFileSync(path.join(sshDir, name), text);
+  return { sshDir, interfaces: { eth0: addresses.map((address) => ({ address }) as never) }, hostname: "gir" };
+}
+
+test("a fingerprint is ssh-keygen's: SHA256 of the key, base64 without padding", () => {
+  assert.equal(fingerprintOf(`ssh-ed25519 ${KEY_BLOB} comment`), KEY_PRINT);
+  assert.equal(fingerprintOf("not a key line"), null);
+  assert.equal(fingerprintOf(""), null);
+});
+
+test("install records the host's keys and addresses, again on every run, and says when nothing changed", async () => {
+  ctx.host = host();
+  await install(ctx, opts());
+  const file = thisHostPath(storage);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { fingerprints: [KEY_PRINT], addresses: ["100.89.16.22", "127.0.0.1", "192.168.0.29", "fe80::1"], hostname: "gir" });
+  assert.equal(fs.statSync(file).mode & 0o777, 0o644);
+  assert.match(printed.join("\n"), /recorded this machine \(1 SSH host key, 4 addresses\)/);
+  printed.length = 0;
+  await install(ctx, opts());
+  assert.match(printed.join("\n"), /unchanged: this machine/);
+  ctx.host = host({ "ssh_host_ed25519_key.pub": `ssh-ed25519 ${KEY_BLOB} root@gir\n`, "ssh_host_rsa_key.pub": `ssh-rsa ${Buffer.from("another").toString("base64")} root@gir\n` });
+  await install(ctx, opts());
+  assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).fingerprints.length, 2, "install writes it again when the host has changed");
+});
+
+test("a host with no readable keys is recorded with none, and install still succeeds", async () => {
+  ctx.host = host({ "ssh_host_ed25519_key.pub": "garbage\n", "unrelated.pub": `ssh-ed25519 ${KEY_BLOB}\n` });
+  await install(ctx, opts());
+  assert.deepEqual(recordOf(ctx.host).fingerprints, []);
+  assert.match(printed.join("\n"), /no SSH host key in/);
+  ctx.host = { ...ctx.host, sshDir: path.join(tmp, "no-such-dir") };
+  await install(ctx, opts());
+  assert.deepEqual(JSON.parse(fs.readFileSync(thisHostPath(storage), "utf8")).fingerprints, []);
+});
+
+test("health reports the record missing, drifted, empty, and ok once install has written it", async () => {
+  ctx.host = host();
+  await install(ctx, opts({ pageKey: "brx-good" }));
+  printed.length = 0;
+  assert.equal(await health(ctx, opts()), true, printed.join("\n"));
+  fs.rmSync(thisHostPath(storage));
+  printed.length = 0;
+  assert.equal(await health(ctx, opts()), false);
+  assert.match(printed.join("\n"), /FAIL the record of this machine.*missing.*Run install on this machine: it writes it again/);
+  await install(ctx, opts({ pageKey: "brx-good" }));
+  // The tailnet address changed.
+  ctx.host = host(undefined, ["127.0.0.1", "192.168.0.29", "100.64.0.9"]);
+  printed.length = 0;
+  assert.equal(await health(ctx, opts()), false);
+  assert.match(printed.join("\n"), /FAIL the record of this machine.*differs from what this machine has now: its addresses.*writes the record again/);
+  await install(ctx, opts({ pageKey: "brx-good" }));
+  printed.length = 0;
+  assert.equal(await health(ctx, opts()), true);
+  // A host key replaced.
+  ctx.host = host({ "ssh_host_ed25519_key.pub": `ssh-ed25519 ${Buffer.from("new key").toString("base64")}\n` }, ["127.0.0.1", "192.168.0.29", "100.64.0.9"]);
+  printed.length = 0;
+  assert.equal(await health(ctx, opts()), false);
+  assert.match(printed.join("\n"), /its SSH host keys/);
+  // A machine with no key at all.
+  ctx.host = host({}, ["127.0.0.1"]);
+  await install(ctx, opts({ pageKey: "brx-good" }));
+  printed.length = 0;
+  assert.equal(await health(ctx, opts()), false);
+  assert.match(printed.join("\n"), /no SSH host key/);
+});
+
+test("a link at the record's path is refused, not written through, and install carries on", async () => {
+  ctx.host = host();
+  const file = thisHostPath(storage);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const elsewhere = path.join(tmp, "elsewhere.json");
+  fs.writeFileSync(elsewhere, "keep me");
+  fs.symlinkSync(elsewhere, file);
+  await install(ctx, opts());
+  assert.equal(fs.readFileSync(elsewhere, "utf8"), "keep me");
+  assert.match(printed.join("\n"), /didn't record this machine.*link/);
+  assert.ok(fs.lstatSync(file).isSymbolicLink());
+  fs.rmSync(file);
+  fs.linkSync(elsewhere, file);
+  printed.length = 0;
+  await install(ctx, opts());
+  assert.equal(fs.readFileSync(elsewhere, "utf8"), "keep me");
+  assert.match(printed.join("\n"), /didn't record this machine.*link/);
+  fs.rmSync(file);
+  // A folder that is a link.
+  const real = fs.mkdtempSync(path.join(tmp, "real-"));
+  fs.rmSync(path.dirname(file), { recursive: true });
+  fs.symlinkSync(real, path.dirname(file));
+  printed.length = 0;
+  await install(ctx, opts());
+  assert.deepEqual(fs.readdirSync(real), []);
+  assert.match(printed.join("\n"), /didn't record this machine.*link/);
+});

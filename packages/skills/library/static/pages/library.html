@@ -159,6 +159,8 @@
       machines.append(el("div", { className: "card" },
         el("div", { className: "row" }, el("strong", { textContent: m.label }), el("span", { className: m.status === "signed in" ? "good" : "bad", textContent: m.status })),
         el("p", { className: "cap", textContent: `${m.login}@${m.host}:${m.port}; ${m.fingerprint}${m.private ? "; on my network" : ""}${m.unattended ? "; may run unattended" : ""}` }),
+        m.barred ? el("p", { className: "bad", textContent: `Not used: ${m.barred}.` }) : null,
+        ...m.notes.map((n) => el("p", { className: "cap", textContent: n })),
         m.held ? el("p", { className: "cap", textContent: `Kept for locked toolkits (${m.held}): an unlocked toolkit can't use it.` }) : null,
         m.public ? el("div", {}, el("p", { className: "cap", textContent: `Add this line to ~${m.login}/.ssh/authorized_keys on the machine (restrict keeps it to commands and files):` }), copyable(`restrict ${m.public}`)) : null,
         el("button", { className: "act", type: "button", textContent: "Try signing in", onclick: () => post("target-check", { label: m.label }) }),
