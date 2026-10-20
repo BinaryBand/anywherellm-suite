@@ -4,7 +4,7 @@
 // folder and served by AnythingLLM itself, with its state file; a tap posted to the real
 // browser-extension upload, written by the real collector and applied by the skill's folder watch
 // with no call; an event without the app's secret refused; Comment in the collector's real Chrome,
-// absent without AnywhereLLM's channel and handing its comment to a stand-in one; the page check in its worker on the image's own Node; a
+// absent without AnywhereLLM's channel and handing its comment to a stand-in one; the page check, which reads a page's scripts and runs none; a
 // delete that leaves its page saying so. Prints "ok" or throws.
 const assert = require("assert");
 const fs = require("fs");
@@ -127,7 +127,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   while (Date.now() < landed && !news.includes("on reading")) news = await call("home", { action: "list" });
   assert.match(news, /Changes made on app pages since the last call[^\n]*\n- [^\n]* on reading/, news);
 
-  // The page check, in its worker on this Node.
+  // The page check, reading the bundled parser on this Node.
   const refused = await call("home", { action: "edit", name: "groceries", file: "page.html", find: "<!--scripts-->", text: "<script>App.onchange(draw);</script>\n<!--scripts-->" });
   assert.match(refused, /page\.html uses draw, which no script declares/);
 

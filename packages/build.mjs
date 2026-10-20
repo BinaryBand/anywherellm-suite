@@ -32,7 +32,7 @@ const here = path.dirname(self);
  *  ssh2, the client kit.ssh runs commands with, with ssh2's own dependencies.
  *  @type {Record<string, string[]>} */
 const VENDORED = {
-  apps: ["node_modules/fast-json-patch/"],
+  apps: ["node_modules/fast-json-patch/", "node_modules/acorn/"],
   library: [
     "node_modules/quickjs-emscripten-core/",
     "node_modules/@jitl/quickjs-ffi-types/",

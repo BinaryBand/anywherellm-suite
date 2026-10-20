@@ -8,9 +8,9 @@
 // and page are made from those parts, so a starter follows the parts as they change.
 
 import vm from "node:vm";
-import { Worker } from "node:worker_threads";
 import { staticFiles, type StaticFiles } from "#shared/static";
 import { overrides } from "./dirs.ts";
+import { undeclared } from "./names.ts";
 import type { Json } from "./patch.ts";
 
 const KINDS: Record<string, [string, string]> = {
@@ -329,94 +329,6 @@ const BROWSER = (
   "crypto performance structuredClone atob btoa screen visualViewport speechSynthesis open close print focus blur getSelection origin isSecureContext name event"
 ).split(" ");
 
-/** How long the page check lets one of a page's scripts, or one draw, run, and the whole check:
- *  a page that loops forever is stopped rather than holding AnythingLLM's process. */
-const CHECK_MS = 500;
-const CHECK_ALL_MS = 4000;
-
-// The page check runs a page's scripts in a worker thread, in a vm context of the worker's own,
-// against a stand-in browser made inside that context: a page reaches only objects of the
-// context, never one of the skill's or AnythingLLM's, and a page that loops, in a script, a draw
-// or a promise's callback, is stopped by vm's timeout or, failing that, by ending the worker.
-// (A vm timeout that cuts into a microtask can break Node's async hooks, which ends the process;
-// in a worker of its own it ends only the worker.) Node's vm is no security boundary, its docs
-// say: this keeps the check from being a way into the skill or a way to hold the process, and
-// nothing more: page.html is the model's own. `__anything()` is a stand-in for every browser
-// object: any property, call or construction gives it back, it counts as 0 or "" and iterates as
-// empty.
-const CHECKER = String.raw`
-const { workerData } = require("node:worker_threads");
-const vm = require("node:vm");
-const { scripts, browser, ms } = workerData;
-const found = [];
-try {
-  const ctx = vm.createContext({}, { microtaskMode: "afterEvaluate", codeGeneration: { strings: false, wasm: false } });
-  const inside = (code) => new vm.Script(code).runInContext(ctx, { timeout: ms });
-  inside(${"`"}
-    var __later = [];
-    function __anything() {
-      var p = new Proxy(function () {}, {
-        get: function (_t, k) { return k === Symbol.toPrimitive ? function () { return 0; } : k === Symbol.iterator ? function* () {} : k === "then" ? undefined : k === "length" ? 0 : p; },
-        apply: function () { return p; },
-        construct: function () { return p; },
-        set: function () { return true; },
-      });
-      return p;
-    }
-    var console = { log: function () {}, warn: function () {}, error: function () {}, info: function () {} };
-    var App = {
-      data: __anything(), title: "", line: 0, card: {}, start: function () { return __anything(); }, get: function () { return __anything(); },
-      set: function () { return Promise.resolve(true); }, patch: function () { return Promise.resolve(true); }, log: function () { return Promise.resolve([]); },
-      onchange: function (fn) { __later.push(fn); }, onstatus: function () {}, cue: function () {}, oncue: function () {},
-      mount: function (_name, fn) { __later.push(function () { var draw = fn({ root: __anything(), at: "", q: function () { return __anything(); } }); if (typeof draw === "function") draw(); }); },
-    };
-    var window = globalThis, self = globalThis;
-  ${"`"});
-  inside("for (const n of " + JSON.stringify(browser) + ") if (!(n in globalThis)) globalThis[n] = __anything();");
-  const run = (fn, where) => {
-    for (let tries = 0; tries < 20; tries++) {
-      try {
-        return fn();
-      } catch (e) {
-        const name = e && e.name === "ReferenceError" ? (/^(\S+) is not defined/.exec(e.message) || [])[1] : null;
-        if (!name) return; // only an undeclared name is judged here; a timeout ends the try
-        if (/^[A-Z$_]/.test(name)) { inside("globalThis[" + JSON.stringify(name) + "] = __anything();"); continue; } // a browser constructor the list lacks
-        const line = /script(\d+):(\d+)/.exec(e.stack || "");
-        found.push("page.html uses " + name + ", which no script declares" + where + (line ? " (script " + line[1] + ", line " + line[2] + ")" : "") + ": the page stops there");
-        return;
-      }
-    }
-  };
-  scripts.forEach((code, i) => run(() => new vm.Script(code, { filename: "script" + (i + 1) }).runInContext(ctx, { timeout: ms }), ""));
-  const later = Number(inside("__later.length"));
-  for (let i = 0; i < later; i++) run(() => inside("__later[" + i + "]()"), " when it draws");
-} finally {
-  require("node:worker_threads").parentPort.postMessage([...new Set(found)]);
-}
-`;
-
-/** Each name page.html's scripts use without declaring, found by running them once, in order,
- *  against a stand-in browser, the way a page loads: each component is mounted and drawn, and each
- *  onchange called. What a stand-in can't decide (a TypeError) isn't judged, nor a script or draw
- *  that runs too long, nor a check that doesn't end in time. The call waits for the worker; the
- *  process goes on meanwhile. */
-function unknownNames(scripts: string[]): Promise<string[]> {
-  const worker = new Worker(CHECKER, {
-    eval: true,
-    workerData: { scripts, browser: BROWSER, ms: CHECK_MS },
-    resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16 },
-    stdout: true,
-    stderr: true,
-  });
-  return new Promise<string[]>((resolve) => {
-    const timer = setTimeout(() => resolve([]), CHECK_ALL_MS);
-    const done = (found: string[]) => (clearTimeout(timer), resolve(found));
-    worker.once("message", done);
-    worker.once("error", () => done([]));
-    worker.once("exit", () => done([]));
-  }).finally(() => void worker.terminate());
-}
-
 /** Advice when page.html sets colours of its own (#fff, rgb(...)) outside a var() fallback: one of
  *  the two themes then can't be read, as a white card under light text in dark mode. Empty when
  *  there are none, or when app.json keeps a choice the user asked for, as a rule tagged with the
@@ -446,7 +358,7 @@ export async function pageProblems(page: unknown): Promise<string[]> {
   if (!page.includes(RUNTIME_TAG)) out.push(`page.html must load the runtime: ${RUNTIME_TAG}`);
   if (page.split(PLACEHOLDER).length !== 2) out.push(`page.html must start the app once: App.start(${PLACEHOLDER})`);
   const scripts = scriptsOf(page);
-  let parses = true; // a script that doesn't parse can't be run
+  let parses = true; // a script that doesn't parse can't be read for its names (compiled here, never run)
   scripts.forEach((code, i) => {
     try {
       new vm.Script(code, { filename: `script${i + 1}` });
@@ -472,7 +384,7 @@ export async function pageProblems(page: unknown): Promise<string[]> {
     const lost = [...new Set([...all.matchAll(/\$\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]))].filter((id) => !known.has(id));
     if (lost.length && !/\bid\s*[:=]|setAttribute\(\s*["']id["']/.test(all)) out.push(`page.html's scripts look up ${lost.map((id) => `$("${id}")`).join(", ")}, but no element has ${lost.map((id) => `id="${id}"`).join(", ")}`);
   }
-  if (parses) out.push(...(await unknownNames(scripts)));
+  if (parses) out.push(...undeclared(scripts, BROWSER));
   const names = scripts.flatMap((code) => [...code.matchAll(/App\.mount\(\s*["']([^"']+)["']/g)].map((m) => m[1]));
   const twice = repeats(names);
   if (twice.length) out.push(`page.html has the script for ${twice.join(", ")} more than once: each component's script goes in once`);

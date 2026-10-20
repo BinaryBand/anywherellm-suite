@@ -40,28 +40,46 @@ test("a script that doesn't parse is said once, with its line", async () => {
   assert.match(found[0], /^page\.html's script 2 of 2 doesn't parse: Illegal return statement at: return \(\) => \{$/);
 });
 
-test("the check's stand-ins reach nothing of the skill's: a page can't get at Node through them", async () => {
+test("the page check runs none of a page's scripts: it reads them", async () => {
   const tries = [
-    'App.set.constructor("return process")().env.APPS_ESCAPED = "set";',
-    'console.log.constructor("return process")().env.APPS_ESCAPED = "log";',
-    'App.data.constructor.constructor("return process")().env.APPS_ESCAPED = "proxy";',
-    'this.constructor.constructor("return process")().env.APPS_ESCAPED = "global";',
-    'App.mount("x", (part) => () => part.q.constructor("return process")().env.APPS_ESCAPED = "mount");',
+    'globalThis.process.env.APPS_RAN = "top";',
+    'App.mount("x", () => () => { globalThis.process.env.APPS_RAN = "draw"; });',
+    'App.onchange(() => { globalThis.process.env.APPS_RAN = "onchange"; });',
+    'this.constructor.constructor("return process")().env.APPS_RAN = "constructor";',
+    "while (true) {}",
   ];
-  for (const code of tries) {
-    await parts.pageProblems(bare('<div data-part="x"></div>', `${code}\nApp.mount("x", () => () => {});`));
-    assert.equal(process.env.APPS_ESCAPED, undefined, code);
-  }
-});
-
-test("a page that loops forever is stopped, in its script, a draw or an onchange, and the check goes on", async () => {
   const started = Date.now();
-  for (const code of ["while (true) {}", 'App.mount("x", () => () => { for (;;) {} });', "App.onchange(() => { while (true) {} });", "Promise.resolve().then(() => { for (;;) {} });"]) {
+  for (const code of tries) {
     const found = await parts.pageProblems(bare('<div data-part="x"></div>', `${code}\nApp.mount("x", () => () => {});`));
     assert.deepEqual(found.filter((p) => !p.includes("more than once")), [], code);
+    assert.equal(process.env.APPS_RAN, undefined, code);
   }
-  assert.ok(Date.now() - started < 10_000, "each is stopped at its timeout");
-  assert.deepEqual(await parts.pageProblems(bare("", "App.onchange(() => draw());")), ["page.html uses draw, which no script declares when it draws (script 2, line 1): the page stops there"], "the rest is still judged");
+  assert.ok(Date.now() - started < 2000, "nothing waits on a script");
+});
+
+test("a name read only in a function is found too, and names the page declares or gives the window are not", async () => {
+  assert.deepEqual(await parts.pageProblems(bare("", "App.onchange(() => draw());")), ["page.html uses draw, which no script declares when that code runs (script 2, line 1): the page stops there"]);
+  const fine = [
+    "function go() { return later; }\nvar later = 1;",
+    "window.shared = 1;\nApp.onchange(() => shared);",
+    'globalThis["other"] = 1; App.onchange(() => other);',
+    "implicit = 2; App.onchange(() => implicit);",
+    "const { a, b: [c = a] } = App.data; App.onchange(() => a + c);",
+    "try { App.get(); } catch (e) { console.log(e); } catch2: for (const k in App.data) { if (k) continue catch2; }",
+    "class Box { #n = 1; static make() { return new Box(); } get n() { return this.#n; } } App.onchange(() => Box.make().n);",
+    "if (typeof maybe === 'undefined') console.log(Math.max(parseInt('1'), Number.NaN));",
+    "App.onchange(function named() { return named, arguments.length; });",
+    "switch (App.title) { case 'a': { let x = 1; console.log(x); break; } default: }",
+    "const o = { key: 1, [App.title]: 2, method() { return this.key; } }; console.log(o.key, o?.method?.());",
+    "with (App.data) { console.log(anything); }",
+    "label: { break label; }",
+  ];
+  for (const code of fine) assert.deepEqual(await parts.pageProblems(bare("", code)), [], code);
+  assert.deepEqual(await parts.pageProblems(bare("", "let n = 0; n += missing; count++;")), [
+    "page.html uses missing, which no script declares (script 2, line 1): the page stops there",
+    "page.html uses count, which no script declares (script 2, line 1): the page stops there",
+  ]);
+  assert.deepEqual(await parts.pageProblems(bare("", "{ let inner = 1; }\nconsole.log(inner);")), ["page.html uses inner, which no script declares (script 2, line 2): the page stops there"], "a block's let stays in the block");
 });
 
 test("every component, alone in a page, passes the page check", async () => {

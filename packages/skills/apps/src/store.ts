@@ -92,8 +92,8 @@ function remember(app: Json, id: string | undefined, why?: string): Json {
   return { ...app, seen: [...(app.seen || []), id].slice(-SEEN), ...(why === undefined ? {} : { refused: [...(app.refused || []), { id, why }].slice(-REFUSED) }) };
 }
 
-// The page check runs a page's scripts in a worker, which is slow next to a lock that should be held
-// for milliseconds: the newest pages' problems are kept, by a hash of their text, so a page checked
+// The page check parses a page's scripts, which is slow next to a lock that should be held for
+// milliseconds: the newest pages' problems are kept, by a hash of their text, so a page checked
 // before its app's lock is taken (update's pageFirst) is found checked under it.
 const PAGES_KEPT = 8;
 const checkedPages = new Map<string, string[]>();
@@ -110,7 +110,7 @@ async function problemsOfPage(page: unknown): Promise<string[]> {
 
 /** Why the definition can't hold `data`: every problem, empty when it can. The data is checked
  *  whenever the schema itself can be read, whatever else is wrong; the page only when `page`, as
- *  when it's new or changed (the check runs its scripts in a worker, which is the slow part). */
+ *  when it's new or changed (the check parses its scripts, which is the slow part). */
 async function definitionProblems(app: Json, page: boolean): Promise<string[]> {
   const out: string[] = [];
   if (typeof app.title !== "string" || !app.title.trim() || app.title.length > TITLE_MAX) out.push(`title: 1-${TITLE_MAX} characters`);
@@ -400,19 +400,36 @@ export function workspaces(): string[] {
   }
 }
 
-/** How many deleted apps the trash keeps, the newest. */
-export const TRASH_KEPT = 20;
+/** How long a deleted app stays in the trash, from its deletion, and how many the trash holds. */
+export const TRASH_DAYS = 30;
+export const TRASH_MAX = 100;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const trash = (): string => path.join(root(), ".trash");
 
-/** Takes the app out of its workspace into the trash, which keeps the newest TRASH_KEPT: a delete
- *  the user didn't mean can be put back by hand. */
+/** When a trash file was deleted: its name starts with that, in ms (null for any other name). */
+const deletedAt = (file: string): number | null => (/^\d{13}-/.test(file) ? Number(file.slice(0, 13)) : null);
+
+/** Takes the app out of its workspace into the trash, where it stays TRASH_DAYS from now: a delete
+ *  the user didn't mean can be put back by hand. Those past their days are swept first. A trash
+ *  full of apps still within theirs refuses the delete, so deleting many apps can't push a real
+ *  one out. */
 export async function remove(workspace: string, name: unknown): Promise<void> {
   return withLock(workspace, name, () => {
     read(workspace, name);
     fs.mkdirSync(trash(), { recursive: true });
-    // Named by when it was deleted, to the millisecond, so the trash's names sort oldest first.
-    fs.renameSync(fileOf(workspace, name), path.join(trash(), `${String(Date.now()).padStart(13, "0")}-${workspace}-${name}.json`));
-    const kept = fs.readdirSync(trash()).filter((f) => f.endsWith(".json")).sort();
-    for (const f of kept.slice(0, Math.max(0, kept.length - TRASH_KEPT))) fs.rmSync(path.join(trash(), f), { force: true });
+    return locked(`${trash()}.lock`, "the trash", () => {
+      const now = Date.now();
+      let held = fs.readdirSync(trash()).filter((f) => f.endsWith(".json")).sort();
+      for (const f of held.filter((f) => (deletedAt(f) ?? now) < now - TRASH_DAYS * DAY_MS)) fs.rmSync(path.join(trash(), f), { force: true });
+      held = held.filter((f) => fs.existsSync(path.join(trash(), f)));
+      if (held.length >= TRASH_MAX) {
+        const frees = deletedAt(held[0]);
+        throw new AppError(
+          `the trash is full: it holds ${held.length} deleted apps, each kept ${TRASH_DAYS} days, so ${name} stays${frees ? `; the oldest leaves the trash on ${new Date(frees + TRASH_DAYS * DAY_MS).toISOString().slice(0, 10)}` : ""}. The user can empty it by hand (apps-lean/.trash)`,
+        );
+      }
+      // Named by when it was deleted, to the millisecond, so the trash's names sort oldest first.
+      fs.renameSync(fileOf(workspace, name), path.join(trash(), `${String(now).padStart(13, "0")}-${workspace}-${name}.json`));
+    });
   });
 }
