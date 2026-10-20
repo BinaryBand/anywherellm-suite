@@ -22,7 +22,7 @@ export interface StaticFiles {
 }
 
 /** A file's lines end in \n whatever editor saved it or checkout wrote it: the parts' headers and the guides are matched on that. */
-const lf = (text: string): string => text.replace(/\r\n/g, "\n");
+export const lf = (text: string): string => text.replace(/\r\n/g, "\n");
 
 /** Only plain relative paths: no "..", no absolute path, nothing hidden. */
 const safe = (name: string): boolean => /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)*$/i.test(name) && !name.split("/").includes("..");

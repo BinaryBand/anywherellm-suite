@@ -11,6 +11,7 @@ import test from "node:test";
 import { asksDir } from "#shared/ask";
 import { updateJson } from "#shared/atomic";
 import { allowedFile } from "#shared/fence";
+import { lf } from "#shared/static";
 import { check } from "../src/sandbox.ts";
 import { agentRun, call, cardsShown, giveKey, idOf, installed, library, reset, runRecord, skillDir, storage, until } from "./harness.mts";
 
@@ -187,7 +188,7 @@ test("a toolkit saved again keeps what isn't given; a function or a toolkit is r
 // The guide, and the static files it's made of.
 
 const shipped = (sub: string): string[] => fs.readdirSync(path.join(skillDir, "static", sub)).sort();
-const read = (name: string): string => fs.readFileSync(path.join(skillDir, "static", name), "utf8").replace(/\r\n/g, "\n");
+const read = (name: string): string => lf(fs.readFileSync(path.join(skillDir, "static", name), "utf8"));
 
 test("guide with no topic gives the overview; with a topic, that topic", async () => {
   assert.equal(await call({ action: "guide" }), read("guide/index.md").trim());

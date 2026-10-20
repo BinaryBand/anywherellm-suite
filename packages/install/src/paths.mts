@@ -26,11 +26,5 @@ export function desktopStorage({ platform, env, home }: Place): string {
   return p.join(settings, "anythingllm-desktop", "storage");
 }
 
-/** Whether two paths name one folder; file names on Windows and macOS ignore case. */
-export function samePath(platform: NodeJS.Platform, a: string, b: string): boolean {
-  const fold = (p: string) => (platform === "linux" ? path.resolve(p) : path.resolve(p).toLowerCase());
-  return fold(a) === fold(b);
-}
-
 /** `~`, `~/x` or `~\x` with the home folder in place of the `~`. */
 export const expandHome = (file: string, home: string): string => file.replace(/^~(?=[\\/]|$)/, home);

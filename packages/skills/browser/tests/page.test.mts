@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import * as logins from "#shared/logins";
+import { lf } from "#shared/static";
 import { call, post, site, skillDir, tabState, vaultLogins } from "./harness.mts";
 
 const pageSource = () => fs.readFileSync(path.join(skillDir, "static", "pages", "tab.html"), "utf8");
@@ -31,7 +32,7 @@ test("every field the page reads from its state is one the skill writes", async 
   assert.ok(state.need, "a need that couldn't be met stays");
   for (const [, field] of html.matchAll(/\bneed\.([a-zA-Z_]+)/g)) assert.ok(field in state.need, `need.${field}`);
   // docs/browser-tab.md lists the state's fields and the need's, for clients: the same as written
-  const contract = fs.readFileSync(path.join(skillDir, "..", "..", "..", "docs", "browser-tab.md"), "utf8").replace(/\r\n/g, "\n");
+  const contract = lf(fs.readFileSync(path.join(skillDir, "..", "..", "..", "docs", "browser-tab.md"), "utf8"));
   const listed = (heading: string): string[] => {
     const at = contract.indexOf(`\n${heading}\n`);
     assert.ok(at >= 0, `the contract has a section ${heading}`);

@@ -4,9 +4,9 @@ import { Told } from "./errors.mts";
 
 /** AnythingLLM's port when SERVER_PORT doesn't say another (tools/versions.env INNER_PORT). */
 const ANYTHINGLLM_PORT = 3001;
-export const DEFAULT_TIMEOUT = 30_000; // how long a call to AnythingLLM may take, in ms
+const DEFAULT_TIMEOUT = 30_000; // how long a call to AnythingLLM may take, in ms
 
-export interface Reply {
+interface Reply {
   status: number;
   /** null when the body is empty or isn't JSON. */
   json: unknown;
