@@ -30,9 +30,11 @@ export interface Secret {
   status: string;
   /** Where a sign-in is (stateOf), for the Vault's tag. */
   at?: SignInState["at"];
-  /** A sign-in's scopes, and the host it signs in at. */
+  /** A sign-in's scopes, the host it signs in at, and the host it gets its tokens from (where the
+   *  user's client goes). */
   scopes?: string;
   authorize?: string;
+  token?: string;
   /** Whether a sign-in signs in with a code the user enters (no redirect), and whether its client
    *  is the suite's own, which the user doesn't give. */
   device?: boolean;
@@ -96,7 +98,7 @@ function statusText(state: SignInState): string {
 /** A sign-in as the agent and the pages see it. */
 function signInSecret(e: Readonly<SignIn>): Secret {
   const state = stateOf(e);
-  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), at: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
+  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), at: state.at, scopes: e.oauth.scopes, authorize: new URL(e.oauth.authorize_url).host, token: new URL(e.oauth.token_url).host, device: !!e.oauth.device_url, shared: !!e.shared };
 }
 
 /** The saved secrets, without their values. */
@@ -132,11 +134,17 @@ export async function saveKey(site: string, label: string, value: string): Promi
   await vault.update((v) => put(v, { kind: "key", site, user: label, value }));
 }
 
+/** Whether `signIn` is at the same place as `site` and `oauth`: its tokens go to the same site, and
+ *  it signs in and gets them at the same addresses. */
+const samePlace = (signIn: Readonly<SignIn>, site: string, oauth: Definition): boolean =>
+  signIn.site === site && signIn.oauth.authorize_url === oauth.authorize_url && signIn.oauth.token_url === oauth.token_url && signIn.oauth.device_url === oauth.device_url;
+
 /** Saves how a sign-in signs in; one of the same name keeps its client (or takes `sharedClient`,
  *  the suite's own from a preset), and its tokens and the code or link it waits on while how it
  *  signs in and its client are unchanged. One sign-in per provider: a new name for a provider
  *  signed in at already is refused, naming the one there, and so is a definition for a preset's
- *  sign-in. */
+ *  sign-in, and one that moves a sign-in holding the user's client to another site or address: the
+ *  client, and the tokens it got, go only where the user gave it for. */
 export async function saveSignIn(site: string, label: string, oauth: Definition, sharedClient?: string): Promise<void> {
   await vault.update((v) => {
     const host = new URL(oauth.authorize_url).host;
@@ -145,6 +153,10 @@ export async function saveSignIn(site: string, label: string, oauth: Definition,
     const same = v.entries.find(named(label));
     const kept = same && isSignIn(same) ? same : null;
     if (kept?.shared && !sharedClient) throw new LibraryError(`"${label}" signs in with a preset, the suite's own client: don't give it a definition. To change its scopes, call secret with kind "oauth", its preset and the scopes; to see whether it signed in, call library`);
+    if (kept?.client_id && !sharedClient && !samePlace(kept, site, oauth)) {
+      const o = kept.oauth;
+      throw new LibraryError(`"${label}" has the user's client, given for site ${kept.site}, authorize_url ${o.authorize_url}, token_url ${o.token_url}${o.device_url ? `, device_url ${o.device_url}` : ""}: a definition given again keeps those and changes only its scopes and params. For another site or provider, the user deletes it on the Vault first`);
+    }
     const client = sharedClient ? { client_id: sharedClient, client_secret: null } : { client_id: kept?.client_id ?? null, client_secret: kept?.client_secret ?? null };
     const unchanged = kept && JSON.stringify(kept.oauth) === JSON.stringify(oauth) && kept.client_id === client.client_id;
     const flow = unchanged ? { tokens: kept.tokens, pending: kept.pending ?? null, device: kept.device ?? null, error: kept.error ?? null } : { tokens: null, pending: null, device: null, error: null };

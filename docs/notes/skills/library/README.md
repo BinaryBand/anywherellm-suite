@@ -31,6 +31,10 @@ Each run has its own runtime: 32 MB of memory, 1 MB of stack, a deadline (10 min
 
 A memory bomb dies of "out of memory" after about 9.5 s near the limit (QuickJS collects hard there); the deadline stops it sooner, so the deadline is the bound.
 
+## Redefining a sign-in, 2026-10-20
+
+A definition given again for a sign-in kept the user's client and, when nothing else changed, its tokens, but took the new `site` and addresses: an injected agent could move a signed-in sign-in to its own site and have `call` send it the token, or move `token_url` and get the client secret at the next sign-in. Now a sign-in holding the user's client keeps its site, `authorize_url`, `token_url` and `device_url`; a definition may change its scopes and params (a change drops the tokens, as before), and for anything else the user deletes it on the Vault, where the next client is given beside the site and the token address's host. Refused rather than dropping the client, so an agent can't wipe a working sign-in either. Before the user gives a client, a definition may still change freely; presets set their own.
+
 ## Check
 
 On 2026-10-15: the spike, bundled, on the 1.16 image's Node 18.20.8 (the async kit, the loop interrupt, the memory limit, the line of an error, no escape), and `tests/sandbox.test.mts` (12 tests, including 50 runs at once and 10 that time out mid-wait without harming the run after them) and `tests/handler.test.mts` (6) against the source and the built bundle on Node 22. Not run then: the skill inside AnythingLLM.

