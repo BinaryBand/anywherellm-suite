@@ -209,7 +209,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     }, [sealedNote()]);
     const add = el("button", { className: "add", type: "button", onclick: () => ((adding = !adding), drawKeys(ks)) }, icon(adding ? "M4 8h8" : "M8 3v10M3 8h10"), adding ? "Cancel" : "Add a key");
     keys.replaceChildren(...needs, el("div", { className: "lab", textContent: "API keys" }), el("div", { className: "card" }, ...saved, ...(saved.length ? [] : [el("p", { className: "empty", textContent: "No keys yet. The agent asks for one when a task needs it." })]), el("div", {}, add, adding ? addForm : null)),
-      el("p", { className: "cap", textContent: "A key goes only to its own site, over https, at most 60 times a minute. Saving under a name already used replaces that key." }));
+      el("p", { className: "cap", textContent: "A key goes only to its own site, over https, at most 60 times a minute. Saving under the name of a key replaces that key." }));
 
     const oauth = ks.secrets.filter((x) => x.kind === "oauth");
     const items = oauth.map((o) => {
@@ -217,7 +217,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
       const { del, box } = remove(`Delete the sign-in ${o.label}? The agent can't reach ${o.site} with it after. Remove its access in the provider's own settings too.`, `Delete the sign-in ${o.label}`, () => post("keys", "key-delete", { label: o.label }), { text: "Delete sign-in", className: "btn bad" });
       return el("details", {},
         el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.site}${o.scopes ? " · " + o.scopes : ""}` })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
-        el("div", { className: "body" }, el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status })), del, box));
+        el("div", { className: "body" }, el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status }), ...(o.scopes ? [el("dt", { textContent: "Scopes" }), el("dd", { textContent: o.scopes })] : [])), del, box));
     });
     signins.replaceChildren(el("div", { className: "lab", textContent: "Sign-ins" }),
       el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No sign-ins yet. The agent starts one when a task needs it." })])),

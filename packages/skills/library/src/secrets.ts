@@ -111,14 +111,19 @@ export function labelForHost(host: string): string {
   return found[0].label;
 }
 
-/** Saves `entry` under its label, replacing whole the secret of that name (keeping only its id). */
+/** The refusal for a name that is the other kind of secret already: a name is one secret. */
+export const nameTaken = (label: string, kind: string): LibraryError => new LibraryError(`"${label}" is ${kind === "oauth" ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
+
+/** Saves `entry` under its label, replacing whole the secret of that name (keeping only its id), when
+ *  that is the same kind of secret. */
 function put(v: vault.Vault, entry: { kind: string; site: string; user: string; [field: string]: unknown }): void {
   const at = v.entries.findIndex(named(entry.user));
+  if (at >= 0 && v.entries[at].kind !== entry.kind) throw nameTaken(v.entries[at].user, v.entries[at].kind);
   if (at >= 0) v.entries[at] = { id: v.entries[at].id, ...entry };
   else v.entries.push({ id: vault.newId(), ...entry });
 }
 
-/** Saves a key under `label`, replacing a secret of that name. */
+/** Saves a key under `label`, replacing a key of that name. */
 export async function saveKey(site: string, label: string, value: string): Promise<void> {
   await vault.update((v) => put(v, { kind: "key", site, user: label, value }));
 }

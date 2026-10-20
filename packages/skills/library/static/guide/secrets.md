@@ -1,6 +1,6 @@
 # Keys and sign-ins
 
-A key, a token or a sign-in is the user's, and never yours to see.
+A key, a token or a sign-in is the user's, and never yours to see. A name is one secret, a key or a sign-in: a name that is one can't be used for the other.
 
 API keys and tokens:
 

