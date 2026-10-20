@@ -162,6 +162,25 @@ test("with the switch off the old names stay, unmarked, and the link is noted", 
   assert.ok(fs.existsSync(inPublic("oldtoken.html")));
 });
 
+test("a links file that can't be written is logged, and the page and its link are still given, switch off or on", async () => {
+  const logged: string[] = [];
+  const was = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args.join(" "));
+  try {
+    for (const on of [false, true]) {
+      fs.rmSync(linksFile(), { recursive: true, force: true });
+      fs.mkdirSync(linksFile(), { recursive: true }); // a directory where the file goes: every write fails
+      hide(on);
+      const link = await show(async () => {});
+      assert.match(link, /^https:\/\/allm\.example\/vault-lean\/[\w-]+\.html$/, `the link is given, switch ${on ? "on" : "off"}`);
+      assert.ok(fs.existsSync(inPublic(`${names().token}.html`)), "the page is written");
+    }
+  } finally {
+    console.error = was;
+  }
+  assert.ok(logged.some((l) => /vault-lean couldn't keep the page's link/.test(l)), logged.join("\n"));
+});
+
 test("what the page posted under the old secret is applied before the names change, and an old secret is dead after", async () => {
   seedOld();
   post({ secret: "oldsecret", ev: "key-delete" });

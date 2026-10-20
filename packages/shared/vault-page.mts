@@ -43,6 +43,10 @@ interface Names {
   hidden?: true;
 }
 
+/** Keeps the Vault's link in the links file; a failure (a file that can't be written) is logged and
+ *  never reaches the page or the answer that shows it. */
+const keepLink = (rel: string): Promise<void> => noteLink("vault", rel).catch((e) => console.error(`vault-lean couldn't keep the page's link: ${(e as Error).message}`));
+
 const namesFile = () => path.join(vaultDir(), "vault-page.json");
 const fresh = (): Names => ({ token: newSecret(), secret: newSecret(), ...(linksHidden() ? { hidden: true as const } : {}) });
 const readNames = (): Names | null => readJson<Names | null>(namesFile(), () => null);
@@ -82,7 +86,8 @@ export async function show(section: Section, state: unknown, drain: () => Promis
   const names = readNames() ?? (await updateJson(namesFile(), fresh, (n) => n));
   await writePage(names);
   writePublic(pub(`${names.token}-${section}.json`), JSON.stringify(state));
-  await noteLink("vault", `/${pub(`${names.token}.html`)}`);
+  // A hint for whoever shows the page to the user: a failure is only logged, the page is written.
+  await keepLink(`/${pub(`${names.token}.html`)}`);
   const until = Date.now() + WATCH_MS;
   watch(titleOf(section), drain, () => until);
   return `${base ?? ""}/${pub(`${names.token}.html`)}`;
@@ -135,5 +140,6 @@ async function rotateNames(due: (names: Names) => boolean = () => true): Promise
 export async function rotate(): Promise<void> {
   const now = await rotateNames();
   await writePage(now);
-  await noteLink("vault", `/${pub(`${now.token}.html`)}`);
+  // A hint for whoever shows the page to the user: a failure is only logged, the page is written.
+  await keepLink(`/${pub(`${now.token}.html`)}`);
 }
