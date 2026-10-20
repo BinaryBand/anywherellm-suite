@@ -15,8 +15,6 @@ let dir = "";
 let n = 0;
 beforeEach(() => {
   dir = path.join(tmp, `v${n++}`);
-  process.env.SIG_KEY = "sig-key";
-  process.env.SIG_SALT = "sig-salt";
   delete process.env.VAULT_KEY_FILE;
 });
 
@@ -53,19 +51,20 @@ test("what's changed in a loaded copy isn't kept, and a change that throws write
   assert.equal(load(dir).entries.length, 2, "a failed change doesn't stop the next");
 });
 
-test("a vault saved under another SIG_KEY can't be opened, and says why", async () => {
+test("the key is made beside the vault the first time, for its owner alone", async () => {
   await update((v) => void v.entries.push(entry("a")), dir);
-  process.env.SIG_KEY = "another";
-  assert.throws(() => load(dir), (e: Error) => e instanceof VaultError && /SIG_KEY or SIG_SALT changed/.test(e.message));
+  const file = path.join(dir, "vault.key");
+  assert.equal(Buffer.from(fs.readFileSync(file, "utf8").trim(), "base64").length, 32);
+  if (process.platform !== "win32") assert.equal(fs.statSync(file).mode & 0o777, 0o600);
 });
 
-test("without SIG_KEY and SIG_SALT, a random key is kept beside the vault", async () => {
-  delete process.env.SIG_KEY;
-  delete process.env.SIG_SALT;
+test("a vault whose key is gone can't be opened, and a new one starts empty once it's removed", async () => {
   await update((v) => void v.entries.push(entry("a")), dir);
-  const key = fs.readFileSync(path.join(dir, "vault.key"), "utf8");
-  assert.equal(Buffer.from(key.trim(), "base64").length, 32);
-  assert.equal(load(dir).entries.length, 1);
+  fs.rmSync(path.join(dir, "vault.key"));
+  await assert.rejects(update(() => undefined, dir), /can't be opened with the key in .*vault\.key.*put the key back/);
+  assert.ok(!fs.existsSync(path.join(dir, "vault.key")), "a vault that exists is given no new key");
+  fs.rmSync(path.join(dir, "vault.json"));
+  assert.deepEqual(load(dir), { pub: null, priv: null, entries: [] }, "a new vault starts empty");
 });
 
 /** A key file outside the vault's folder, as VAULT_KEY_FILE names it. */
@@ -75,52 +74,48 @@ function keyFileWith(text = crypto.randomBytes(32).toString("base64") + "\n"): s
   return file;
 }
 
-/** Whether the vault's file opens under SIG_KEY alone, as before VAULT_KEY_FILE. */
-function opensWithSigKey(): boolean {
-  const file = process.env.VAULT_KEY_FILE;
-  delete process.env.VAULT_KEY_FILE;
-  try {
-    load(dir);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    process.env.VAULT_KEY_FILE = file;
-  }
-}
-
-test("with VAULT_KEY_FILE, a vault sealed under SIG_KEY opens and is sealed again under the file's key", async () => {
+test("moving vault.key out of the storage and naming it in VAULT_KEY_FILE keeps the vault and its sealed files open", async () => {
   await update((v) => void v.entries.push(entry("a")), dir);
-  process.env.VAULT_KEY_FILE = keyFileWith();
+  writeSealed("session-home", [{ name: "sid", value: "s-1" }], dir);
+  const outside = path.join(tmp, `moved-${n++}`);
+  fs.renameSync(path.join(dir, "vault.key"), outside);
+  process.env.VAULT_KEY_FILE = outside;
   assert.equal(load(dir).entries[0].value, "secret-a");
-  for (let i = 0; i < 100 && opensWithSigKey(); i++) await new Promise((r) => setTimeout(r, 10));
-  assert.ok(!opensWithSigKey(), "a copy of the storage, .env and all, no longer opens it");
-  assert.equal(load(dir).entries[0].value, "secret-a");
-  delete process.env.VAULT_KEY_FILE;
-  assert.throws(() => load(dir), (e: Error) => e instanceof VaultError && /VAULT_KEY_FILE isn't set/.test(e.message));
+  assert.deepEqual(readSealed("session-home", dir), [{ name: "sid", value: "s-1" }]);
+  assert.ok(!fs.existsSync(path.join(dir, "vault.key")), "no key is made beside it");
 });
 
-test("a new vault with VAULT_KEY_FILE is sealed under its key; a file without one is refused", async () => {
+test("a new vault with VAULT_KEY_FILE is sealed under its key alone", async () => {
   process.env.VAULT_KEY_FILE = keyFileWith();
   await update((v) => void v.entries.push(entry("a")), dir);
-  assert.ok(!opensWithSigKey());
   assert.ok(!fs.existsSync(path.join(dir, "vault.key")), "no key is kept beside it");
-  process.env.VAULT_KEY_FILE = keyFileWith("not a key\n");
-  assert.throws(() => load(dir), (e: Error) => e instanceof VaultError && /holds no key: .*openssl rand -base64 32/.test(e.message));
-  process.env.VAULT_KEY_FILE = keyFileWith();
-  assert.throws(() => load(dir), (e: Error) => e instanceof VaultError && /can't be opened with the key in VAULT_KEY_FILE/.test(e.message));
+  delete process.env.VAULT_KEY_FILE;
+  assert.throws(() => load(dir), /can't be opened with the key in .*vault\.key/, "without it the vault stays closed");
 });
 
-test("a sealed file beside the vault keeps a value apart from it, and moves to VAULT_KEY_FILE's key", () => {
+test("a VAULT_KEY_FILE that holds no key, or another one, is refused", async () => {
+  process.env.VAULT_KEY_FILE = keyFileWith();
+  await update((v) => void v.entries.push(entry("a")), dir);
+  process.env.VAULT_KEY_FILE = keyFileWith("not a key\n");
+  assert.throws(() => load(dir), /holds no key: .*openssl rand -base64 32/);
+  process.env.VAULT_KEY_FILE = keyFileWith();
+  assert.throws(() => load(dir), /can't be opened with the key in VAULT_KEY_FILE/);
+});
+
+test("a sealed file whose key is gone is given no new key either", () => {
+  writeSealed("session-home", [{ name: "sid", value: "s-1" }], dir);
+  fs.rmSync(path.join(dir, "vault.key"));
+  assert.throws(() => writeSealed("session-work", [], dir), /can't be opened with the key in .*vault\.key/);
+  assert.ok(!fs.existsSync(path.join(dir, "vault.key")), "no new key was made");
+});
+
+test("a sealed file beside the vault keeps a value apart from it", () => {
   assert.equal(readSealed("session-home", dir), null, "none yet");
   writeSealed("session-home", [{ name: "sid", value: "s-1" }], dir);
   const file = path.join(dir, "sealed", "session-home.json");
   assert.ok(!fs.readFileSync(file, "utf8").includes("s-1"), "not in clear");
   assert.ok(!fs.existsSync(path.join(dir, "vault.json")), "the vault isn't written");
-  process.env.VAULT_KEY_FILE = keyFileWith();
-  assert.deepEqual(readSealed("session-home", dir), [{ name: "sid", value: "s-1" }], "opened with the earlier key");
-  delete process.env.VAULT_KEY_FILE;
-  assert.throws(() => readSealed("session-home", dir), VaultError, "and sealed again under the file's");
+  assert.deepEqual(readSealed("session-home", dir), [{ name: "sid", value: "s-1" }]);
   writeSealed("session-home", null, dir);
   assert.ok(!fs.existsSync(file), "null removes it");
   assert.throws(() => writeSealed("../escape", 1, dir), VaultError);
@@ -138,8 +133,7 @@ test("changes from two processes at once all land: the lock folder takes them in
     const dir = process.argv[1], who = process.argv[2];
     await Promise.all(Array.from({ length: 25 }, (_, i) => v.update((x) => { x.entries.push({ id: v.newId(), kind: "key", site: "s.example", user: who + i }); }, dir)));
   `;
-  const env = { ...process.env, SIG_KEY: "sig-key", SIG_SALT: "sig-salt" };
-  const run = (who: string) => promisify(execFile)(process.execPath, ["--input-type=module", "-e", child, dir, who], { env });
+  const run = (who: string) => promisify(execFile)(process.execPath, ["--input-type=module", "-e", child, dir, who]);
   await Promise.all([run("a"), run("b")]);
   const users = load(dir).entries.map((e) => e.user);
   assert.equal(users.length, 50, "no change was lost");

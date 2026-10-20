@@ -10,8 +10,6 @@ after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 let n = 0;
 beforeEach(() => {
   process.env.STORAGE_DIR = path.join(tmp, `s${n++}`);
-  process.env.SIG_KEY = "sig-key";
-  process.env.SIG_SALT = "sig-salt";
   delete process.env.VAULT_KEY_FILE;
 });
 

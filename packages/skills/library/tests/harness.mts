@@ -28,8 +28,6 @@ process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 process.env.ANYTHINGLLM_SERVER_DIR = path.join(testsDir, "fixtures", "server");
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.FENCE_ALLOW = "127.0.0.1";
-process.env.SIG_KEY = "test-sig-key";
-process.env.SIG_SALT = "test-sig-salt";
 
 // The vendored packages' versions as build.mjs inlines them, for the modules a test imports from src.
 (globalThis as unknown as { VENDORED_VERSIONS: string }).VENDORED_VERSIONS = vendoredVersions("library");

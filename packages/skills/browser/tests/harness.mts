@@ -25,8 +25,6 @@ process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.BROWSER_LEAN_PUPPETEER = path.join(testsDir, "fixtures", "puppeteer", "index.js");
 process.env.BROWSER_LEAN_CHROME = process.execPath; // a file that is there: the stand-in runs no Chrome
-process.env.SIG_KEY = "test-sig-key";
-process.env.SIG_SALT = "test-sig-salt";
 
 export interface Site {
   title?: string;

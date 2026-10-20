@@ -14,7 +14,7 @@ A function is code the agent wrote, often right after reading a web page, and it
 | --- | --- |
 | `node:vm` | Not a boundary: `this.constructor.constructor("return process")()` reaches `process`, and with it the vault's key and AnythingLLM's files. |
 | The sandbox MCP server (`anythingllm-mcp`, podman) | Its egress proxy can't add a key to an HTTPS request without breaking TLS, so the key would have to be inside the container, where the script can read it. It runs beside AnythingLLM on the host (systemd sockets, podman), which this suite moved away from, so not on Desktop. It stays the place for heavy jobs: builds, audio, files. |
-| An MCP server of our own | A skill runs in AnythingLLM's process, so it reads AnythingLLM's own keys (the page's `brx-` key, the vault's from `SIG_KEY`) and its public folder; an MCP server would need its own way in and its own place to serve the Library page. |
+| An MCP server of our own | A skill runs in AnythingLLM's process, so it reads AnythingLLM's own keys (the page's `brx-` key) and its public folder; an MCP server would need its own way in and its own place to serve the Library page. |
 | Steps only (the lean browser's actions) | Safe, but every loop, condition or transform is a new step kind: not "small scripts". |
 
 QuickJS runs in WebAssembly inside AnythingLLM's process with no container. A script sees its input and the `kit` the host gives it, and nothing else: no `require`, `process`, `fetch` or files (`tests/sandbox.test.mts` checks the `constructor` escape too). A key never enters it: `kit.http` (phase 1) adds the key outside, on the host, and masks it out of the answer.

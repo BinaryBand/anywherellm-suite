@@ -2,17 +2,16 @@
 // browser's passwords and passkeys, the library's API keys and OAuth sign-ins. Each is an entry
 // { id, kind, site, user, ... } whose other fields are its kind's own; the skills give them meaning,
 // this file only keeps them. The Vault page (vault-page.mts), which each skill that keeps secrets
-// serves, lists them by name and deletes them. They're kept in one file, <storage>/vault-lean/vault.json, encrypted
-// with AES-256-GCM under the key in VAULT_KEY_FILE, a file outside the storage (32 random bytes in
-// base64), so a copy of the storage, or a backup of it, can't open the vault. Without it, the key
-// is derived from AnythingLLM's own secret (SIG_KEY and SIG_SALT, in its .env in the storage), or,
-// where those aren't set, a random key is kept beside the vault: that protects the vault file alone,
-// not the storage it's in. Once VAULT_KEY_FILE is set, the vault is sealed again under its key the
-// first time it's opened. VAULT_KEY_FILE must be in AnythingLLM's environment (a container's or
-// the machine's), not in its .env, which AnythingLLM writes again keeping only the settings it
-// knows. None of this protects the vault from someone with the whole machine. The file
-// also holds an RSA key pair, made when a page first needs it: a page seals what the user types with
-// the public key before it leaves their device, so only a skill can open it.
+// serves, lists them by name and deletes them. They're kept in one file,
+// <storage>/vault-lean/vault.json, encrypted with AES-256-GCM under a random key (32 bytes in
+// base64) the suite makes the first time it's needed and keeps beside the vault, in
+// <storage>/vault-lean/vault.key: that protects the vault file alone, not the storage it's in. To
+// keep the key apart, move that file out of the storage and name it in VAULT_KEY_FILE, which takes
+// its place and must be in AnythingLLM's environment (a container's or the machine's), not in its
+// .env, which AnythingLLM writes again keeping only the settings it knows. None of this protects
+// the vault from someone with the whole machine. The file also holds an RSA key pair, made when a
+// page first needs it: a page seals what the user types with the public key before it leaves their
+// device, so only a skill can open it.
 //
 // Two skills (each with its own copy of this file, bundled in) and AnythingLLM's scheduled jobs (a
 // child process) write it, so a change goes through update(): changes in one process wait their
@@ -47,21 +46,12 @@ export interface Vault {
   entries: Entry[];
 }
 
-/** The label a derived key is made with (HKDF info). It keeps the suite's earlier name: a new one
- *  would derive another key, and every vault sealed under a derived key would be lost. */
-const INFO = "anythingllm-suite vault v1";
 const MAX_ENTRIES = 500;
 const generateKeyPair = promisify(crypto.generateKeyPair);
 
 /** The vault's folder in AnythingLLM's storage. */
 export const vaultDir = (): string => path.join(storageDir(), "vault-lean");
 const fileOf = (dir: string) => path.join(dir, "vault.json");
-
-/** A key derived from AnythingLLM's own secret for `info`; null where SIG_KEY and SIG_SALT aren't set. */
-function derivedKey(info: string): Buffer | null {
-  const { SIG_KEY, SIG_SALT } = process.env;
-  return SIG_KEY && SIG_SALT ? Buffer.from(crypto.hkdfSync("sha256", SIG_KEY, SIG_SALT, info, 32)) : null;
-}
 
 /** The 32-byte key kept in `file`; null when there's none. */
 function keptKey(file: string): Buffer | null {
@@ -73,33 +63,54 @@ function keptKey(file: string): Buffer | null {
   }
 }
 
-/** Where a random key is kept beside the vault when there's no other. */
+/** Where the vault's key is kept, unless VAULT_KEY_FILE says another place. */
 const keyBeside = (dir: string): string => path.join(dir, "vault.key");
 
-/** VAULT_KEY_FILE: where the vault's key is kept outside the storage, or null. */
+/** VAULT_KEY_FILE: where the vault's key is kept instead, outside the storage, or null. */
 const keyFile = (): string | null => process.env.VAULT_KEY_FILE || null;
 
-/** The key the vault is encrypted with: VAULT_KEY_FILE's, else derived, else kept beside it (made
- *  the first time). */
-function masterKey(dir: string): Buffer {
+/** Why the vault stays closed when its key isn't the one it was saved with, or isn't there. */
+const closed = (dir: string): VaultError =>
+  new VaultError(
+    keyFile()
+      ? "the vault can't be opened with the key in VAULT_KEY_FILE: it isn't the one the vault was saved with"
+      : `the vault can't be opened with the key in ${keyBeside(dir)}: it was lost or changed since the vault was saved (put the key back, or see Secrets in the README to start a new vault)`,
+  );
+
+/** The key the vault is sealed with, to open what is sealed: VAULT_KEY_FILE's, else the one kept beside it. */
+function keyOf(dir: string): Buffer {
   const outside = keyFile();
   if (outside) {
     const key = keptKey(outside);
     if (!key) throw new VaultError(`VAULT_KEY_FILE (${outside}) holds no key: it should hold 32 random bytes in base64, as \`openssl rand -base64 32\` prints them`);
     return key;
   }
+  const key = keptKey(keyBeside(dir));
+  if (!key) throw closed(dir);
+  return key;
+}
+
+/** Whether anything in the vault's folder is sealed under its key: the vault, or a sealed file. */
+const hasSealed = (dir: string): boolean => {
+  try {
+    return fs.existsSync(fileOf(dir)) || fs.readdirSync(path.join(dir, "sealed")).some((f) => f.endsWith(".json"));
+  } catch {
+    return false;
+  }
+};
+
+/** The key to seal with: `keyOf`'s, made beside the vault the first time, when nothing is sealed yet.
+ *  Something sealed is never given a new key, which would only leave it closed for good. */
+function sealKey(dir: string): Buffer {
+  if (keyFile() || keptKey(keyBeside(dir)) || hasSealed(dir)) return keyOf(dir);
   const file = keyBeside(dir);
-  const kept = derivedKey(INFO) ?? keptKey(file);
-  if (kept) return kept;
   fs.mkdirSync(dir, { recursive: true });
   try {
     fs.writeFileSync(file, crypto.randomBytes(32).toString("base64") + "\n", { mode: 0o600, flag: "wx" });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; // another process made it first
   }
-  const made = keptKey(file);
-  if (!made) throw new VaultError(`the vault's key in ${file} can't be read`);
-  return made;
+  return keyOf(dir);
 }
 
 interface Box {
@@ -121,69 +132,54 @@ function unseal(key: Buffer, box: Box): unknown {
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(box.data, "base64")), decipher.final()]).toString("utf8"));
 }
 
-/** The keys a vault was sealed with before VAULT_KEY_FILE was set: the derived one, the one kept beside it. */
-const earlierKeys = (dir: string): Buffer[] => (keyFile() ? [derivedKey(INFO), keptKey(keyBeside(dir))].filter((k): k is Buffer => !!k) : []);
-
-/** What `box` holds, opened with the vault's key or an earlier one (`earlier`: it's to be sealed
- *  again under the vault's key). */
-function openBox(dir: string, box: Box): { value: unknown; earlier: boolean } {
-  const master = masterKey(dir);
-  for (const key of [master, ...earlierKeys(dir)]) {
-    try {
-      return { value: unseal(key, box), earlier: key !== master };
-    } catch {} // the next key
+/** What `box` holds, opened with the vault's key; a VaultError saying so when it isn't the one it was sealed with. */
+function openBox(dir: string, box: Box): unknown {
+  const key = keyOf(dir);
+  try {
+    return unseal(key, box);
+  } catch {
+    throw closed(dir);
   }
-  throw new VaultError(
-    keyFile()
-      ? "the vault can't be opened with the key in VAULT_KEY_FILE, nor with the one it had before"
-      : "the vault can't be opened: AnythingLLM's SIG_KEY or SIG_SALT changed since it was saved, or the vault was moved to a key file and VAULT_KEY_FILE isn't set",
-  );
 }
 
-/** The vault as its file holds it, opened, and whether it was opened with an earlier key; an empty
- *  one when there's no file. */
-function read(dir: string): { vault: Vault; earlier: boolean } {
+/** The vault as its file holds it, opened; an empty one when there's no file. */
+function read(dir: string): Vault {
   const saved = readJson<{ v: number; pub: string | null; box: Box } | null>(fileOf(dir), () => null);
-  if (!saved) return { vault: { pub: null, priv: null, entries: [] }, earlier: false };
+  if (!saved) return { pub: null, priv: null, entries: [] };
   if (saved.v !== 1) throw new VaultError(`the vault is version ${saved.v}, which this skill can't read; update the suite`);
-  const { value, earlier } = openBox(dir, saved.box);
-  const inner = value as { priv: string | null; entries: Entry[] };
-  return { vault: { pub: saved.pub, priv: inner.priv, entries: inner.entries }, earlier };
+  const inner = openBox(dir, saved.box) as { priv: string | null; entries: Entry[] };
+  return { pub: saved.pub, priv: inner.priv, entries: inner.entries };
 }
 
-// What was read or written last, by the file's stamp and the secret it's opened with: a change
+// What was read or written last, by the file's stamp and the key it's opened with: a change
 // replaces the file (writeAtomic renames it), so an unchanged stamp is an unchanged vault. Kept per
 // process and build, across handler reloads.
 type Cached = { at: string; vault: Vault; priv?: crypto.KeyObject };
 const cache = () => perBuild("vault.cache", () => ({ last: null as Cached | null }));
 
-/** Where the vault is, what its file is now, and what it's opened with. */
+/** Where the vault is, what its file is now, and where its key is (a key that goes missing shows
+ *  the next time the vault is read from its file, which any change does). */
 const stampOf = (dir: string): string => {
   let file = "none";
   try {
     const s = fs.statSync(fileOf(dir));
     file = `${s.ino}:${s.mtimeMs}:${s.size}`;
   } catch {}
-  return [dir, file, process.env.SIG_KEY, process.env.SIG_SALT, keyFile()].join("\0");
+  return [dir, file, keyFile()].join("\0");
 };
 
 function store(dir: string, vault: Vault): void {
   if (vault.entries.length > MAX_ENTRIES) throw new VaultError(`the vault keeps at most ${MAX_ENTRIES} entries`);
-  const box = seal(masterKey(dir), { priv: vault.priv, entries: vault.entries });
+  const box = seal(sealKey(dir), { priv: vault.priv, entries: vault.entries });
   writeAtomic(fileOf(dir), JSON.stringify({ v: 1, pub: vault.pub, box }), 0o600);
   cache().last = { at: stampOf(dir), vault: structuredClone(vault) };
 }
 
-/** The vault as it is now, from the cache when the file hasn't changed: not to be changed. One
- *  opened with an earlier key is sealed again under VAULT_KEY_FILE's, once, in the background. */
+/** The vault as it is now, from the cache when the file hasn't changed: not to be changed. */
 function current(dir: string): Cached {
   const kept = cache();
   const at = stampOf(dir);
-  if (kept.last?.at !== at) {
-    const { vault, earlier } = read(dir);
-    kept.last = { at, vault };
-    if (earlier) void update(() => undefined, dir).catch(() => {}); // the stamp is cached now, so once
-  }
+  if (kept.last?.at !== at) kept.last = { at, vault: read(dir) };
   return kept.last;
 }
 
@@ -198,7 +194,7 @@ export const entries = (dir: string = vaultDir()): readonly Readonly<Entry>[] =>
  *  process's skills and across processes. */
 export function update<T>(change: (vault: Vault) => T, dir: string = vaultDir()): Promise<T> {
   return locked(path.join(dir, "vault.lock"), "the vault", () => {
-    const { vault } = read(dir);
+    const vault = read(dir);
     const answer = change(vault);
     store(dir, vault);
     return answer;
@@ -213,14 +209,10 @@ const sealedFile = (name: string, dir: string): string => {
   return path.join(dir, "sealed", `${name}.json`);
 };
 
-/** What the sealed file `name` holds, or null when there's none. One sealed under an earlier key is
- *  sealed again under the vault's. */
+/** What the sealed file `name` holds, or null when there's none. */
 export function readSealed(name: string, dir: string = vaultDir()): unknown {
   const saved = readJson<{ box: Box } | null>(sealedFile(name, dir), () => null);
-  if (!saved) return null;
-  const { value, earlier } = openBox(dir, saved.box);
-  if (earlier) writeSealed(name, value, dir);
-  return value;
+  return saved ? openBox(dir, saved.box) : null;
 }
 
 /** Seals `value` into the file `name` beside the vault; null removes the file. */
@@ -228,7 +220,7 @@ export function writeSealed(name: string, value: unknown, dir: string = vaultDir
   const file = sealedFile(name, dir);
   if (value === null) return void fs.rmSync(file, { force: true });
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  writeAtomic(file, JSON.stringify({ v: 1, box: seal(masterKey(dir), value) }), 0o600);
+  writeAtomic(file, JSON.stringify({ v: 1, box: seal(sealKey(dir), value) }), 0o600);
 }
 
 /** A new entry's id. */
