@@ -24,15 +24,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   assert.ok(active.includes(HUB_ID), `AnythingLLM lists the skill as active: ${active}`);
 
   const plugin = ImportedPlugin.loadPluginByHubId(HUB_ID).plugin({ ANYTHINGLLM_URL: SERVER });
-  const asked = [];
-  const call = async (slug, args, approve = true) => {
+  const call = async (slug, args) => {
     let fn;
     const agent = {
       handlerProps: { invocation: { workspace: { slug } }, log: () => {} },
       introspect: () => {},
       function: (def) => (fn = def),
       socket: { send: () => {} },
-      requestToolApproval: async (q) => (asked.push(q), { approved: approve, message: "" }),
     };
     plugin.setup(agent);
     assert.equal(fn.name, HUB_ID);
@@ -133,8 +131,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const refused = await call("home", { action: "edit", name: "groceries", file: "page.html", find: "<!--scripts-->", text: "<script>App.onchange(draw);</script>\n<!--scripts-->" });
   assert.match(refused, /page\.html uses draw, which no script declares/);
 
-  assert.equal(await call("home", { action: "delete", name: "groceries" }, false), "The user kept groceries.");
-  assert.match(asked[0].description, /Delete the app Groceries/);
   assert.match(await call("home", { action: "delete", name: "groceries" }), /^Deleted the app groceries, its changes and its page\./);
   assert.deepEqual(await state(), { gone: true }, "a page still open is told");
   assert.ok(!fs.existsSync(path.join(APP, "public", HUB_ID, url.split("/").pop())), "the page is gone");

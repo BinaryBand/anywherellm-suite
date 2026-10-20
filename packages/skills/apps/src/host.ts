@@ -8,8 +8,5 @@ export interface HandlerContext {
   };
   /** The skill's settings (plugin.json's setup_args), as the user set them in AnythingLLM. */
   runtimeArgs?: Record<string, string | undefined>;
-  /** AnythingLLM's approval prompt for a tool call: the agent pauses until the user answers. Not
-   *  part of the documented skill contract (docs/.scratch/TODO.md), and absent in a scheduled job. */
-  requestToolApproval?: (request: { payload: Record<string, unknown>; description: string }) => Promise<{ approved: boolean; message?: string }>;
   logger?: (message: string) => void;
 }

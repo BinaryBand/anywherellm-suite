@@ -11,7 +11,7 @@ Small apps a user keeps in a workspace, such as a shopping list, daily habits or
 | `edit` | `app.json` or `page.html`: replaces text found exactly once (`find`), or with no `find` the whole file |
 | `undo` | takes back the newest change, to the data or a file; with `file`, that file's newest change |
 | `page` | publishes the app's page; the card's title is its link |
-| `delete` | moves the app to the trash, after AnythingLLM's approval prompt where it has one; never in a scheduled job |
+| `delete` | moves the app to the trash (the newest 20 are kept); never in a scheduled job |
 | `guide` | this edition's notes, the starters, the parts and design rules; with `query`, each topic or part it names |
 
 ## Where it keeps things
@@ -41,7 +41,7 @@ A page posts each change with its app's secret, and the skill applies it to that
 
 ## What it needs of AnythingLLM
 
-The storage folder; the public folder, which AnythingLLM serves without a sign-in; the browser-extension upload its pages post to, with the key install keeps (`#shared/pages`); the invocation's workspace; and `requestToolApproval` for `delete`. Each is listed in `docs/.scratch/TODO.md`.
+The storage folder; the public folder, which AnythingLLM serves without a sign-in; the browser-extension upload its pages post to, with the key install keeps (`#shared/pages`); and the invocation's workspace. Each is listed in `docs/.scratch/TODO.md`.
 
 ## Check
 

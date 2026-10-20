@@ -198,14 +198,8 @@ const ACTIONS = {
     const app = whole ? await store.writeFile(workspace, p.name, p.file, p.text) : await store.editFile(workspace, p.name, p.file, p.find, p.text);
     return [`${whole ? "Wrote" : "Changed"} ${app.name}'s ${p.file}.`, ...advice(app), ...cardOf(self, app)].join("\n");
   },
-  delete: async ({ workspace }, p, self) => {
+  delete: async ({ workspace }, p) => {
     const app = store.read(workspace, p.name);
-    // AnythingLLM pauses the agent and asks the user; without a way to ask (a scheduled job) it
-    // answers approved, as its own tools do.
-    if (typeof self?.requestToolApproval === "function") {
-      const { approved, message } = await self.requestToolApproval({ payload: { name: app.name }, description: `Delete the app ${app.title} and its changes?` });
-      if (!approved) return `The user kept ${app.name}${message ? `: ${message}` : "."}`;
-    }
     await store.remove(workspace, app.name);
     unpublish(app);
     return `Deleted the app ${app.name}, its changes and its page. It's kept in AnythingLLM's storage for now, under apps-lean/.trash, if the user wants it back.`;

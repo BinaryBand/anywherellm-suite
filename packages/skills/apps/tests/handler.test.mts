@@ -56,14 +56,9 @@ test("another workspace sees none of them, and mistakes come back as words", asy
   assert.match(await call("home", { action: "create", plan: PLAN, name: "x", text: JSON.stringify({ about: "x", nope: 1 }) }), /^Apps: the app can't be made:\n- app\.json holds title, about/);
 });
 
-test("delete asks for approval through AnythingLLM and keeps the app when refused", async () => {
+test("delete takes the app out at once, whatever chat it comes from", async () => {
   await make("home", "temp", "List");
-  const asked: any[] = [];
-  const refusing = { ...inWorkspace("home"), requestToolApproval: async (q: any) => (asked.push(q), { approved: false, message: "" }) };
-  assert.equal(await handler().call(refusing, { action: "delete", name: "temp" }), "The user kept temp.");
-  assert.equal(asked[0].description, "Delete the app List and its changes?");
-  const approving = { ...inWorkspace("home"), requestToolApproval: async () => ({ approved: true }) };
-  assert.match(await handler().call(approving, { action: "delete", name: "temp" }), /^Deleted the app temp, its changes and its page\. It's kept/);
+  assert.match(await call("home", { action: "delete", name: "temp" }), /^Deleted the app temp, its changes and its page\. It's kept/);
   assert.equal((await call("home", { action: "list" })).includes("- temp:"), false);
 });
 
