@@ -124,7 +124,7 @@ export function originOf(raw: unknown): string | null {
  *  its stamp, as the vault's: the bridge replaces it). None when there's no file, or one that can't
  *  be read: the fence stays shut. */
 export function alwaysAllowed(): string[] {
-  const kept = perProcess("fence.allowed", () => ({ last: null as { stamp: string; origins: string[] } | null }));
+  const kept = perProcess("fence.allowed.origins", () => ({ last: null as { stamp: string; origins: string[] } | null }));
   let file: string;
   let stamp: string;
   try {
