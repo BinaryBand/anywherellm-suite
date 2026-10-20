@@ -187,7 +187,7 @@ test("a toolkit saved again keeps what isn't given; a function or a toolkit is r
 // The guide, and the static files it's made of.
 
 const shipped = (sub: string): string[] => fs.readdirSync(path.join(skillDir, "static", sub)).sort();
-const read = (name: string): string => fs.readFileSync(path.join(skillDir, "static", name), "utf8");
+const read = (name: string): string => fs.readFileSync(path.join(skillDir, "static", name), "utf8").replace(/\r\n/g, "\n");
 
 test("guide with no topic gives the overview; with a topic, that topic", async () => {
   assert.equal(await call({ action: "guide" }), read("guide/index.md").trim());
