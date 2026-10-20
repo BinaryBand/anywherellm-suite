@@ -1,8 +1,10 @@
-// kit.crypto: hashes, MACs, secure randomness and Ed25519, which a function can't do well in QuickJS
-// (it has no crypto.getRandomValues, and Ed25519 interpreted is slow). An extension only computes
-// (docs/notes/skills/library/extensions-and-secrets.md): JSON in, JSON out, no network, no files, no
-// vault, nothing kept. It runs on the host's thread, outside the sandbox's limits, so each input is
-// capped. A key it makes or is given is the function's own; a kept key is kit.secret's (signing.ts).
+// kit.crypto: hashes, secure randomness and checking signatures, which a function can't do well in
+// QuickJS (it has no crypto.getRandomValues, and Ed25519 interpreted is slow). An extension only
+// computes (docs/notes/skills/library/extensions-and-secrets.md): JSON in, JSON out, no network, no
+// files, no vault, nothing kept. It runs on the host's thread, outside the sandbox's limits, so each
+// input is capped. Nothing here takes a secret key: a function can't keep one (its source and state
+// are plain JSON any later function can return), so what needs one (signing, an HMAC) is
+// kit.secret's, with a key in the vault (signing.ts).
 //
 // Bytes go in as UTF-8 text, or as { base64 }; they come out as hex, or as base64 when `as` says so.
 
@@ -13,7 +15,6 @@ import * as sshsig from "../sshsig";
 const MAX_BYTES = 1024 * 1024;
 const MAX_RANDOM = 1024;
 const AS = ["hex", "base64", "base64url"] as const;
-const HMAC = ["sha256", "sha512", "sha1"];
 
 type As = (typeof AS)[number];
 
@@ -37,11 +38,11 @@ function asOf(opts: unknown, fallback: As = "hex"): As {
   return as as As;
 }
 
-/** 32 raw bytes given as base64: an Ed25519 key, `what` naming it. */
-function key32(v: unknown, what: string): Buffer {
-  const key = sshsig.seedOf(String(v ?? ""));
-  if (!key) throw new LibraryError(`${what} is 32 bytes as base64`);
-  return key;
+/** An Ed25519 public key given as its 32 raw bytes in base64. */
+function publicOf(v: unknown): crypto.KeyObject {
+  const raw = sshsig.seedOf(String(v ?? "")); // 32 bytes as base64, as a seed is
+  if (!raw) throw new LibraryError("public is 32 bytes as base64");
+  return sshsig.publicKey(raw);
 }
 
 const args = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
@@ -51,11 +52,6 @@ const digest = (alg: string) => (data: unknown, opts?: unknown) => crypto.create
 export const cryptoKit = {
   sha256: digest("sha256"),
   sha512: digest("sha512"),
-  hmac: (a: unknown) => {
-    const { alg = "sha256", key, data } = args(a);
-    if (!HMAC.includes(String(alg))) throw new LibraryError(`hmac's alg is ${HMAC.join(", ")}`);
-    return crypto.createHmac(String(alg), bytesOf(key, "key")).update(bytesOf(data, "data")).digest(asOf(a));
-  },
   random: (n: unknown, opts?: unknown) => {
     const count = Number(n);
     if (!Number.isInteger(count) || count < 1 || count > MAX_RANDOM) throw new LibraryError(`random takes a number of bytes, 1 to ${MAX_RANDOM}`);
@@ -63,20 +59,11 @@ export const cryptoKit = {
   },
   uuid: () => crypto.randomUUID(),
   ed25519: {
-    keypair: () => {
-      const seed = crypto.randomBytes(32);
-      const pub = sshsig.publicOf(seed);
-      return { public: pub.toString("base64"), private: seed.toString("base64"), line: sshsig.keyLine(pub) };
-    },
-    sign: (a: unknown) => {
-      const { private: seed, data } = args(a);
-      return crypto.sign(null, bytesOf(data, "data"), sshsig.privateKey(key32(seed, "private"))).toString("base64");
-    },
     verify: (a: unknown) => {
       const { public: pub, data, signature } = args(a);
       const sig = typeof signature === "string" ? Buffer.from(signature, "base64") : Buffer.alloc(0);
       if (sig.length !== 64) return false;
-      return crypto.verify(null, bytesOf(data, "data"), sshsig.publicKey(key32(pub, "public")), sig);
+      return crypto.verify(null, bytesOf(data, "data"), publicOf(pub), sig);
     },
   },
   sshsig: {

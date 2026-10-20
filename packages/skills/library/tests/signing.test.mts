@@ -1,4 +1,4 @@
-// kit.crypto (known answers), kit.secret (a function signs with a key it never sees, only in the
+// kit.crypto (known answers; no secret key taken), kit.secret (a function signs with a key it never sees, only in the
 // key's namespace, in a job only when the user lets it, at most 60 times a minute, every use
 // recorded), signing keys on the Vault, the keys the temporary sshsig skill saved, and the
 // sshsig-channel snippet end to end, against OpenSSH's own ssh-keygen -Y.
@@ -72,45 +72,42 @@ function keygenVerifies(line: string, namespace: string, body: string, sig: stri
 
 test.beforeEach(() => reset());
 
-test("kit.crypto answers the known answers: SHA-2, HMAC (RFC 4231), Ed25519 (RFC 8032)", async () => {
+test("kit.crypto answers the known answers: SHA-2, and Ed25519 checked (RFC 8032)", async () => {
   const source = `async function main(i, kit) {
     const c = kit.crypto;
     return {
       sha256: await c.sha256("abc"),
       sha512: await c.sha512("abc", { as: "base64" }),
-      hmac: await c.hmac({ key: { base64: i.hmac_key }, data: "Hi There" }),
-      sig: await c.ed25519.sign({ private: i.seed, data: "" }),
-      ok: await c.ed25519.verify({ public: i.pub, data: "", signature: await c.ed25519.sign({ private: i.seed, data: "" }) }),
-      changed: await c.ed25519.verify({ public: i.pub, data: "x", signature: await c.ed25519.sign({ private: i.seed, data: "" }) }),
+      ok: await c.ed25519.verify({ public: i.pub, data: "", signature: i.sig }),
+      changed: await c.ed25519.verify({ public: i.pub, data: "x", signature: i.sig }),
       random: await c.random(16),
       uuid: await c.uuid(),
-      pair: await c.ed25519.keypair(),
     };
   }`;
-  const seed = Buffer.from("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", "hex");
-  const inputs = { hmac_key: Buffer.alloc(20, 0x0b).toString("base64"), seed: seed.toString("base64"), pub: Buffer.from("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "hex").toString("base64") };
+  const inputs = {
+    pub: Buffer.from("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "hex").toString("base64"),
+    sig: Buffer.from("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b", "hex").toString("base64"),
+  };
   const r = (await ran("known", source, inputs)).result;
   assert.equal(r.sha256, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
   assert.equal(r.sha512, crypto.createHash("sha512").update("abc").digest("base64"));
-  assert.equal(r.hmac, "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7");
-  assert.equal(Buffer.from(r.sig, "base64").toString("hex"), "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
   assert.equal(r.ok, true);
   assert.equal(r.changed, false);
   assert.equal(Buffer.from(r.random, "base64").length, 16);
   assert.match(r.uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.equal(r.pair.line, lineOf(Buffer.from(r.pair.private, "base64")));
 });
 
-test("kit.crypto refuses what it can't take, as the script sees it", async () => {
+test("kit.crypto refuses what it can't take, as the script sees it, and takes no secret key", async () => {
   const source = `async function main(i, kit) {
     const said = [];
-    for (const f of [() => kit.crypto.sha256(i.big), () => kit.crypto.random(5000), () => kit.crypto.hmac({ alg: "md5", key: "k", data: "d" }), () => kit.crypto.sha256(42), () => kit.crypto.ed25519.sign({ private: "short", data: "" })]) {
+    for (const f of [() => kit.crypto.sha256(i.big), () => kit.crypto.random(5000), () => kit.crypto.sha256(42), () => kit.crypto.ed25519.verify({ public: "short", data: "", signature: i.sig })]) {
       try { await f(); said.push("no refusal"); } catch (e) { said.push(e.message); }
     }
-    return said;
+    return { said, gone: [typeof kit.crypto.hmac, typeof kit.crypto.ed25519.sign, typeof kit.crypto.ed25519.keypair] };
   }`;
-  const r = (await ran("refusals", source, { big: "x".repeat(1024 * 1024 + 1) })).result;
-  assert.deepEqual(r, ["data is at most 1024 KB", "random takes a number of bytes, 1 to 1024", "hmac's alg is sha256, sha512, sha1", "data is text, or { base64 }", "private is 32 bytes as base64"]);
+  const r = (await ran("refusals", source, { big: "x".repeat(1024 * 1024 + 1), sig: Buffer.alloc(64).toString("base64") })).result;
+  assert.deepEqual(r.said, ["data is at most 1024 KB", "random takes a number of bytes, 1 to 1024", "data is text, or { base64 }", "public is 32 bytes as base64"]);
+  assert.deepEqual(r.gone, ["undefined", "undefined", "undefined"]);
 });
 
 test("kit.secret signs with a key the function never sees, in the key's namespace, and each use is recorded", { skip: !hasKeygen && "no ssh-keygen" }, async () => {

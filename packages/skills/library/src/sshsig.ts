@@ -33,7 +33,7 @@ const rd = (b: Buffer, o: number): [Buffer, number] => {
 };
 
 /** A seed (32 bytes) as a signing key. */
-export const privateKey = (seed: Buffer) => crypto.createPrivateKey({ key: Buffer.concat([PKCS8, seed]), format: "der", type: "pkcs8" });
+const privateKey = (seed: Buffer) => crypto.createPrivateKey({ key: Buffer.concat([PKCS8, seed]), format: "der", type: "pkcs8" });
 
 /** A raw public key (32 bytes) as a key to check with. */
 export const publicKey = (raw: Buffer) => crypto.createPublicKey({ key: Buffer.concat([SPKI, raw]), format: "der", type: "spki" });

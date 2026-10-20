@@ -19,7 +19,7 @@ The rule: **an extension only computes.** JSON in, JSON out; no network, no file
 
 An extension runs on the host, outside the sandbox's limits: not under its 32 MB or its deadline interrupt, and synchronous work blocks AnythingLLM's whole process. So each one caps its input (1 MB a call, say) and stays fast. Its refusals are `LibraryError`s, which the script sees as they are.
 
-The first one is `kit.crypto` (`src/extensions/crypto.ts`): `sha256`/`sha512`, `hmac` (the key given by the function), `random`, `uuid`, Ed25519 `keypair`/`sign`/`verify` with the keys passed in, and `sshsig.verify`, which checks an SSH signature against the public keys given. Bytes go in as text or `{ base64 }`, at most 1 MB a call. It doesn't solve key custody: a key it makes is the function's, and the only place to keep it is `kit.state`, plain JSON that any later function of the toolkit can return.
+The first one is `kit.crypto` (`src/extensions/crypto.ts`): `sha256`/`sha512`, `random`, `uuid`, Ed25519 `verify` with the public key passed in, and `sshsig.verify`, which checks an SSH signature against the public keys given. Bytes go in as text or `{ base64 }`, at most 1 MB a call. *Trimmed from the design (2026-10-20):* `hmac` with the function's key and Ed25519 `keypair`/`sign` were built, then dropped. Each only makes sense with a secret key held by the function, and a function can't keep one: its source and its `kit.state` are plain JSON that any later function of the toolkit can return, and the guide tells the agent never to put a key in a function. The library also takes no webhooks, so "an HMAC to check a webhook" doesn't arise. Signing with a kept key is `kit.secret.sign`, and an HMAC that signs a request, when an API needs one, is a `kit.secret` operation with a key in the vault, computed inside the request (as SigV4 would be). `kit.crypto` takes no secret key.
 
 ## Computing on secrets
 
@@ -77,7 +77,8 @@ What's still open, as it is for `sshsig`: the model can be told to call an unloc
 
 | If | Build |
 | --- | --- |
-| A function needs a hash, an HMAC to check a webhook, a UUID or secure randomness | `kit.crypto` alone: a small phase |
+| A function needs a hash, a UUID, secure randomness or to check a signature | `kit.crypto` (built) |
+| An API needs requests signed with an HMAC of its secret | an HMAC operation in `kit.secret`, with a key in the vault |
 | Muse signing is wanted back, or an API needs SigV4 or a signed JWT | `kit.crypto` and `kit.secret` together, as one phase: crypto alone doesn't sign with a kept key |
 | Neither | Nothing |
 

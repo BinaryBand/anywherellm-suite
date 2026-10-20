@@ -25,9 +25,9 @@ What kit offers:
 - kit.sleep(ms): waits, at most 10 s.
 - kit.b64.encode(text, { url }) and kit.b64.decode(text): base64 of UTF-8 text (there's no btoa or atob).
 - kit.crypto: what QuickJS can't do well, computed outside the function. Bytes go in as text (UTF-8) or { base64 }, and come out as hex, or as `as` says ("base64", "base64url"). Each input is at most 1 MB.
-  - kit.crypto.sha256(data, { as }) and kit.crypto.sha512(data, { as }); kit.crypto.hmac({ alg, key, data, as }), alg "sha256" (the default), "sha512" or "sha1".
+  - kit.crypto.sha256(data, { as }) and kit.crypto.sha512(data, { as }).
   - kit.crypto.random(n): n secure random bytes (at most 1024), as base64. kit.crypto.uuid(): a random UUID. (Math.random isn't secure.)
-  - kit.crypto.ed25519.keypair(), .sign({ private, data }) and .verify({ public, data, signature }): raw keys and signatures as base64. A key it makes is the function's, not kept: for a kept key, use kit.secret.
+  - kit.crypto.ed25519.verify({ public, data, signature }): whether an Ed25519 signature (base64) of data checks with a public key (its 32 raw bytes, base64). kit.crypto takes no secret key: signing is kit.secret's.
   - kit.crypto.sshsig.verify({ signature, data, namespace, keys }): whether an SSH signature (the armored -----BEGIN SSH SIGNATURE----- block) signs data in namespace by one of keys ("ssh-ed25519 <base64>" lines); answers { valid: true, key } or { valid: false, reason }.
 - kit.secret: signing with a key kept in the Vault, which the function names and never sees (topic secrets).
   - kit.secret.sign({ key, data }): answers { signature, public, namespace }, signature an SSH signature (as `ssh-keygen -Y sign` makes them) in the key's own namespace.
