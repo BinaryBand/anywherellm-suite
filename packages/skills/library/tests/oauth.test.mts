@@ -10,6 +10,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { call, cardsShown, post, postVault, publicDir, reset, seal, skillDir, storage, until, vaultState } from "./harness.mts";
 
 // The provider: a token endpoint that checks the client (in the form, or by HTTP Basic) and PKCE (when
@@ -415,7 +416,7 @@ async function fromSrc(): Promise<{ saveSignIn: (site: string, label: string, oa
   const { build } = await import("esbuild");
   const outfile = path.join(storage, "..", "from-src.mjs");
   await build({ stdin: { contents: 'export { saveSignIn } from "./secrets"; export { define } from "./oauth";', resolveDir: path.join(skillDir, "src"), loader: "ts" }, bundle: true, platform: "node", format: "esm", outfile, logLevel: "silent" });
-  return import(outfile);
+  return import(pathToFileURL(outfile).href);
 }
 
 test("a preset's sign-in takes no definition: the code waiting stays, and so do the tokens", async () => {
