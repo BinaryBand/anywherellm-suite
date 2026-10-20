@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
-import { NetError, allowedHosts, checkUrl, makeFence, onSite, privateAddress, privateName, siteOf } from "./fence.mts";
+import { NetError, allowedFile, allowedHosts, checkUrl, makeFence, onSite, privateAddress, privateName, siteOf } from "./fence.mts";
 
 test("addresses outside the public internet are private", () => {
   for (const ip of ["127.0.0.1", "10.1.2.3", "172.16.0.1", "172.31.255.255", "192.168.1.10", "169.254.169.254", "100.64.0.1", "100.101.102.103", "0.0.0.0", "224.0.0.1", "255.255.255.255", "::1", "::", "fd7a:115c:a1e0::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:192.168.0.1", "ff02::1"]) {
@@ -61,6 +64,24 @@ test("hosts the user lets through in FENCE_ALLOW pass the fence", async () => {
   assert.equal(await refused("http://NAS.lan:5000/"), null);
   assert.equal(await refused("http://127.0.0.1:8080/"), null);
   assert.match((await refused("http://127.0.0.2/"))!, /isn't a public address/);
+});
+
+test("hosts the user let through for good in AnywhereLLM pass too, read again when they change", async (t) => {
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), "fence-"));
+  const was = process.env.STORAGE_DIR;
+  process.env.STORAGE_DIR = storage;
+  t.after(() => ((process.env.STORAGE_DIR = was), fs.rmSync(storage, { recursive: true, force: true })));
+  const file = allowedFile(storage);
+  const write = (hosts: unknown, at: number) => (fs.mkdirSync(path.dirname(file), { recursive: true }), fs.writeFileSync(file, JSON.stringify(hosts)), fs.utimesSync(file, at, at));
+  assert.deepEqual(allowedHosts({}), [], "no file: nothing more");
+  write({ hosts: [{ host: "Muse-VM", added: "2026-10-20T00:00:00Z" }] }, 1000);
+  assert.deepEqual(allowedHosts({ FENCE_ALLOW: "nas.lan,muse-vm" }), ["nas.lan", "muse-vm"]);
+  const refused = makeFence({ lookup: async () => [{ address: "100.101.102.103" }] });
+  assert.equal(await refused("http://muse-vm:8463/v1/health"), null, "the browser's fence reads it for each request");
+  write({ hosts: [] }, 2000);
+  assert.match((await refused("http://muse-vm:8463/"))!, /on this machine or its network/);
+  write("not a list", 3000);
+  assert.deepEqual(allowedHosts({}), [], "a file that can't be read lets nothing more through");
 });
 
 test("a site as a person writes it is a host, and its subdomains are on it", () => {

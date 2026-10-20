@@ -4,7 +4,7 @@
 /** `this` in the handler, as AnythingLLM's agent sets it up. */
 export interface HandlerContext {
   super?: {
-    handlerProps?: { invocation?: { workspace?: { slug?: string } | null; thread_id?: number | null } };
+    handlerProps?: { invocation?: { workspace?: { slug?: string } | null; thread_id?: number | null; uuid?: string | null } };
   };
   /** A line shown in the chat while the skill works. */
   introspect?: (message: string) => void;

@@ -30,6 +30,9 @@ const ENDED: Record<string, RunRecord["status"]> = { Timeout: "timeout", Stopped
 export interface Start {
   trigger: RunRecord["trigger"];
   workspace: string | null;
+  /** The hosts the user let through in the agent run that starts it, which its requests may reach
+   *  too; a function never asks for one itself. */
+  granted?: Iterable<string>;
 }
 
 /** What a run and the functions it runs share. */
@@ -42,6 +45,7 @@ interface Budget {
   made: RunRecord["calls"];
   /** Every key a request sent, to hide wherever it shows. */
   secrets: string[];
+  granted: Iterable<string>;
 }
 
 /** The runs going in this process, by id: their record once they end, and how to stop them. Kept per
@@ -78,7 +82,7 @@ export function begin(qualifiedName: string, input: unknown, start: Start): { ru
   const values = store.inputChecked(f, input);
   check({ op: "run", fn: `${service}.${name}`, trigger: start.trigger });
   const deadline = deadlineFor(start);
-  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [] };
+  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [], granted: start.granted ?? [] };
   const started = new Date();
   const base = { id: store.runId(started), fn: `${service}.${name}`, trigger: start.trigger, workspace: start.workspace, started: started.toISOString(), logs: budget.logs, calls: budget.made };
   const running: RunRecord = { ...base, pid: process.pid, until: new Date(deadline).toISOString(), ended: base.started, ms: 0, status: "running" };
@@ -221,7 +225,7 @@ async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: A
   const made = { method: String(req.method || "GET").toUpperCase(), host: target.host, path: target.pathname, ms: 0 };
   const t0 = Date.now();
   try {
-    const sent = await send(target, req, key ?? null, `${kit.service}.${f.name}`, signal);
+    const sent = await send(target, req, key ?? null, `${kit.service}.${f.name}`, signal, { granted: budget.granted });
     if (sent.secret && !budget.secrets.includes(sent.secret)) budget.secrets.push(sent.secret);
     budget.made.push({ ...made, status: sent.answer.status, ms: Date.now() - t0 });
     const got = textOf(sent.answer);

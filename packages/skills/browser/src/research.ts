@@ -8,7 +8,7 @@
 import net from "node:net";
 import { mask } from "#shared/answer";
 import { checkUrl, hostOf, onSite } from "#shared/fence";
-import { load, scratch } from "./browser";
+import { type Ask, load, scratch } from "./browser";
 import { BrowserError } from "./errors";
 import type { Page } from "./host";
 import type { Entry } from "./state";
@@ -28,24 +28,24 @@ function searchUrl(setting: unknown): string {
 }
 
 /** Opens `url` in a page of its own, answers what `fn` makes of it, then closes the page. */
-async function withPage<T>(workspace: string, url: string, fn: (page: Page, entry: Entry, failed: string | null) => Promise<T>): Promise<T> {
+async function withPage<T>(workspace: string, url: string, fn: (page: Page, entry: Entry, failed: string | null) => Promise<T>, ask?: Ask): Promise<T> {
   const { entry, page } = await scratch(workspace);
   try {
-    return await fn(page, entry, await load(entry, page, url));
+    return await fn(page, entry, await load(entry, page, url, ask));
   } finally {
     await page.close().catch(() => {});
   }
 }
 
 /** Reads `url` as read reads a page, with `find` and `from`, without the chat's tab. */
-export function look(workspace: string, url: unknown, { find = "", from = 0 }: { find?: string; from?: unknown } = {}): Promise<string> {
+export function look(workspace: string, url: unknown, { find = "", from = 0, ask }: { find?: string; from?: unknown; ask?: Ask } = {}): Promise<string> {
   const address = checkUrl(url);
   return withPage(workspace, address, async (page, entry, failed) => {
     const { snap, title, url: at } = await readPage(page);
     const text = render({ title, url: at, snap, find, from, secrets: entry.secrets, again: "look" });
     const lead = `Looked at ${address} in a page of its own; this chat's tab is as it was. Its refs aren't for act: to act on it, open it in the tab.${failed ? ` Loading it didn't finish: ${failed}.` : ""}`;
     return [lead, "", text, "", DATA].join("\n");
-  });
+  }, ask);
 }
 
 /** Every link on the page with the text around it: its nearest box that holds more than the link
@@ -78,7 +78,7 @@ function unwrap(href: string, engine: string): string | null {
 const engineSite = (host: string) => (net.isIP(host.replace(/^\[|\]$/g, "")) ? host : host.split(".").slice(-2).join("."));
 
 /** Searches the web with the engine at `setting` (SEARCH_URL); answers its results as a list. */
-export function search(workspace: string, query: unknown, setting: unknown): Promise<string> {
+export function search(workspace: string, query: unknown, setting: unknown, ask?: Ask): Promise<string> {
   const q = String(query ?? "").trim();
   if (!q) throw new BrowserError("search needs query, what to look for");
   if (q.length > MAX_QUERY) throw new BrowserError(`a search is at most ${MAX_QUERY} characters`);
@@ -100,5 +100,5 @@ export function search(workspace: string, query: unknown, setting: unknown): Pro
     if (!results.length) return `No results could be read from ${hostOf(address)} for "${q}": it may have asked for a check that a person passes. Open ${address} in this chat's tab to see it, or try other words.`;
     const lead = `Searched ${hostOf(address)} for "${q}". Look at a result with look (url), or open it in the tab to act on it.`;
     return mask([lead, "", ...results, "", DATA].join("\n"), [...entry.secrets]);
-  });
+  }, ask);
 }

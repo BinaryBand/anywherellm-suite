@@ -8,8 +8,11 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
+import { asksDir } from "#shared/ask";
+import { updateJson } from "#shared/atomic";
+import { allowedFile } from "#shared/fence";
 import { check } from "../src/sandbox.ts";
-import { call, cardsShown, giveKey, idOf, installed, library, reset, runRecord, skillDir, storage } from "./harness.mts";
+import { agentRun, call, cardsShown, giveKey, idOf, installed, library, reset, runRecord, skillDir, storage, until } from "./harness.mts";
 
 const KEY = "tok-1234567890";
 
@@ -254,4 +257,50 @@ test("the installed skill's description ends with the functions saved now, for t
   assert.equal(config().active, false, "the rest of plugin.json as AnythingLLM saved it");
   await call({ action: "save", service: "demo", remove: "list_issues" });
   assert.equal(description(), shippedDescription, "nothing listed once nothing is saved");
+});
+
+// A host the fence refuses (localhost: a name on this machine), the stand-in API behind it.
+const INSIDE = BASE.replace("127.0.0.1", "localhost");
+
+/** Answers the ask a chat's lines name with `decision`, as AnywhereLLM's bridge writes it. */
+async function answerAsk(said: string[], decision: string): Promise<string> {
+  await until(() => said.some((l) => l.includes("[ask:")));
+  const id = said.find((l) => l.includes("[ask:"))!.match(/\[ask:([0-9a-f]{32})\]/)![1];
+  await updateJson<Record<string, unknown>, void>(path.join(asksDir(), `${id}.json`), () => ({}), (a) => Object.assign(a, { decision, decided: new Date().toISOString() }));
+  return id;
+}
+
+test("a chat in AnywhereLLM asks the user for a host the fence refuses, and a yes lets it through for the run", async () => {
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
+  const said: string[] = [];
+  const run = agentRun("work", true);
+  const asked = call({ action: "call", url: `${INSIDE}/echo` }, { said, run });
+  const id = await answerAsk(said, "once");
+  assert.match(said[0], /^Waiting for your approval in AnywhereLLM to reach localhost \[ask:[0-9a-f]{32}\]$/);
+  assert.match(await asked, /Status: 200/);
+  assert.ok(!fs.existsSync(path.join(asksDir(), `${id}.json`)), "the ask is taken away once answered");
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, { said, run }), /Status: 200/, "the same run isn't asked again");
+  assert.equal(said.length, 1);
+  // A function the run starts reaches it too, though a function never asks itself.
+  await call({ action: "save", service: "inside", toolkit: { base_urls: [INSIDE] }, function: { name: "echo", description: "Echoes.", source: "async function main(input, kit) { return (await kit.http({ path: '/echo', auth: false })).status; }" } }, { said, run });
+  assert.match(await call({ action: "run", name: "inside.echo", inputs: {} }, { said, run }), /Result \(JSON\):\n200/);
+  assert.match(await call({ action: "run", name: "inside.echo", inputs: {} }), /localhost:\d+ isn't reached: localhost is a name on this machine or its network\. That's final/, "another run's function isn't let through");
+});
+
+test("a no, or no answer, keeps the fence's refusal, and it's final", async () => {
+  const said: string[] = [];
+  const asked = call({ action: "call", url: `${INSIDE}/echo` }, { said });
+  await answerAsk(said, "deny");
+  assert.match(await asked, /^Library: http:\/\/localhost:\d+ isn't reached: the user declined it in AnywhereLLM\. That's final/);
+});
+
+test("a scheduled job, or a chat AnywhereLLM doesn't stream, is refused without asking; a host let through for good passes for both", async () => {
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), /^Library: http:\/\/localhost:\d+ isn't reached: localhost is a name on this machine or its network\. That's final/);
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }), /isn't reached: localhost is a name/);
+  assert.ok(!fs.existsSync(asksDir()), "nobody was asked");
+  fs.mkdirSync(path.dirname(allowedFile(storage)), { recursive: true });
+  fs.writeFileSync(allowedFile(storage), JSON.stringify({ hosts: [{ host: "localhost", added: new Date().toISOString() }] }));
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), /Status: 200/);
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
 });

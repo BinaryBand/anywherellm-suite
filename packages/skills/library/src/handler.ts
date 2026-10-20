@@ -12,6 +12,7 @@
 
 import { baseUrlOf as baseOf, push, pushTo, serial, workspaceOf } from "#shared/anythingllm";
 import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
+import { foreground, grantsOf, letThrough } from "#shared/ask";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
 import { entryOf } from "#shared/static";
@@ -23,7 +24,7 @@ import { LOOPBACK, define, givenLink, redirectFor, start as startSignIn, stateOf
 import * as page from "./page";
 import { check } from "./policy";
 import { presetOf } from "./presets";
-import { send } from "./request";
+import { type Reach, send } from "./request";
 import * as runs from "./runs";
 import { check as compiles, failureText } from "./sandbox";
 import * as secrets from "./secrets";
@@ -224,13 +225,20 @@ function authOf(auth: unknown, host: string): { label: string; as: string } | nu
   return { label: clean(given.key) || secrets.labelForHost(host), as };
 }
 
+/** What the agent's own requests reach in this run: the hosts the user let through in it, and, in a
+ *  chat in AnywhereLLM, the user asked for a host the fence refuses. */
+const reachOf = (self: HandlerContext): Reach => ({
+  granted: grantsOf(self),
+  ask: foreground(self) ? (refused) => letThrough(self, "Library", refused, `Send a request to ${refused.origin}`) : undefined,
+});
+
 /** One request, to find out how an API answers: its docs, its spec, an endpoint. */
-async function call(args: Args): Promise<string> {
+async function call(args: Args, self: HandlerContext): Promise<string> {
   if (!args.url) throw new LibraryError("call needs url, the address to send it to");
   const target = new URL(checkUrl(args.url));
   const keep = keepOf(args.keep);
   const key = authOf(args.auth, target.hostname);
-  const sent = await send(target, args, key, null);
+  const sent = await send(target, args, key, null, undefined, reachOf(self));
   return answerText(textOf(sent.answer), `${sent.method} ${target.href}${key ? ` (with the key "${key.label}")` : ""}`, keep, sent.secret ? [sent.secret] : []);
 }
 
@@ -283,7 +291,7 @@ async function within<T>(done: Promise<T>, ms: number): Promise<T | null> {
 async function runNow(name: string, inputs: unknown, self: HandlerContext): Promise<string> {
   const workspace = workspaceOf(self);
   const trigger = workspace ? "chat" : "job";
-  const { running, done } = runs.begin(name, inputs, { trigger, workspace });
+  const { running, done } = runs.begin(name, inputs, { trigger, workspace, granted: grantsOf(self) });
   // Only what the end needs, so a background run doesn't hold on to the agent that started it.
   const base = baseOf(self);
   const to = pushTo(self);

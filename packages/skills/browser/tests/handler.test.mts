@@ -6,8 +6,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { asksDir } from "#shared/ask";
+import { updateJson } from "#shared/atomic";
 import * as logins from "#shared/logins";
-import { call as called, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultLogins, vaultNames, world } from "./harness.mts";
+import { agentRun, call as called, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultLogins, vaultNames, world } from "./harness.mts";
 
 const LOGIN = "https://login.example/";
 site(LOGIN, {
@@ -38,7 +40,7 @@ test("open reads the page with refs and ends with the tab's card, whose page and
 
 test("the fence refuses what isn't the public web, and act never types into a password field", async () => {
   const call = (args: Record<string, unknown>) => called(args, { workspace: "fence" });
-  assert.match(await call({ action: "open", url: "http://127.0.0.1:9/" }), /^Browser: http:\/\/127\.0\.0\.1:9\/ isn't opened: 127\.0\.0\.1 isn't a public address\. .*FENCE_ALLOW\. That's final[^.]*\.$/);
+  assert.match(await call({ action: "open", url: "http://127.0.0.1:9/" }), /^Browser: http:\/\/127\.0\.0\.1:9\/ isn't opened: 127\.0\.0\.1 isn't a public address\. .*FENCE_ALLOW, or in AnywhereLLM, which asks the user during a chat there\)\. That's final[^.]*\.$/);
   await call({ action: "open", url: LOGIN });
   assert.match(await call({ action: "act", do: "fill", ref: "e2", text: "hunter2" }), /e2 is a password field, which act never types into/);
   assert.equal(lastPage().fields.e2.value, undefined);
@@ -374,4 +376,34 @@ test("a code field the page shows again under another ref counts as still asked,
   post({ ev: "need-answer", text: "111111" }, { workspace: "moved" });
   assert.match(await call({ action: "read" }), /the page still asks for the code: the site may have refused it\. Read the page, tell the user, and use login again/);
   assert.equal(tabState("moved").need, null, "not asked again under a ref that's now another element");
+});
+
+/** Answers the ask the chat's lines name with `decision`, as AnywhereLLM's bridge writes it. */
+async function answerAsk(said: string[], decision: string): Promise<void> {
+  for (let i = 0; i < 400 && !said.some((l) => l.includes("[ask:")); i++) await new Promise((r) => setTimeout(r, 10));
+  const id = said.find((l) => l.includes("[ask:"))!.match(/\[ask:([0-9a-f]{32})\]/)![1];
+  await updateJson<Record<string, unknown>, void>(path.join(asksDir(), `${id}.json`), () => ({}), (a) => Object.assign(a, { decision, decided: new Date().toISOString() }));
+}
+
+test("a chat in AnywhereLLM asks the user for a host the fence refuses; a yes opens it for that run only", async () => {
+  site("http://nas.lan/", { title: "NAS", text: "Disks: 2" });
+  const said: string[] = [];
+  const run = agentRun("asks", null);
+  const opening = called({ action: "open", url: "http://nas.lan/" }, { workspace: "asks", thread: null, said, run });
+  await answerAsk(said, "once");
+  assert.match(said.find((l) => l.includes("[ask:"))!, /^Waiting for your approval in AnywhereLLM to reach nas\.lan \[ask:[0-9a-f]{32}\]$/);
+  assert.match(await opening, /^Opened http:\/\/nas\.lan\/ in this chat's tab\./);
+  const asks = () => said.filter((l) => l.includes("[ask:")).length;
+  assert.match(await called({ action: "look", url: "http://nas.lan/" }, { workspace: "asks", thread: null, said, run }), /Disks: 2/);
+  assert.equal(asks(), 1, "the same run isn't asked again");
+  const next: string[] = [];
+  const again = called({ action: "open", url: "http://nas.lan/" }, { workspace: "asks", thread: null, said: next });
+  await answerAsk(next, "deny");
+  assert.match(await again, /^Browser: http:\/\/nas\.lan isn't reached: the user declined it in AnywhereLLM\. That's final/, "another run is asked, and a no is final");
+});
+
+test("a chat AnywhereLLM doesn't stream (a thread: AnythingLLM's web UI) is refused without asking", async () => {
+  const said: string[] = [];
+  assert.match(await called({ action: "open", url: "http://nas.lan/" }, { workspace: "asks-ui", said }), /^Browser: http:\/\/nas\.lan\/ isn't opened: nas\.lan is a name on this machine or its network\. .*That's final/);
+  assert.deepEqual(said.filter((l) => l.includes("[ask:")), []);
 });

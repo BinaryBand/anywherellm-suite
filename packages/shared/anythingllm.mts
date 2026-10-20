@@ -65,9 +65,11 @@ export function readPageKey(storage: string): string {
  *  every turn, and install keeps it when it updates the skill. */
 export const SAVED_NOW = "\n\nSaved now:";
 
-/** What of `this` in a skill's handler tells where it was called from, and by whom. */
+/** What of `this` in a skill's handler tells where it was called from, and by whom. A chat in
+ *  AnythingLLM's own web UI has the invocation's `uuid` and `thread_id`; one through its developer
+ *  API has neither. */
 export interface Invoked {
-  super?: { handlerProps?: { invocation?: { workspace?: { slug?: string } | null; user_id?: number | null } } };
+  super?: { handlerProps?: { invocation?: { workspace?: { slug?: string } | null; user_id?: number | null; uuid?: string | null; thread_id?: number | null } } };
 }
 
 /** The workspace a skill was called from, from AnythingLLM's invocation, never from what the model

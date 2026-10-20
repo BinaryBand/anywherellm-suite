@@ -14,7 +14,7 @@ import http from "node:http";
 import https from "node:https";
 import type { LookupFunction } from "node:net";
 import zlib from "node:zlib";
-import { FENCED, NetError, addressesRefused, allowedHosts, bareHost, hostRefused, httpUrl } from "./fence.mts";
+import { FENCED, Fenced, NetError, addressesRefused, allowedHosts, bareHost, hostRefused, httpUrl } from "./fence.mts";
 
 /** A server that didn't answer, or whose answer couldn't be read: worth trying again later. */
 export class Unreachable extends NetError {
@@ -91,8 +91,9 @@ function agentsFor(allowed: Set<string>): Agents {
 /** One request and its answer, with no redirect followed. */
 function once({ method, url, headers, body, timeout, maxBytes, allowed, resolve, signal }: Once): Promise<Answer> {
   const parsed = httpUrl(url);
-  const why = hostRefused(bareHost(parsed), allowed);
-  if (why && why !== "lookup") throw new NetError(`${parsed.origin} isn't reached: ${why}. ${FENCED}`);
+  const host = bareHost(parsed).toLowerCase();
+  const why = hostRefused(host, allowed);
+  if (why && why !== "lookup") throw new Fenced(`${parsed.origin} isn't reached: ${why}. ${FENCED}`, host, parsed.origin);
   if (signal?.aborted) throw new NetError(`${parsed.origin} wasn't asked: the run stopped`);
   const https_ = parsed.protocol === "https:";
   // A stand-in lookup (the tests') gets connections of its own; the real one, the kept ones.
@@ -135,7 +136,7 @@ function once({ method, url, headers, body, timeout, maxBytes, allowed, resolve,
     const onAbort = () => req.destroy(Object.assign(new Error("the run stopped"), { code: "EABORTED" }));
     signal?.addEventListener("abort", onAbort, { once: true });
     req.on("error", (e: NodeJS.ErrnoException) => {
-      if (e.code === "EFENCED") return finish(reject, new NetError(`${parsed.origin} isn't reached: ${e.message}. ${FENCED}`));
+      if (e.code === "EFENCED") return finish(reject, new Fenced(`${parsed.origin} isn't reached: ${e.message}. ${FENCED}`, host, parsed.origin));
       return finish(reject, new Unreachable(`${parsed.origin} didn't answer: ${e.message}`));
     });
     req.end(body);

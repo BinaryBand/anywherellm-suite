@@ -73,13 +73,20 @@ export interface Call {
   thread?: number | null;
   base?: string;
   settings?: Record<string, string>;
+  /** The lines the skill shows in the chat, kept here. */
+  said?: string[];
+  /** The agent run the call is part of (self.super), to call again in the same run. */
+  run?: object;
 }
+
+/** An agent run for `call`'s `run`: from `workspace` and `thread` (null: none, as through
+ *  AnythingLLM's developer API). */
+export const agentRun = (workspace: string | null = "home", thread: number | null = 1): object => ({ handlerProps: { invocation: workspace ? { workspace: { slug: workspace }, thread_id: thread } : {} } });
 
 /** Calls the skill as AnythingLLM's agent would: from `workspace` and `thread` (null: none), with
  *  ANYTHINGLLM_URL set to `base`. The agent can't show a question card: the skill never asks one. */
-export function call(args: Record<string, unknown>, { workspace = "home", thread = 1, base, settings = {} }: Call = {}): Promise<string> {
-  const invocation = workspace ? { workspace: { slug: workspace }, thread_id: thread } : {};
-  const self = { super: { handlerProps: { invocation } }, introspect: () => {}, runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {} };
+export function call(args: Record<string, unknown>, { workspace = "home", thread = 1, base, settings = {}, said, run }: Call = {}): Promise<string> {
+  const self = { super: run ?? agentRun(workspace, thread), introspect: (m: string) => said?.push(m), runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {} };
   return handler().call(self, args);
 }
 

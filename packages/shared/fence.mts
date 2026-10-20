@@ -1,18 +1,35 @@
 // What the skills may reach: the public web only. They run inside AnythingLLM, whose machine
 // reaches its LAN and its tailnet, so a request is refused when its host is, or resolves to, an
 // address that isn't public, unless it's one of the hosts named in FENCE_ALLOW (comma-separated),
-// which the user lets through. The requests a skill sends itself (net.mts) are checked at the
-// lookup their connection uses, so a name can't resolve one way for the check and another for the
-// connection. makeFence is for what can only be checked before (the browser's page requests):
-// there a name could resolve differently in between.
+// or one the user let through for good from AnywhereLLM (allowed.json, which its bridge writes); a
+// chat in AnywhereLLM can also ask the user to let one through (ask.mts). The requests a skill sends
+// itself (net.mts) are checked at the lookup their connection uses, so a name can't resolve one way
+// for the check and another for the connection. makeFence is for what can only be checked before
+// (the browser's page requests): there a name could resolve differently in between.
 // Ported from the lean browser skill's fence.js.
 
 import dns from "node:dns";
+import fs from "node:fs";
 import net from "node:net";
+import path from "node:path";
+import { storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
 
 /** A request refused or failed, said as it is: a fenced address, a bad header, an unreachable server. */
 export class NetError extends Told {}
+
+/** A request the fence refused before anything was sent: `host` (as the allow-lists name it) and the
+ *  `origin` it was for, so a chat can ask the user to let it through and send it again. */
+export class Fenced extends NetError {
+  override name = "Fenced";
+  readonly host: string;
+  readonly origin: string;
+  constructor(message: string, host: string, origin: string) {
+    super(message);
+    this.host = host;
+    this.origin = origin;
+  }
+}
 
 /** What the agent is told whenever the fence refuses an address. */
 export const FENCED = "That's final: don't reach it another way, with another tool or another address for the same place.";
@@ -81,12 +98,46 @@ export function checkUrl(raw: unknown): string {
   return httpUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`).href;
 }
 
-/** The hosts FENCE_ALLOW lets through, in lower case. */
-export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] =>
-  (env.FENCE_ALLOW ?? "")
-    .split(",")
-    .map((h) => h.trim().toLowerCase())
-    .filter(Boolean);
+/** The fence's folder in AnythingLLM's storage: the asks waiting for the user (ask.mts) and the hosts
+ *  they let through for good. AnywhereLLM's bridge reads and writes it too. */
+export const FENCE_DIR = "fence-lean";
+
+/** The hosts the user let through for good: { hosts: [{ host, added }] }, written by the bridge. */
+export const allowedFile = (storage: string): string => path.join(storage, FENCE_DIR, "allowed.json");
+
+let kept: { file: string; stamp: number; hosts: string[] } | null = null;
+
+/** The hosts the user let through for good from AnywhereLLM, in lower case; read again when the file
+ *  changes. None when there's no file, or one that can't be read: the fence stays shut. */
+export function alwaysAllowed(): string[] {
+  let file: string;
+  let stamp: number;
+  try {
+    file = allowedFile(storageDir());
+    stamp = fs.statSync(file).mtimeMs;
+  } catch {
+    return [];
+  }
+  if (kept?.file === file && kept.stamp === stamp) return kept.hosts;
+  let hosts: string[] = [];
+  try {
+    const listed = (JSON.parse(fs.readFileSync(file, "utf8")) as { hosts?: { host?: unknown }[] }).hosts;
+    hosts = Array.isArray(listed) ? listed.map((h) => String(h?.host ?? "").trim().toLowerCase()).filter(Boolean) : [];
+  } catch {}
+  kept = { file, stamp, hosts };
+  return hosts;
+}
+
+/** The hosts the user lets through, in lower case: FENCE_ALLOW's, and those let through for good. */
+export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] => [
+  ...new Set([
+    ...(env.FENCE_ALLOW ?? "")
+      .split(",")
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean),
+    ...alwaysAllowed(),
+  ]),
+];
 
 /** Why `host` (a name or an address, without brackets) is refused by itself, or null; "lookup"
  *  when only its addresses can say. The hosts in `allowed` are let through. */
@@ -106,13 +157,15 @@ export function addressesRefused(host: string, addresses: string[]): string | nu
 type Lookup = (host: string) => Promise<{ address: string }[]>;
 
 /** A fence: `refused(url)` answers why a request to `url` is refused, or null. Lookups are kept for
- *  DNS_TTL_MS; the hosts in `allow` are let through. */
+ *  DNS_TTL_MS; the hosts in `allow` are let through, read again for each request when it's a
+ *  function (by default, the hosts the user lets through now). */
 export function makeFence({
   lookup = (host) => dns.promises.lookup(host, { all: true, verbatim: true }),
   now = Date.now,
-  allow = allowedHosts(),
-}: { lookup?: Lookup; now?: () => number; allow?: string[] } = {}) {
-  const allowed = new Set(allow);
+  allow = () => allowedHosts(),
+}: { lookup?: Lookup; now?: () => number; allow?: string[] | (() => Iterable<string>) } = {}) {
+  const fixed = typeof allow === "function" ? null : new Set(allow);
+  const allowedNow = () => fixed ?? new Set([...(allow as () => Iterable<string>)()].map((h) => h.toLowerCase()));
   const known = new Map<string, { addresses: Promise<string[]>; until: number }>();
   function addresses(host: string): Promise<string[]> {
     const kept = known.get(host);
@@ -133,6 +186,7 @@ export function makeFence({
     if (LOCAL_SCHEMES.has(parsed.protocol)) return null;
     if (!["http:", "https:"].includes(parsed.protocol)) return `${parsed.protocol} addresses aren't loaded`;
     const host = bareHost(parsed);
+    const allowed = allowedNow();
     const why = hostRefused(host, allowed);
     if (why !== "lookup") return why;
     let found: string[];

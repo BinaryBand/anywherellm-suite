@@ -3,6 +3,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import zlib from "node:zlib";
+import { Fenced } from "./fence.mts";
 import * as net from "./net.mts";
 
 type Route = (req: http.IncomingMessage, res: http.ServerResponse, body: string) => void;
@@ -36,6 +37,17 @@ test("a request reaches only public addresses, unless the user lets a host throu
   assert.equal(answer.status, 200);
   assert.equal(answer.body.toString(), "hi");
   s.close();
+});
+
+test("a refusal names the host and origin, so a chat can ask the user and send it again", async () => {
+  const byName = await net.send({ url: "http://Muse-VM:8463/x?token=1", allow: [] }).catch((e) => e);
+  assert.ok(byName instanceof Fenced);
+  assert.equal(byName.host, "muse-vm");
+  assert.equal(byName.origin, "http://muse-vm:8463");
+  const sneaky: Resolve = (host, options, callback) => callback(null, [{ address: "10.0.0.5", family: 4 }]);
+  const byAddress = await net.send({ url: "https://inside.example/", allow: [], resolve: sneaky }).catch((e) => e);
+  assert.ok(byAddress instanceof Fenced, "refused at the lookup too");
+  assert.equal(byAddress.host, "inside.example");
 });
 
 test("a name is looked up once, every address it has is checked, and the one checked is the one connected to", async () => {

@@ -13,14 +13,14 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { perProcess } from "#shared/anythingllm";
-import { FENCED, makeFence } from "#shared/fence";
+import { FENCED, allowedHosts, bareHost, makeFence } from "#shared/fence";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
 import type { Browser, Page, Puppeteer } from "./host";
 import { forgetTab, redraw } from "./page";
 import * as passkey from "./passkey";
 import * as sessions from "./sessions";
-import { type Entry, type Tab, VIEWPORT, firstLine, note, state, threadKey } from "./state";
+import { type Entry, type Tab, VIEWPORT, firstLine, granted, note, state, threadKey } from "./state";
 
 /** Where a system Chrome or Chromium is looked for, after the ones Puppeteer downloaded (Linux only, so far). */
 const SYSTEM_CHROMES = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];
@@ -154,7 +154,7 @@ async function entryFor(workspace: string): Promise<Entry> {
   if (!entry) {
     const others = [...browsers.entries()].sort((a, b) => a[1].last - b[1].last);
     while (others.length >= MAX_BROWSERS) await closeEntry(others.shift()![0]);
-    const made: Entry = { tabs: new Map(), notes: new Map(), needs: new Map(), offers: new Map(), msgs: new Map(), holds: new Map(), screens: new Map(), authenticators: new Map(), secrets: new Set(), fence: makeFence(), last: Date.now(), timer: null, saving: null, saved: null, ready: null!, touch: () => touch(workspace, made), changed: () => saveSoon(workspace, made), busy: new Set() };
+    const made: Entry = { tabs: new Map(), notes: new Map(), needs: new Map(), offers: new Map(), msgs: new Map(), holds: new Map(), screens: new Map(), authenticators: new Map(), secrets: new Set(), fence: makeFence({ allow: () => [...allowedHosts(), ...granted(workspace)] }), last: Date.now(), timer: null, saving: null, saved: null, ready: null!, touch: () => touch(workspace, made), changed: () => saveSoon(workspace, made), busy: new Set() };
     made.ready = launch(workspace).then(async (browser) => {
       made.saved = await sessions.restore(workspace, browser).catch(() => null);
       return (made.browser = browser);
@@ -255,11 +255,26 @@ export function existing(workspace: string, thread?: string | number): Tab {
   return { workspace, entry, page, key };
 }
 
-/** Loads `url` in `page` of `entry`'s browser, the fence asked first (a BrowserError when it
- *  refuses); answers why loading didn't finish, or null when it did. */
-export async function load(entry: Entry, page: Page, url: string): Promise<string | null> {
-  const refused = await entry.fence(url);
-  if (refused) throw new BrowserError(`${url} isn't opened: ${refused}. The browser reaches the public web only, and the hosts the user lets through in FENCE_ALLOW. ${FENCED}`);
+/** How to ask the user, in a chat in AnywhereLLM, to let a host the fence refuses through: resolves
+ *  once they did, else throws what to tell the agent. */
+export type Ask = (refused: { host: string; origin: string }) => Promise<void>;
+
+/** Whether the fence lets `url` through, asking the user with `ask` (if any) when it doesn't: a
+ *  BrowserError saying why not, said as `what` ("isn't opened"). */
+export async function through(entry: Entry, url: string, what: string, ask?: Ask): Promise<void> {
+  let refused = await entry.fence(url);
+  if (refused && ask) {
+    const parsed = new URL(url);
+    await ask({ host: bareHost(parsed).toLowerCase(), origin: parsed.origin });
+    refused = await entry.fence(url);
+  }
+  if (refused) throw new BrowserError(`${url} ${what}: ${refused}. The browser reaches the public web only, and the hosts the user lets through (in FENCE_ALLOW, or in AnywhereLLM, which asks the user during a chat there). ${FENCED}`);
+}
+
+/** Loads `url` in `page` of `entry`'s browser, the fence asked first (through); answers why loading
+ *  didn't finish, or null when it did. */
+export async function load(entry: Entry, page: Page, url: string, ask?: Ask): Promise<string | null> {
+  await through(entry, url, "isn't opened", ask);
   let failed: string | null = null;
   try {
     await page.goto(url, { waitUntil: "domcontentloaded" });
