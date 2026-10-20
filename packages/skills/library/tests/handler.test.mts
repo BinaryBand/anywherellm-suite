@@ -294,13 +294,18 @@ test("a no, or no answer, keeps the fence's refusal, and it's final", async () =
   assert.match(await asked, /^Library: http:\/\/localhost:\d+ isn't reached: the user declined it in AnywhereLLM\. That's final/);
 });
 
-test("a scheduled job, or a chat AnywhereLLM doesn't stream, is refused without asking; a host let through for good passes for both", async () => {
+test("a scheduled job, or a chat AnywhereLLM doesn't stream, is refused without asking; an origin let through for good passes for both, and gets its key over plain http", async () => {
   fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
   assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), /^Library: http:\/\/localhost:\d+ isn't reached: localhost is a name on this machine or its network\. That's final/);
   assert.match(await call({ action: "call", url: `${INSIDE}/echo` }), /isn't reached: localhost is a name/);
   assert.ok(!fs.existsSync(asksDir()), "nobody was asked");
   fs.mkdirSync(path.dirname(allowedFile(storage)), { recursive: true });
-  fs.writeFileSync(allowedFile(storage), JSON.stringify({ hosts: [{ host: "localhost", added: new Date().toISOString() }] }));
+  fs.writeFileSync(allowedFile(storage), JSON.stringify({ origins: [{ origin: new URL(INSIDE).origin, added: new Date().toISOString() }] }));
   assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), /Status: 200/);
+  assert.match(await call({ action: "call", url: "http://localhost:9/" }, null), /isn't reached: localhost is a name/, "another port of the same host is still refused");
+  await giveKey("inside", "localhost", KEY);
+  const keyed = await call({ action: "call", url: `${INSIDE}/echo`, auth: '{"key": "inside", "as": "bearer"}' }, null);
+  assert.match(keyed, /Status: 200/);
+  assert.match(keyed, /Bearer •••/, "the key went to the origin over plain http");
   fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
 });

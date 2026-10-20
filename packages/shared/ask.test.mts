@@ -6,7 +6,7 @@ import { after, beforeEach, test } from "node:test";
 import { perProcess } from "./anythingllm.mts";
 import { type Ask, type Asking, askToReach, asksDir, foreground, grantsOf, letThrough, quietly, runAs, withAsk } from "./ask.mts";
 import { updateJson } from "./atomic.mts";
-import { Fenced, NetError, allowedNow, currentRun } from "./fence.mts";
+import { Fenced, NetError, allowedFor, currentRun } from "./fence.mts";
 
 const storage = fs.mkdtempSync(path.join(os.tmpdir(), "ask-"));
 after(() => fs.rmSync(storage, { recursive: true, force: true }));
@@ -54,8 +54,8 @@ test("an ask is written for the bridge, named in the chat, and a yes lets the ho
   assert.equal(Date.parse(ask.expires) - Date.parse(ask.asked), 120 * 1000);
   await decide(file, "once");
   assert.equal(await asked, "once");
-  assert.ok(grantsOf(self).has("muse-vm"));
-  assert.ok(!grantsOf(chat()).has("muse-vm"), "another run isn't let through");
+  assert.deepEqual([...grantsOf(self)], ["http://muse-vm:8463"], "its origin, not the whole host");
+  assert.ok(!grantsOf(chat()).has("http://muse-vm:8463"), "another run isn't let through");
   assert.ok(!fs.existsSync(file), "the ask is taken away once answered");
 });
 
@@ -69,7 +69,7 @@ test("a no, an ask nobody answers and one taken away are refusals", async () => 
   const removed = askToReach(gone, what, QUICK);
   fs.rmSync((await askOf(gone)).file);
   assert.equal(await removed, "deny");
-  assert.ok(!grantsOf(self).has("muse-vm") && !grantsOf(gone).has("muse-vm"));
+  assert.ok(!grantsOf(self).size && !grantsOf(gone).size);
   assert.deepEqual(fs.readdirSync(asksDir()).filter((f) => f.endsWith(".json")), []);
 });
 
@@ -82,7 +82,7 @@ test("letThrough tells the agent why a host stays refused, and that it's final",
   const let_ = letThrough(always, "Library", { host: "muse-vm", origin: "http://muse-vm:8463" }, "x");
   await decide((await askOf(always)).file, "always");
   await let_;
-  assert.ok(grantsOf(always).has("muse-vm"));
+  assert.ok(grantsOf(always).has("http://muse-vm:8463"));
 });
 
 test("asks left behind by a process that ended are swept an hour after they ran out, once an hour", async () => {
@@ -110,7 +110,7 @@ test("a run asks for what the fence refuses and tries again; its background work
   let tries = 0;
   const refuseUntilLet = async () => {
     tries++;
-    if (!allowedNow().has("muse-vm")) throw new Fenced("refused", "muse-vm", "http://muse-vm:8463");
+    if (!allowedFor("http://muse-vm:8463").has("muse-vm")) throw new Fenced("refused", "muse-vm", "http://muse-vm:8463");
     return "sent";
   };
   const sent = runAs(self, "Library", (o) => `Send a request to ${o}`, () => withAsk(refuseUntilLet));

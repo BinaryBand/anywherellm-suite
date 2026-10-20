@@ -107,19 +107,19 @@ export const state = () =>
     /** A thread-less run's tab, by its agent (scope.ts). */
     runs: new WeakMap<object, string>(),
     leases: new Map<string, Map<string, { run: WeakRef<object>; last: number }>>(),
-    /** The hosts the user let through once, by workspace: the latest run's that called (grants). */
-    grants: new Map<string, { hosts: Set<string>; last: number }>(),
+    /** The origins the user let through once, by workspace: the latest run's that called (grants). */
+    grants: new Map<string, { origins: Set<string>; last: number }>(),
   }));
 
-/** How long the hosts a run was let through stay let through for its workspace's pages after its
+/** How long the origins a run was let through stay let through for its workspace's pages after its
  *  last call: the run has ended by then, or calls again. */
 const GRANT_MS = 2 * 60 * 1000;
 
-/** The hosts the user let through once that `workspace`'s pages may reach now. Pages load in the
+/** The origins the user let through once that `workspace`'s pages may reach now. Pages load in the
  *  background, between calls, so they go by the latest run of the workspace that called. */
 export function granted(workspace: string, now = Date.now()): Set<string> {
   const held = state().grants.get(workspace);
-  return held && now - held.last <= GRANT_MS ? held.hosts : new Set();
+  return held && now - held.last <= GRANT_MS ? held.origins : new Set();
 }
 
 /** How long the agent's request for a login or a code waits on the page. */

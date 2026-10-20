@@ -30,22 +30,22 @@ type Resolve = NonNullable<net.Send["resolve"]>;
 
 test("a request reaches only public addresses, unless the user lets a host through", async () => {
   const s = await serve({ "/": (req, res) => res.end("hi") });
-  await assert.rejects(net.send({ url: `${s.url}/`, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. That's final/);
-  await assert.rejects(net.send({ url: "http://anythingllm:3001/", allow: [] }), /anythingllm is a name on this machine or its network/);
-  await assert.rejects(net.send({ url: "file:///etc/passwd", allow: [] }), /only http and https/);
-  const answer = await net.send({ url: `${s.url}/`, allow: ["127.0.0.1"] });
+  await assert.rejects(net.send({ url: `${s.url}/`, allow: () => [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. That's final/);
+  await assert.rejects(net.send({ url: "http://anythingllm:3001/", allow: () => [] }), /anythingllm is a name on this machine or its network/);
+  await assert.rejects(net.send({ url: "file:///etc/passwd", allow: () => [] }), /only http and https/);
+  const answer = await net.send({ url: `${s.url}/`, allow: () => ["127.0.0.1"] });
   assert.equal(answer.status, 200);
   assert.equal(answer.body.toString(), "hi");
   s.close();
 });
 
 test("a refusal names the host and origin, so a chat can ask the user and send it again", async () => {
-  const byName = await net.send({ url: "http://Muse-VM:8463/x?token=1", allow: [] }).catch((e) => e);
+  const byName = await net.send({ url: "http://Muse-VM:8463/x?token=1", allow: () => [] }).catch((e) => e);
   assert.ok(byName instanceof Fenced);
   assert.equal(byName.host, "muse-vm");
   assert.equal(byName.origin, "http://muse-vm:8463");
   const sneaky: Resolve = (host, options, callback) => callback(null, [{ address: "10.0.0.5", family: 4 }]);
-  const byAddress = await net.send({ url: "https://inside.example/", allow: [], resolve: sneaky }).catch((e) => e);
+  const byAddress = await net.send({ url: "https://inside.example/", allow: () => [], resolve: sneaky }).catch((e) => e);
   assert.ok(byAddress instanceof Fenced, "refused at the lookup too");
   assert.equal(byAddress.host, "inside.example");
 });
@@ -55,11 +55,11 @@ test("a name is looked up once, every address it has is checked, and the one che
   const lookups: string[] = [];
   // A public-looking name that resolves inside: refused at the lookup, before any connection.
   const sneaky: Resolve = (host, options, callback) => (lookups.push(host), callback(null, [{ address: "93.184.215.14", family: 4 }, { address: "127.0.0.1", family: 4 }]));
-  await assert.rejects(net.send({ url: `http://sneaky.example:${s.port}/`, allow: [], resolve: sneaky }), /sneaky\.example resolves to 127\.0\.0\.1, which isn't a public address/);
+  await assert.rejects(net.send({ url: `http://sneaky.example:${s.port}/`, allow: () => [], resolve: sneaky }), /sneaky\.example resolves to 127\.0\.0\.1, which isn't a public address/);
   assert.equal(s.seen.length, 0, "nothing was sent");
   // A name the user lets through goes to the address its one lookup gave.
   const pinned: Resolve = (host, options, callback) => (lookups.push(host), callback(null, [{ address: "127.0.0.1", family: 4 }]));
-  const answer = await net.send({ url: `http://app.example:${s.port}/`, allow: ["app.example"], resolve: pinned });
+  const answer = await net.send({ url: `http://app.example:${s.port}/`, allow: () => ["app.example"], resolve: pinned });
   assert.equal(answer.body.toString(), `app.example:${s.port}`, "it reached the checked address, with its own name");
   assert.deepEqual(lookups, ["sneaky.example", "app.example"]);
   s.close();
@@ -72,7 +72,7 @@ test("a GET follows a redirect, fenced again, with the headers its caller choose
     "/away": (req, res) => (res.writeHead(301, { Location: "http://10.0.0.1/" }), res.end()),
     "/post": (req, res) => (res.writeHead(303, { Location: "/to" }), res.end()),
   });
-  const allow = ["127.0.0.1"];
+  const allow = () => ["127.0.0.1"];
   let followed = await net.send({ url: `${s.url}/from`, headers: { "x-key": "k" }, allow });
   assert.equal(followed.body.toString(), "to k");
   assert.equal(followed.url, `${s.url}/to`);
@@ -94,7 +94,7 @@ test("an answer is decoded, cut at its size limit, and a slow one times out", as
     "/slow": () => {},
     "/echo": (req, res, body) => res.end(`${req.method} ${req.headers["content-length"]} ${body}`),
   });
-  const allow = ["127.0.0.1"];
+  const allow = () => ["127.0.0.1"];
   assert.equal((await net.send({ url: `${s.url}/gz`, allow })).body.toString(), "unzipped");
   assert.equal((await net.send({ url: `${s.url}/br`, allow })).body.toString(), "unbrotlied");
   const big = await net.send({ url: `${s.url}/big`, allow, maxBytes: 1000 });
@@ -106,7 +106,7 @@ test("an answer is decoded, cut at its size limit, and a slow one times out", as
 
 test("a request a stopped run was waiting on ends at once, and one it hadn't sent isn't sent", async () => {
   const s = await serve({ "/slow": () => {} });
-  const allow = ["127.0.0.1"];
+  const allow = () => ["127.0.0.1"];
   const stop = new AbortController();
   const waiting = net.send({ url: `${s.url}/slow`, allow, signal: stop.signal });
   setTimeout(() => stop.abort(), 50);
@@ -120,11 +120,11 @@ test("a request a stopped run was waiting on ends at once, and one it hadn't sen
 
 test("requests to the same host reuse a kept connection, opened through the fence", async () => {
   const s = await serve({ "/": (req, res) => res.end(String(req.socket.remotePort)) });
-  const allow = ["127.0.0.1"];
+  const allow = () => ["127.0.0.1"];
   const first = (await net.send({ url: `${s.url}/`, allow })).body.toString();
   const second = (await net.send({ url: `${s.url}/`, allow })).body.toString();
   assert.equal(second, first, "the second request came from the same connection");
-  const other = (await net.send({ url: `${s.url}/`, allow: ["127.0.0.1", "nas.lan"] })).body.toString();
+  const other = (await net.send({ url: `${s.url}/`, allow: () => ["127.0.0.1", "nas.lan"] })).body.toString();
   assert.notEqual(other, first, "another allow-list has connections of its own");
   s.close();
 });

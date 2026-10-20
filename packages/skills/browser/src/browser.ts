@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { perProcess } from "#shared/anythingllm";
 import { withAsk } from "#shared/ask";
-import { FENCED, Fenced, allowedNow, bareHost, makeFence, outsideRun } from "#shared/fence";
+import { FENCED, Fenced, allowedFor, bareHost, makeFence, outsideRun } from "#shared/fence";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
 import type { Browser, Page, Puppeteer } from "./host";
@@ -156,7 +156,7 @@ async function entryFor(workspace: string): Promise<Entry> {
   if (!entry) {
     const others = [...browsers.entries()].sort((a, b) => a[1].last - b[1].last);
     while (others.length >= MAX_BROWSERS) await closeEntry(others.shift()![0]);
-    const made: Entry = { tabs: new Map(), notes: new Map(), needs: new Map(), offers: new Map(), msgs: new Map(), holds: new Map(), screens: new Map(), authenticators: new Map(), secrets: new Set(), fence: makeFence({ allow: () => allowedNow(granted(workspace)) }), last: Date.now(), timer: null, saving: null, saved: null, ready: null!, touch: () => touch(workspace, made), changed: () => saveSoon(workspace, made), busy: new Set() };
+    const made: Entry = { tabs: new Map(), notes: new Map(), needs: new Map(), offers: new Map(), msgs: new Map(), holds: new Map(), screens: new Map(), authenticators: new Map(), secrets: new Set(), fence: makeFence({ allow: (origin) => allowedFor(origin, granted(workspace)) }), last: Date.now(), timer: null, saving: null, saved: null, ready: null!, touch: () => touch(workspace, made), changed: () => saveSoon(workspace, made), busy: new Set() };
     // Outside the run that opens it, which the browser would otherwise hold on to as long as it lives.
     made.ready = outsideRun(() => launch(workspace)).then(async (browser) => {
       made.saved = await sessions.restore(workspace, browser).catch(() => null);
@@ -265,7 +265,7 @@ export function through(entry: Entry, url: string, what: string): Promise<void> 
     const refused = await entry.fence(url);
     if (!refused) return;
     const parsed = new URL(url);
-    throw new Fenced(`${url} ${what}: ${refused}. The browser reaches the public web only, and the hosts the user lets through (in FENCE_ALLOW, or in AnywhereLLM, which asks the user during a chat there). ${FENCED}`, bareHost(parsed).toLowerCase(), parsed.origin);
+    throw new Fenced(`${url} ${what}: ${refused}. The browser reaches the public web only, the hosts the user lets through in FENCE_ALLOW, and the addresses they let through in AnywhereLLM, which asks the user during a chat there. ${FENCED}`, bareHost(parsed).toLowerCase(), parsed.origin);
   });
 }
 

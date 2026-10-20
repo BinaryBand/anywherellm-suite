@@ -1,9 +1,10 @@
-// Asking the user to let a host through the fence, from a chat in AnywhereLLM (the phone app) while
-// it streams the answer. The skill writes the ask in the fence's folder (fence-lean/asks/<id>.json)
-// and names it in a line shown in the chat; AnywhereLLM reads the line, shows the ask as its bridge
-// reads it from the same folder, and the bridge writes the user's decision there: once (for the
-// rest of this agent run), always (the bridge also adds the host to allowed.json) or deny. The
-// skill waits for it, at most ASK_MS, and an ask nobody answered is denied. Only a chat through
+// Asking the user to let an origin through the fence, from a chat in AnywhereLLM (the phone app)
+// while it streams the answer. The skill writes the ask in the fence's folder
+// (fence-lean/asks/<id>.json) and names it in a line shown in the chat; AnywhereLLM reads the line,
+// shows the ask as its bridge reads it from the same folder, and the bridge writes the user's
+// decision there: once (for the rest of this agent run), always (the bridge also adds the origin to
+// allowed.json) or deny. Either lets the ask's origin through, never its host's other ports or
+// scheme. The skill waits for it, at most ASK_MS, and an ask nobody answered is denied. Only a chat through
 // AnythingLLM's developer API, in AnythingLLM's own process, asks: a scheduled job's or Telegram's
 // run (a process AnythingLLM forks) and a chat in AnythingLLM's web UI (which AnywhereLLM doesn't
 // see) are refused as before. Each skill's handler runs its call in a run (runAs), and the request
@@ -55,18 +56,18 @@ export function foreground(self: Asking | undefined, child = typeof process.send
   return !child && !!workspaceOf(self) && !invocation?.uuid && (invocation?.thread_id ?? null) === null && typeof self?.introspect === "function";
 }
 
-/** The hosts the user let through once in this agent run (self.super, one object per run). */
+/** The origins the user let through once in this agent run (self.super, one object per run). */
 export function grantsOf(self: Invoked | undefined): Set<string> {
   const runs = perProcess("fence.grants", () => new WeakMap<object, Set<string>>());
   const run = self?.super;
   if (!run || typeof run !== "object") return new Set();
-  let hosts = runs.get(run);
-  if (!hosts) runs.set(run, (hosts = new Set()));
-  return hosts;
+  let origins = runs.get(run);
+  if (!origins) runs.set(run, (origins = new Set()));
+  return origins;
 }
 
-/** Asks the user, in AnywhereLLM, to let `host` through for `origin`, and waits for their answer:
- *  "once" or "always" (the host is then let through for the rest of this run), "deny", or
+/** Asks the user, in AnywhereLLM, to let `origin` (on `host`) through, and waits for their answer:
+ *  "once" or "always" (the origin is then let through for the rest of this run), "deny", or
  *  "expired" when nobody answered in time. Only for a `foreground` chat. */
 export async function askToReach(self: Asking, what: { skill: string; host: string; origin: string; why: string }, { waitMs = ASK_MS, pollMs = POLL_MS } = {}): Promise<Decision | "expired"> {
   const dir = asksDir();
@@ -88,7 +89,7 @@ export async function askToReach(self: Asking, what: { skill: string; host: stri
       }
       if (!now) return "deny"; // taken away: nobody may say yes to it now
       if (now.decision === "once" || now.decision === "always") {
-        grantsOf(self).add(ask.host);
+        grantsOf(self).add(ask.origin);
         return now.decision;
       }
       if (now.decision === "deny") return "deny";
@@ -122,7 +123,7 @@ function sweep(dir: string, now = Date.now()): void {
   }
 }
 
-/** Asks the user to let the host the fence refused through, as `skill`, for what `why` says the skill
+/** Asks the user to let the origin the fence refused through, as `skill`, for what `why` says the skill
  *  would do there; resolves once they did, else throws what to tell the agent. */
 export async function letThrough(self: Asking, skill: string, refused: { host: string; origin: string }, why: string): Promise<void> {
   const outcome = await askToReach(self, { skill, host: refused.host, origin: refused.origin, why });
@@ -130,8 +131,8 @@ export async function letThrough(self: Asking, skill: string, refused: { host: s
   if (outcome === "expired") throw new NetError(`${refused.origin} isn't reached: the user didn't answer in AnywhereLLM in time. ${FENCED}`);
 }
 
-/** Runs a call of `skill`'s handler (`self`) as its agent run: the hosts the user let through once in
- *  the run pass the fence, and, in a chat in AnywhereLLM, a request the fence refuses asks the user,
+/** Runs a call of `skill`'s handler (`self`) as its agent run: the origins the user let through once
+ *  in the run pass the fence, and, in a chat in AnywhereLLM, a request the fence refuses asks the user,
  *  for what `why` says the skill would do at its origin (none: it doesn't ask). */
 export function runAs<T>(self: Asking, skill: string, why: ((origin: string) => string) | undefined, fn: () => T): T {
   const ask = why && foreground(self) ? (refused: Fenced) => letThrough(self, skill, refused, why(refused.origin)) : undefined;
@@ -143,7 +144,7 @@ export function runAs<T>(self: Asking, skill: string, why: ((origin: string) => 
 export const quietly = <T,>(fn: () => T): T => inRun({ grants: currentRun()?.grants ?? new Set() }, fn);
 
 /** Answers `attempt`; when the fence refused it and the current run asks, asks the user and, once
- *  they let the host through, attempts it again (the fence refuses before anything is sent). */
+ *  they let the origin through, attempts it again (the fence refuses before anything is sent). */
 export async function withAsk<T>(attempt: () => Promise<T>): Promise<T> {
   try {
     return await attempt();

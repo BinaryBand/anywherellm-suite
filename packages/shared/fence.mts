@@ -1,8 +1,9 @@
 // What the skills may reach: the public web only. They run inside AnythingLLM, whose machine
 // reaches its LAN and its tailnet, so a request is refused when its host is, or resolves to, an
-// address that isn't public, unless it's one of the hosts named in FENCE_ALLOW (comma-separated),
-// or one the user let through for good from AnywhereLLM (allowed.json, which its bridge writes); a
-// chat in AnywhereLLM can also ask the user to let one through (ask.mts). The requests a skill sends
+// address that isn't public, unless it's one of the hosts named in FENCE_ALLOW (comma-separated, any
+// port), or the request is for an origin the user let through for good from AnywhereLLM
+// (allowed.json, which its bridge writes: that scheme, host and port only); a chat in AnywhereLLM
+// can also ask the user to let an origin through (ask.mts). The requests a skill sends
 // itself (net.mts) are checked at the lookup their connection uses, so a name can't resolve one way
 // for the check and another for the connection. makeFence is for what can only be checked before
 // (the browser's page requests): there a name could resolve differently in between.
@@ -78,8 +79,9 @@ export function privateName(host: string): boolean {
 export const bareHost = (url: URL): string => url.hostname.replace(/^\[|\]$/g, "");
 
 /** Whether a secret may go to `url` by its scheme: https, or plain http to a host the user lets
- *  through (FENCE_ALLOW). */
-export const secureFor = (url: URL): boolean => url.protocol === "https:" || (url.protocol === "http:" && allowedHosts().includes(bareHost(url).toLowerCase()));
+ *  through (FENCE_ALLOW) or an origin they let through for good (allowed.json). */
+export const secureFor = (url: URL): boolean =>
+  url.protocol === "https:" || (url.protocol === "http:" && (allowedHosts().includes(bareHost(url).toLowerCase()) || alwaysAllowed().includes(url.origin)));
 
 /** `url` parsed, when it's an http(s) address; a NetError saying why not otherwise. */
 export function httpUrl(url: string): URL {
@@ -100,18 +102,29 @@ export function checkUrl(raw: unknown): string {
   return httpUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`).href;
 }
 
-/** The fence's folder in AnythingLLM's storage: the asks waiting for the user (ask.mts) and the hosts
- *  they let through for good. AnywhereLLM's bridge reads and writes it too. */
+/** The fence's folder in AnythingLLM's storage: the asks waiting for the user (ask.mts) and the
+ *  origins they let through for good. AnywhereLLM's bridge reads and writes it too. */
 export const FENCE_DIR = "fence-lean";
 
-/** The hosts the user let through for good: { hosts: [{ host, added }] }, written by the bridge. */
+/** The origins the user let through for good: { origins: [{ origin, added }] }, written by the bridge. */
 export const allowedFile = (storage: string): string => path.join(storage, FENCE_DIR, "allowed.json");
 
-/** The hosts the user let through for good from AnywhereLLM, in lower case; read again when the file
- *  changes (by its stamp, as the vault's: the bridge replaces it). None when there's no file, or one
- *  that can't be read: the fence stays shut. */
+/** `raw` as an origin (an http or https address's scheme, host and port, as URL.origin writes it), or
+ *  null when it isn't one. */
+export function originOf(raw: unknown): string | null {
+  try {
+    const url = new URL(String(raw ?? ""));
+    return ["http:", "https:"].includes(url.protocol) ? url.origin : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The origins the user let through for good from AnywhereLLM; read again when the file changes (by
+ *  its stamp, as the vault's: the bridge replaces it). None when there's no file, or one that can't
+ *  be read: the fence stays shut. */
 export function alwaysAllowed(): string[] {
-  const kept = perProcess("fence.allowed", () => ({ last: null as { stamp: string; hosts: string[] } | null }));
+  const kept = perProcess("fence.allowed", () => ({ last: null as { stamp: string; origins: string[] } | null }));
   let file: string;
   let stamp: string;
   try {
@@ -121,29 +134,28 @@ export function alwaysAllowed(): string[] {
   } catch {
     return [];
   }
-  if (kept.last?.stamp === stamp) return kept.last.hosts;
-  let hosts: string[] = [];
+  if (kept.last?.stamp === stamp) return kept.last.origins;
+  let origins: string[] = [];
   try {
-    const listed = readJson<{ hosts?: { host?: unknown }[] }>(file, () => ({})).hosts;
-    hosts = Array.isArray(listed) ? listed.map((h) => String(h?.host ?? "").trim().toLowerCase()).filter(Boolean) : [];
+    const listed = readJson<{ origins?: { origin?: unknown }[] }>(file, () => ({})).origins;
+    origins = Array.isArray(listed) ? listed.map((o) => originOf(o?.origin)).filter((o): o is string => o !== null) : [];
   } catch {}
-  kept.last = { stamp, hosts };
-  return hosts;
+  kept.last = { stamp, origins };
+  return origins;
 }
 
-/** The hosts the user lets through for good, in lower case: FENCE_ALLOW's, and AnywhereLLM's. */
+/** The hosts the user lets through, on any port, in lower case: FENCE_ALLOW's. */
 export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] => [
-  ...new Set([
-    ...(env.FENCE_ALLOW ?? "")
+  ...new Set(
+    (env.FENCE_ALLOW ?? "")
       .split(",")
       .map((h) => h.trim().toLowerCase())
       .filter(Boolean),
-    ...alwaysAllowed(),
-  ]),
+  ),
 ];
 
-/** The agent run a skill's call is part of: the hosts the user let through once in it (lower case),
- *  and, in a chat in AnywhereLLM, how to ask them for a host the fence refuses (ask.mts). Each skill's
+/** The agent run a skill's call is part of: the origins the user let through once in it, and, in a
+ *  chat in AnywhereLLM, how to ask them for an origin the fence refuses (ask.mts). Each skill's
  *  handler sets it for the whole call; what the call starts keeps it (a library function's run,
  *  without asking). */
 export interface Run {
@@ -163,9 +175,14 @@ export const outsideRun = <T,>(fn: () => T): T => runs().exit(fn);
 /** The run the code running now is part of, if any. */
 export const currentRun = (): Run | undefined => runs().getStore();
 
-/** Every host let through now: the user's for good (allowedHosts), and `once`, by default those let
- *  through once in the current run. */
-export const allowedNow = (once: Iterable<string> = currentRun()?.grants ?? []): Set<string> => new Set([...allowedHosts(), ...once]);
+/** The hosts let through now for a request to `origin`: FENCE_ALLOW's, and `origin`'s own host when
+ *  the user let that origin through for good, or once (`once`, by default the current run's). A host
+ *  let through for one origin isn't for its other ports or scheme. */
+export function allowedFor(origin: string, once: Iterable<string> = currentRun()?.grants ?? []): Set<string> {
+  const hosts = new Set(allowedHosts());
+  if (alwaysAllowed().includes(origin) || [...once].includes(origin)) hosts.add(bareHost(new URL(origin)).toLowerCase());
+  return hosts;
+}
 
 /** Why `host` (a name or an address, without brackets) is refused by itself, or null; "lookup"
  *  when only its addresses can say. The hosts in `allowed` are let through. */
@@ -187,13 +204,13 @@ type Lookup = (host: string) => Promise<{ address: string }[]>;
 const NONE: ReadonlySet<string> = new Set();
 
 /** A fence: `refused(url)` answers why a request to `url` is refused, or null. Lookups are kept for
- *  DNS_TTL_MS; the hosts `allow()` answers are let through, asked only for a host refused by
- *  itself, so a public one costs nothing more (by default, the hosts let through now). */
+ *  DNS_TTL_MS; the hosts `allow(origin)` answers for the request's origin are let through, asked only
+ *  for a host refused by itself, so a public one costs nothing more (by default, allowedFor). */
 export function makeFence({
   lookup = (host) => dns.promises.lookup(host, { all: true, verbatim: true }),
   now = Date.now,
-  allow = () => allowedNow(),
-}: { lookup?: Lookup; now?: () => number; allow?: () => ReadonlySet<string> } = {}) {
+  allow = (origin) => allowedFor(origin),
+}: { lookup?: Lookup; now?: () => number; allow?: (origin: string) => ReadonlySet<string> } = {}) {
   const known = new Map<string, { addresses: Promise<string[]>; until: number }>();
   function addresses(host: string): Promise<string[]> {
     const kept = known.get(host);
@@ -223,7 +240,7 @@ export function makeFence({
     const host = bareHost(parsed);
     const why = hostRefused(host, NONE);
     const refusal = why === "lookup" ? await byAddress(host) : why;
-    return refusal && !allow().has(host.toLowerCase()) ? refusal : null;
+    return refusal && !allow(parsed.origin).has(host.toLowerCase()) ? refusal : null;
   };
 }
 

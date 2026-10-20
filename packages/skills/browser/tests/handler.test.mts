@@ -40,7 +40,7 @@ test("open reads the page with refs and ends with the tab's card, whose page and
 
 test("the fence refuses what isn't the public web, and act never types into a password field", async () => {
   const call = (args: Record<string, unknown>) => called(args, { workspace: "fence" });
-  assert.match(await call({ action: "open", url: "http://127.0.0.1:9/" }), /^Browser: http:\/\/127\.0\.0\.1:9\/ isn't opened: 127\.0\.0\.1 isn't a public address\. .*FENCE_ALLOW, or in AnywhereLLM, which asks the user during a chat there\)\. That's final[^.]*\.$/);
+  assert.match(await call({ action: "open", url: "http://127.0.0.1:9/" }), /^Browser: http:\/\/127\.0\.0\.1:9\/ isn't opened: 127\.0\.0\.1 isn't a public address\. .*FENCE_ALLOW, and the addresses they let through in AnywhereLLM, which asks the user during a chat there\. That's final[^.]*\.$/);
   await call({ action: "open", url: LOGIN });
   assert.match(await call({ action: "act", do: "fill", ref: "e2", text: "hunter2" }), /e2 is a password field, which act never types into/);
   assert.equal(lastPage().fields.e2.value, undefined);

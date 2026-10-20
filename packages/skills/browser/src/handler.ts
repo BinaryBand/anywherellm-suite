@@ -260,8 +260,8 @@ export const runtime = {
       // What the user did on a tab's page since the last call.
       if (workspaceOf(this)) await caughtUp().catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
       const scope = scopeOf(this);
-      // The hosts this run was let through, for its workspace's pages to load meanwhile.
-      if (workspaceOf(this) && this.super) state().grants.set(scope.workspace, { hosts: grantsOf(this), last: Date.now() });
+      // The origins this run was let through, for its workspace's pages to load meanwhile.
+      if (workspaceOf(this) && this.super) state().grants.set(scope.workspace, { origins: grantsOf(this), last: Date.now() });
       return await runAs(this, "Browser", WHY[action], () => (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args)));
     } catch (e) {
       if (e instanceof Told) return `Browser: ${e.message.replace(/\.$/, "")}.`;
