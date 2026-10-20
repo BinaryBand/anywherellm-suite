@@ -165,15 +165,14 @@ test("undo refuses data its app.json no longer fits, and an app with no history 
   await assert.rejects(store.undo("home", "narrowed"), /no change left/);
 });
 
-test("a page is checked before its app's lock is taken, so other changes don't wait on the check", async () => {
+test("a page is checked before its app's lock is taken, and a change made meanwhile is kept", async () => {
   await store.create("home", "slow-check", definitionFor("list", { title: "Slow" }));
-  // A script that never ends keeps the check going for its whole time.
+  // The check never runs a page's scripts, so one that never ends doesn't hold the write.
   const start = Date.now();
   const writing = store.writeFile("home", "slow-check", "page.html", `<script src="app.js"></script><script>App.start(/*APP*/null)</script><script>for (;;) {}</script>`);
-  await new Promise((go) => setTimeout(go, 50));
   await store.change("home", "slow-check", { patch: add("Eggs") });
-  const changed = Date.now() - start;
   const app = await writing;
-  assert.ok(Date.now() - start > 400 && changed < 300, `the change took ${changed} ms of the check's ${Date.now() - start}`);
-  assert.deepEqual(app.data.items.map((i: any) => i.text), ["Eggs"], "the write kept the change made meanwhile");
+  assert.ok(Date.now() - start < 1000, `the write and the change took ${Date.now() - start} ms`);
+  assert.deepEqual(store.read("home", "slow-check").data.items.map((i: any) => i.text), ["Eggs"], "the write kept the change made meanwhile");
+  assert.ok(app);
 });

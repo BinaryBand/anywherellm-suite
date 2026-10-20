@@ -92,8 +92,8 @@ function remember(app: Json, id: string | undefined, why?: string): Json {
   return { ...app, seen: [...(app.seen || []), id].slice(-SEEN), ...(why === undefined ? {} : { refused: [...(app.refused || []), { id, why }].slice(-REFUSED) }) };
 }
 
-// The page check runs a page's scripts in a worker, which is slow next to a lock that should be held
-// for milliseconds: the newest pages' problems are kept, by a hash of their text, so a page checked
+// The page check parses a page's scripts, which is slow next to a lock that should be held for
+// milliseconds: the newest pages' problems are kept, by a hash of their text, so a page checked
 // before its app's lock is taken (update's pageFirst) is found checked under it.
 const PAGES_KEPT = 8;
 const checkedPages = new Map<string, string[]>();
@@ -110,7 +110,7 @@ async function problemsOfPage(page: unknown): Promise<string[]> {
 
 /** Why the definition can't hold `data`: every problem, empty when it can. The data is checked
  *  whenever the schema itself can be read, whatever else is wrong; the page only when `page`, as
- *  when it's new or changed (the check runs its scripts in a worker, which is the slow part). */
+ *  when it's new or changed (the check parses its scripts, which is the slow part). */
 async function definitionProblems(app: Json, page: boolean): Promise<string[]> {
   const out: string[] = [];
   if (typeof app.title !== "string" || !app.title.trim() || app.title.length > TITLE_MAX) out.push(`title: 1-${TITLE_MAX} characters`);

@@ -31,7 +31,7 @@ const here = path.dirname(self);
  *  decision (docs/notes/README.md): library bundles QuickJS, the engine its functions run in.
  *  @type {Record<string, string[]>} */
 const VENDORED = {
-  apps: ["node_modules/fast-json-patch/"],
+  apps: ["node_modules/fast-json-patch/", "node_modules/acorn/"],
   library: ["node_modules/quickjs-emscripten-core/", "node_modules/@jitl/quickjs-ffi-types/", "node_modules/@jitl/quickjs-singlefile-cjs-release-sync/"],
   browser: ["node_modules/puppeteer-core/", "node_modules/@puppeteer/browsers/", "node_modules/ws/", "node_modules/debug/", "node_modules/ms/", "node_modules/semver/"],
 };
