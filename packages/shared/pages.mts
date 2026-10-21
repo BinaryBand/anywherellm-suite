@@ -40,21 +40,38 @@ export function publicPath(rel: string): string {
   return file;
 }
 
+/** Runs `fn`, which `verb`s the public file `rel`. A failure is told by its code alone ("couldn't
+ *  write a vault-lean page (EACCES)", the code kept on the error): a Node file error names its path,
+ *  and a page's path holds its token, which mustn't reach a log or the agent. Only this module
+ *  touches the public folder, so no caller has to hide one. */
+function onPublic<T>(verb: string, rel: string, fn: (file: string) => T): T {
+  const file = publicPath(rel);
+  try {
+    return fn(file);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException)?.code;
+    throw Object.assign(new Error(`couldn't ${verb} a ${rel.split("/")[0]} page (${code ?? (e as Error)?.name ?? "error"})`), { code });
+  }
+}
+
 /** What the public file `rel` holds, or null when there's none. */
-export const readPublic = (rel: string): string | null => readText(publicPath(rel));
+export const readPublic = (rel: string): string | null => onPublic("read", rel, readText);
 
 /** Writes a file into the public folder, at `rel` ("library-lean/<token>.json"), unless it holds
  *  `text` already (`there`: what it holds, when the caller read it already); whether it wrote. */
 export function writePublic(rel: string, text: string, there: string | null = readPublic(rel)): boolean {
   if (there === text) return false;
-  writeAtomic(publicPath(rel), text, 0o644);
+  onPublic("write", rel, (file) => writeAtomic(file, text, 0o644));
   return true;
 }
 
-export const removePublic = (rel: string): void => fs.rmSync(publicPath(rel), { force: true });
+export const removePublic = (rel: string): void => onPublic("remove", rel, (file) => fs.rmSync(file, { force: true }));
 
 /** Moves the public file `from` to `to`, both in the public folder. */
-export const renamePublic = (from: string, to: string): void => fs.renameSync(publicPath(from), publicPath(to));
+export function renamePublic(from: string, to: string): void {
+  const target = publicPath(to);
+  onPublic("move", from, (file) => fs.renameSync(file, target));
+}
 
 /** The files in a folder of the public folder ("library-lean"); none when there's none. */
 export function listPublic(rel: string): string[] {

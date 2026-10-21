@@ -6,7 +6,7 @@ import { after, beforeEach, test } from "node:test";
 import { pageKeyFile } from "./anythingllm.mts";
 import { writeAtomic } from "./atomic.mts";
 import { Told } from "./errors.mts";
-import { embed, eventsDir, inTurn, listPublic, pageKey, putBack, removePublic, take, watch, writePublic, publicDir } from "./pages.mts";
+import { embed, eventsDir, inTurn, listPublic, pageKey, putBack, readPublic, removePublic, renamePublic, take, watch, writePublic, publicDir } from "./pages.mts";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pages-"));
 after(() => fs.rmSync(tmp, { recursive: true, force: true }));
@@ -116,6 +116,27 @@ test("the pages' key is the one install keeps; with none, the refusal says how t
 test("a public file is written where AnythingLLM serves it", () => {
   writePublic("library-lean/x.json", "{}");
   assert.equal(fs.readFileSync(path.join(publicDir(), "library-lean", "x.json"), "utf8"), "{}");
+});
+
+test("a public file that can't be written, moved or read is told by its code: the error names no path, so no token", () => {
+  const token = "c2VjcmV0dG9rZW5zZWNyZXR0b2tlbg";
+  writePublic(`vault-lean/${token}.html`, "page");
+  const f = fs as unknown as Record<string, (...args: unknown[]) => unknown>;
+  const was = { renameSync: f.renameSync, readFileSync: f.readFileSync };
+  const fail = (code: string) => (...args: unknown[]) => {
+    throw Object.assign(new Error(`${code}: refused, '${args.join("' -> '")}'`), { code });
+  };
+  try {
+    f.renameSync = fail("EACCES");
+    assert.throws(() => writePublic(`vault-lean/${token}.html`, "new page"), (e: Error & { code?: string }) => e.message === "couldn't write a vault-lean page (EACCES)" && e.code === "EACCES");
+    assert.throws(() => renamePublic(`vault-lean/${token}.html`, `vault-lean/${token}x.html`), (e: Error) => e.message === "couldn't move a vault-lean page (EACCES)");
+    f.readFileSync = fail("EIO");
+    assert.throws(() => readPublic(`library-lean/${token}.json`), (e: Error) => e.message === "couldn't read a library-lean page (EIO)" && !e.message.includes(token));
+  } finally {
+    Object.assign(f, was);
+  }
+  assert.equal(readPublic(`vault-lean/${token}.html`), "page", "as it was");
+  assert.equal(readPublic(`vault-lean/${token}-keys.json`), null, "none is none");
 });
 
 test("a public file's path can't leave the public folder", () => {

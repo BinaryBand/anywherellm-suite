@@ -184,7 +184,7 @@ test("the page's folder keeps nothing from an earlier token: a crash or a late w
   assert.ok(!fs.existsSync(pub(`${stale[0]}.html`)));
 });
 
-test("while the links are kept from the agent an error that names a page's path doesn't carry its token back to the agent", async (t) => {
+test("an error writing a page doesn't carry its token back to the agent, whatever the switch", async (t) => {
   if (process.getuid?.() === 0) return t.skip("a folder can't be made unwritable for root");
   hideLinks(true);
   await call({ action: "library" });
@@ -204,8 +204,8 @@ test("while the links are kept from the agent an error that names a page's path 
   fs.chmodSync(dir, 0o500);
   try {
     const open = await call({ action: "library" });
-    assert.match(open, /aren't available here/, open);
-    assert.ok(open.includes(names().token), "with the links given anyway, the text is as it was");
+    assert.match(open, /aren't available here: couldn't write a library-lean page \(EACCES\)/, open);
+    assert.ok(!open.includes(names().token), "the links are given anyway, but an error never names a page's path");
   } finally {
     fs.chmodSync(dir, 0o755);
   }

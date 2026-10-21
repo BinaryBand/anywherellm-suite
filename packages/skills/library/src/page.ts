@@ -23,7 +23,6 @@
 // they are replaced once (settle), and the page's names are marked `hidden`. Either way the page's
 // path is kept in the links file, for whoever shows it to the user.
 
-import fs from "node:fs";
 import path from "node:path";
 import * as addresses from "#shared/addresses";
 import { mask } from "#shared/answer";
@@ -275,34 +274,18 @@ export const caughtUp = async (base: string | null): Promise<void> => {
 /** What goes back to the agent when masking the text can't be done: nothing of the error. */
 const PAGES_WRONG = "something went wrong with the pages: see the log";
 
-/** A names file as the pages read it: none where there is none; an error where it can't be read or
- *  isn't an object with a token and a secret (the caller then says nothing of the file's text: a
- *  parse error can quote it). */
-function namesIn(file: string): { token: string; secret: string } | null {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, "utf8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw e;
-  }
-  const names = JSON.parse(text) as { token?: unknown; secret?: unknown };
-  if (typeof names?.token !== "string" || typeof names?.secret !== "string") throw new Error("not a names file");
-  return { token: names.token, secret: names.secret };
-}
-
 /** `text` fit to go back to the agent: while the links are kept from it, both pages' tokens and
- *  secrets and any page path with a token in it (a Node file error names its path, and a failed rename
- *  the new token) are hidden; as it is otherwise. If the names can't be read to hide them, nothing of
- *  the text goes back: a generic line, and the detail is in the log. It never throws. */
+ *  secrets are hidden (a page's path never is in an error: #shared/pages tells a failure by its code);
+ *  as it is otherwise. If the names can't be read to hide them, nothing of the text goes back: a
+ *  generic line, and the detail is in the log. It never throws. */
 export function plain(text: string): string {
   if (!linksHidden()) return text;
   try {
-    const known = [namesIn(pageFile()), namesIn(path.join(vault.vaultDir(), "vault-page.json"))].flatMap((n) => (n ? [n.token, n.secret] : []));
-    return mask(text, known).replace(/\b((?:library|vault)-lean\/)[\w-]{12,}/g, "$1•••");
+    const known = [names.read(), vaultPage.names()].flatMap((n) => (n ? [n.token, n.secret] : []));
+    if (!known.every((s) => typeof s === "string")) throw new Error("a names file holds no token or secret");
+    return mask(text, known);
   } catch (e) {
-    // Why, but not what the file said: a parse error can quote it.
-    console.error(`library-lean couldn't hide the pages' names in a text for the agent (${(e as Error)?.name ?? "error"} ${(e as NodeJS.ErrnoException)?.code ?? ""}); it is told only that something went wrong`);
+    console.error(`library-lean couldn't hide the pages' names in a text for the agent (${(e as Error)?.message ?? "error"}); it is told only that something went wrong`);
     return PAGES_WRONG;
   }
 }

@@ -11,7 +11,6 @@
 // under a token a rotation replaced. The page's path is kept in the links file whatever the switch.
 
 import { locked, readJson, updateJson, writeAtomic } from "./atomic.mts";
-import { mask } from "./answer.mts";
 import { Told } from "./errors.mts";
 import { linksHidden, noteLink, type PageKind } from "./page-links.mts";
 import { listPublic, newSecret, removePublic, renamePublic } from "./pages.mts";
@@ -52,10 +51,21 @@ const seam = (kind: PageKind, point: "gap" | "written") => (globalThis as unknow
 export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
   const pub = (name: string) => `${spec.folder}/${name}`;
   const underLock = <T,>(fn: () => T | Promise<T>): Promise<T> => locked(`${spec.file()}.lock`, spec.what, fn);
+  /** A names file that isn't JSON is said to be damaged, never quoted: a parse error can quote it. */
+  const unquoted = (e: unknown): unknown => (e instanceof SyntaxError ? new Error(`${spec.what}'s names file is damaged (not JSON)`) : e);
   /** The names file as it is now, or null where there's none; an error where it can't be read. */
-  const read = (): N | null => readJson<N | null>(spec.file(), () => null);
+  function read(): N | null {
+    try {
+      return readJson<N | null>(spec.file(), () => null);
+    } catch (e) {
+      throw unquoted(e);
+    }
+  }
   /** Changes the names file under its lock (new names where there's none). */
-  const change = <T,>(fn: (n: N) => T): Promise<T> => updateJson(spec.file(), () => spec.fresh(named(linksHidden())), fn);
+  const change = <T,>(fn: (n: N) => T): Promise<T> =>
+    updateJson(spec.file(), () => spec.fresh(named(linksHidden())), fn).catch((e) => {
+      throw unquoted(e);
+    });
 
   /** The page's files in its folder under a token other than `token`. */
   const others = (token: string): string[] =>
@@ -91,7 +101,7 @@ export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
           renamePublic(pub(name), pub(`${now.token}${found[2]}`));
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
-          console.error(`${spec.folder} couldn't move ${found[2]} to the new page: ${mask(String((e as Error)?.message ?? e), [old.token, old.secret, now.token, now.secret])}`);
+          console.error(`${spec.folder} couldn't move ${found[2]} to the new page: ${(e as Error).message}`);
         }
       }
       return true;

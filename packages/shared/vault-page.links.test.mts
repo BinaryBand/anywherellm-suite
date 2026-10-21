@@ -254,10 +254,12 @@ test("settle with no Vault does nothing, and makes none", async () => {
   assert.equal(fs.existsSync(linksFile()), false);
 });
 
-/** Makes fs.renameSync fail as a full disk does, naming the paths, for the length of `fn`. */
+/** Makes fs.renameSync fail as a full disk does, naming the paths, for the length of `fn`: every
+ *  rename into the public folder (a page's file written or moved). */
 async function renamesFail(fn: () => Promise<void>) {
   const was = fs.renameSync;
   fs.renameSync = ((from: fs.PathLike, to: fs.PathLike) => {
+    if (!String(to).startsWith(publicDir)) return was(from, to);
     throw Object.assign(new Error(`ENOSPC: no space left on device, rename '${from}' -> '${to}'`), { code: "ENOSPC" });
   }) as typeof fs.renameSync;
   try {
@@ -267,7 +269,7 @@ async function renamesFail(fn: () => Promise<void>) {
   }
 }
 
-test("with the switch on a failed write says nothing of a token; with it off the error is as it was", async () => {
+test("a failed write says nothing of a token, in the error or the log, whatever the switch", async () => {
   const logged: string[] = [];
   const log = console.error;
   console.error = (...args: unknown[]) => void logged.push(args.join(" "));
@@ -276,20 +278,23 @@ test("with the switch on a failed write says nothing of a token; with it off the
     hide(true);
     let failure: Error | null = null;
     await renamesFail(() => vaultPage.settle("logins", async () => {}).catch((e) => void (failure = e)));
-    const now = names(); // the names were replaced before the move failed
+    const now = names(); // the names were replaced before the sections' move and the page's write failed
+    assert.notEqual(now.token, "oldtoken");
     assert.ok(failure, "the failure is told");
-    assert.equal((failure as unknown as Error).message, "the Vault page couldn't be written");
-    assert.ok(!(failure as unknown as Error).message.includes(now.token));
-    assert.ok(logged.length > 0 && logged.every((l) => !l.includes(now.token) && !l.includes(now.secret)), `logged detail is masked: ${logged.join(" | ")}`);
-    // the next show repairs what the failed move left: the old page is swept
+    const said = (failure as unknown as Error).message;
+    assert.match(said, /^couldn't write a vault-lean page \(ENOSPC\)$/);
+    for (const name of [now.token, now.secret, "oldtoken", "oldsecret"]) assert.ok(!said.includes(name), said);
+    assert.ok(logged.length > 0 && logged.every((l) => ![now.token, now.secret, "oldtoken", "oldsecret"].some((n) => l.includes(n))), `the log names no token: ${logged.join(" | ")}`);
+    // the next show repairs what the failed move left: the old token's files are swept
     await show(async () => {});
-    assert.ok(!fs.existsSync(inPublic("oldtoken.html")), "the old page is removed by the next show");
-    // switch off: the error is the Node one, as before
+    assert.deepEqual(fs.readdirSync(path.join(publicDir, "vault-lean")).filter((f) => f.startsWith("oldtoken")), [], "the old files are removed by the next show");
+    // switch off: the same, the code said and no path
     hide(false);
     fs.writeFileSync(path.join(publicDir, "vault-lean", `${names().token}-keys.json`), "{}");
     let plain: Error | null = null;
     await renamesFail(() => vaultPage.rotate().catch((e) => void (plain = e)));
     assert.match((plain as unknown as Error)?.message ?? "", /ENOSPC/);
+    assert.ok(!(plain as unknown as Error).message.includes(names().token));
   } finally {
     console.error = log;
   }

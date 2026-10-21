@@ -123,13 +123,12 @@ export function state() {
 }
 
 /** Writes the section again, when there's a Vault. Never throws: it's written after a call, whatever
- *  the call did, and again at the next. What failed is logged by its code alone: a Node file error
- *  names the page's token. */
+ *  the call did, and again at the next. */
 export function refresh(): void {
   try {
     vaultPage.refresh("addresses", state());
   } catch (e) {
-    console.error(`vault-lean couldn't write the Allowed addresses section (${(e as NodeJS.ErrnoException)?.code ?? "error"})`);
+    console.error(`vault-lean couldn't write the Allowed addresses section: ${(e as Error)?.message ?? e}`);
   }
 }
 
