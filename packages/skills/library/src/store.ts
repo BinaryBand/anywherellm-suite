@@ -207,19 +207,23 @@ export async function setLocked(service: string, on: boolean): Promise<void> {
 const sameAccount = (a: Target, b: Target): boolean =>
   a.login === b.login && (a.fingerprint === b.fingerprint || (a.port === b.port && canonicalHost(a.host) === canonicalHost(b.host)));
 
+/** heldBy for any number of targets, with the targets and the locked toolkits read once. */
+export function holders(): (name: string, except?: string) => string | null {
+  const now = registered();
+  const kits = services().flatMap((s) => {
+    const kit = toolkit(s);
+    return kit?.locked ? [kit] : [];
+  });
+  return (name, except = "") => {
+    const mine = now.find((t) => t.label === name);
+    const same = (n: string) => n === name || (!!mine && now.some((t) => t.label === n && sameAccount(t, mine)));
+    return kits.find((kit) => kit.service !== except && kit.targets.some(same))?.service ?? null;
+  };
+}
+
 /** The locked toolkit that holds the target `name`, other than `except`: one that lists it, or lists
  *  another that is the same account on the same machine (sameAccount); null when none does. */
-export function heldBy(name: string, except = ""): string | null {
-  const now = registered();
-  const mine = now.find((t) => t.label === name);
-  const same = (n: string) => n === name || (!!mine && now.some((t) => t.label === n && sameAccount(t, mine)));
-  return (
-    services().find((s) => {
-      const kit = s === except ? null : toolkit(s);
-      return !!kit?.locked && kit.targets.some(same);
-    }) ?? null
-  );
-}
+export const heldBy = (name: string, except = ""): string | null => holders()(name, except);
 
 /** Why the toolkit `kit` may not use its target `name` now, in a few words, or null when it may. An
  *  unlocked toolkit can't use what a locked one holds: it could change what the locked one runs or

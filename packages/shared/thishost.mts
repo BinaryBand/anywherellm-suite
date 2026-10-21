@@ -21,7 +21,7 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { storageDir, SUITE_DIR } from "./anythingllm.mts";
+import { perBuild, storageDir, SUITE_DIR } from "./anythingllm.mts";
 
 /** The test seam: addresses to treat as not this machine. Nothing shipped sets it. */
 export const THISHOST_EXCEPT = Symbol.for("anywherellm-suite.thishost.except");
@@ -45,9 +45,13 @@ export const sshFingerprint = (blob: Buffer): string => `SHA256:${crypto.createH
 
 const strings = (v: unknown): string[] | null => (Array.isArray(v) && v.every((s) => typeof s === "string") ? (v as string[]) : null);
 
+type Recorded = { host: ThisHost } | { why: string };
+
 /** The recorded host, or why there is none: no file, one that can't be read, or one that isn't a
- *  record. The library reads it from its own storage; health from the one it checks. */
-export function recorded(storage?: string): { host: ThisHost } | { why: string } {
+ *  record. The library reads it from its own storage; health from the one it checks. Read again
+ *  only when the file changes (by its stamp: the installer replaces it whole), as the fence's
+ *  allowed.json is. */
+export function recorded(storage?: string): Recorded {
   const g = globalThis as unknown as Record<symbol, ThisHost | undefined>;
   if (g[THISHOST_RECORD]) return { host: g[THISHOST_RECORD] };
   let file: string;
@@ -56,6 +60,20 @@ export function recorded(storage?: string): { host: ThisHost } | { why: string }
   } catch (e) {
     return { why: (e as Error).message };
   }
+  const kept = perBuild("thishost.recorded", () => new Map<string, { stamp: string; found: Recorded }>());
+  let stamp = "";
+  try {
+    const s = fs.statSync(file);
+    stamp = `${s.ino}:${s.mtimeMs}:${s.size}`;
+  } catch {} // read below, which says why
+  const last = kept.get(file);
+  if (stamp && last?.stamp === stamp) return last.found;
+  const found = read(file);
+  if (stamp) kept.set(file, { stamp, found });
+  return found;
+}
+
+function read(file: string): Recorded {
   let text: string;
   try {
     text = fs.readFileSync(file, "utf8");
@@ -161,9 +179,16 @@ function embedded(ip: string): string[] {
   return found;
 }
 
+/** How long the interfaces this process sees are taken as they were. */
+const INTERFACES_MS = 5000;
+
 /** The addresses that are this machine's by being on one of its interfaces as this process sees
- *  them, or recorded by the installer from the host. */
+ *  them, or recorded by the installer from the host: made again when the record changes, or the
+ *  interfaces were looked at more than INTERFACES_MS ago. */
 function ownAddresses(): net.BlockList {
+  const kept = perBuild("thishost.own", () => ({ at: 0, record: null as Recorded | null, list: null as net.BlockList | null }));
+  const r = recorded();
+  if (kept.list && kept.record === r && Date.now() - kept.at < INTERFACES_MS) return kept.list;
   const mine = new net.BlockList();
   const add = (address: string) => {
     const a = bare(address);
@@ -171,8 +196,8 @@ function ownAddresses(): net.BlockList {
     if (k) mine.addAddress(a, k === 6 ? "ipv6" : "ipv4");
   };
   for (const list of Object.values(os.networkInterfaces())) for (const a of list ?? []) add(a.address);
-  const r = recorded();
   if ("host" in r) for (const a of r.host.addresses) add(a);
+  Object.assign(kept, { at: Date.now(), record: r, list: mine });
   return mine;
 }
 

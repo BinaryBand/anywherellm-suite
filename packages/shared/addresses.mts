@@ -13,11 +13,12 @@
 // port. What can't be told (a name that can't be looked up; neither the record nor AnythingLLM's
 // address) is refused, and the page says why.
 
+import fs from "node:fs";
 import net from "node:net";
-import { lastBase, noteBase, perProcess, storageDir } from "./anythingllm.mts";
+import { lastBase, noteBase, perBuild, perProcess, storageDir } from "./anythingllm.mts";
 import { readJson, updateJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
-import { type Lookup, allowedFile, bareHost, lookupAll, originOf, portOf, privateAddress, privateName, recentlyRefused } from "./fence.mts";
+import { type Lookup, allowedFile, bareHost, lookupAll, originOf, portOf, privateAddress, privateName, recentlyRefused, refusedFile } from "./fence.mts";
 import { OWN_PORTS, canonicalHost, isThisHost, thisHostRecorded } from "./thishost.mts";
 import * as vaultPage from "./vault-page.mts";
 
@@ -105,14 +106,39 @@ export function state() {
   return { origins, refused: recentlyRefused().filter((r) => !origins.some((o) => o.origin === r.origin)), result: told().result };
 }
 
+/** What the section is made from, as it is now: allowed.json's and refused.json's stamps, and the
+ *  refusal the page was last told. */
+function sources(): string {
+  const stampOf = (file: string) => {
+    try {
+      const s = fs.statSync(file);
+      return `${s.ino}:${s.mtimeMs}:${s.size}`;
+    } catch {
+      return "none";
+    }
+  };
+  return [stampOf(allowedFile(storageDir())), stampOf(refusedFile(storageDir())), told().result?.n ?? 0].join(" ");
+}
+
+/** What the section was last written from, in this process. */
+const written = () => perBuild("addresses.written", () => ({ from: "" }));
+
 /** Writes the section again, when there's a Vault. Never throws: it's written after a call, whatever
  *  the call did, and again at the next. */
-export function refresh(): void {
+function write(): void {
+  const from = sources();
   try {
     vaultPage.refresh("addresses", state());
+    written().from = from;
   } catch (e) {
     console.error(`vault-lean couldn't write the Allowed addresses section: ${(e as Error)?.message ?? e}`);
   }
+}
+
+/** Writes the section again after a call, when what it is made from changed since it was last
+ *  written (an origin let through or refused, a refusal told). */
+export function refresh(): void {
+  if (written().from !== sources()) write();
 }
 
 /** Applies what the user did in the section since the last time (#shared/vault-page take checked its
@@ -131,7 +157,7 @@ async function drain(): Promise<void> {
       told().result = { n: Date.now(), error: said ? err.message.slice(0, 400) : "couldn't do that (see the log)" };
     }
   }
-  refresh();
+  write();
 }
 
 /** Applies what the section posted, for a call, in its turn with its watch's; `base` is AnythingLLM's
@@ -145,6 +171,6 @@ export function caughtUp(base: string | null): Promise<void> {
  *  while, as the skill's own section's are. */
 export function show(base: string | null): void {
   noteBase(base);
-  refresh();
+  write();
   vaultPage.watchFor("addresses", drain);
 }

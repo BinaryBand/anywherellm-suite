@@ -108,10 +108,11 @@ const put = (name: string, text: string): string => (writePublic(pub(name), text
 /** The Library page's state, as it reads it: nothing secret. */
 function state(p: PageFile, base: string | null) {
   const now = Date.now();
+  const heldBy = store.holders();
   return {
     vault: vaultPage.linkOf(base),
     needs: p.needs.filter((n) => n.kind === "target" && n.until > now).map(({ label, site }) => ({ label, site })),
-    targets: targets.targets().map((m) => ({ ...m, held: store.heldBy(m.label) })),
+    targets: targets.targets().map((m) => ({ ...m, held: heldBy(m.label) })),
     result: p.result ?? null,
     toolkits: store.services().map((service) => {
       const kit = store.toolkit(service)!;
