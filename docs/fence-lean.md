@@ -1,55 +1,23 @@
-# The fence's asks, for the bridge and clients
+# The fence's files, `fence-lean/`
 
-What the skills (`packages/shared/fence.mts`, `ask.mts`), AnywhereLLM's bridge (anywherellm-bridge, `src/asks.mts`) and AnywhereLLM Lite agree on when a skill asks the user to let an origin through the fence. The skills and the bridge share no code: they meet in files in AnythingLLM's storage folder, under `fence-lean/`. A change to anything here is made in the suite, the bridge and Lite together.
+What the fence (`packages/shared/fence.mts`) keeps in AnythingLLM's storage folder, under `fence-lean/`. Both files are the suite's alone: nothing outside it reads or writes them. Each is written to a temporary file and renamed over the old one, mode `0600`.
 
 An origin is an http or https address's scheme, host and port as `URL.origin` writes it: `http://muse-vm:8463`, `https://example.com` (no default port, the host in lower case, no path, no trailing slash).
 
-## Who writes what
-
-| File | Written by | Read by |
-| --- | --- | --- |
-| `fence-lean/asks/<id>.json` | the skill makes it and deletes it once its wait ends; the bridge sets `decision` and `decided` | the skill (each second while it waits); the bridge (`GET /asks/<id>`) |
-| `fence-lean/allowed.json` | the bridge, on `always` and `DELETE /allowed?origin=` | every skill (each request to an address the fence refuses by itself); the bridge (`GET /allowed`) |
-
-## An ask, `asks/<id>.json`
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `id` | string | 32 lower-case hex characters; the file's name |
-| `host` | string | the origin's host, in lower case |
-| `origin` | string | the origin the skill was refused |
-| `skill` | string | the skill's name as the user sees it (`Library`, `Browser`) |
-| `workspace` | string | the slug of the chat's workspace |
-| `why` | string | what the skill would do there, written by the skill's code, never by the model; it names the origin, never a path or query |
-| `asked` | string | when, ISO-8601 in UTC |
-| `expires` | string | `asked` plus 120 s: no decision is taken after it |
-| `decision` | string or null | null until the user answers; then `once`, `always` or `deny` |
-| `decided` | string or null | when the decision was written |
-
-`once` lets the origin through for the rest of the agent run; `always` also adds it to `allowed.json`; `deny`, and an ask nobody answered, refuse it as before. Neither yes lets the host's other ports or scheme through.
-
-## The chat's status line
-
-While it waits, the skill shows a line in the chat, through AnythingLLM's agent status (an `agentThought` chunk on the developer API's stream):
-
-```text
-Waiting for your approval in AnywhereLLM to reach <host> [ask:<id>]
-```
-
-A client reads the id from the trailing `[ask:<id>]`, shows the line without it, and reads the ask from the bridge: what it shows comes from the file, never from the line.
-
-## Origins let through for good, `allowed.json`
+## Let through, `allowed.json`
 
 ```json
 { "origins": [{ "origin": "http://muse-vm:8463", "added": "2026-10-20T09:11:00.000Z" }] }
 ```
 
-An entry that isn't an origin is skipped. A file of any other shape (an earlier `{ "hosts": [...] }`) lets nothing through. `FENCE_ALLOW`, the hosts in AnythingLLM's environment, stays separate: it lets a host through on every port.
+Written from the Vault page's Allowed addresses (`packages/shared/addresses.mts`), under its lock (`allowed.json.lock`, `updateJson`); read by every skill for each request to an address the fence refuses by itself, cached by inode, modification time and size. An entry lets that origin through, never its host's other ports or scheme. An entry that isn't an origin is skipped; a file that can't be read lets nothing through and is never written over. `FENCE_ALLOW`, the hosts in AnythingLLM's environment, stays separate: it lets a host through on every port.
 
-## Writing
+The Vault adds no public origin (plain http to it would carry a key), and none of the suite's own services: AnythingLLM's own address, and this machine's addresses (its interfaces', and `anywherellm-suite/this-host.json`'s) on 3001, 443, 8467 and AnythingLLM's port. What it can't tell (a name that doesn't resolve, or neither that record nor AnythingLLM's address) it refuses.
 
-Both sides change a file under its lock: a folder `<file>.lock` made with `mkdir`, held for milliseconds, and broken when older than 10 s. The new content is written to a temporary file and renamed over the old one, mode `0600`. A reader takes the file as a whole; the skills cache `allowed.json` by its inode, modification time and size.
+## Refused lately, `refused.json`
 
-## Checked
+```json
+{ "refused": [{ "origin": "http://muse-vm:8463", "at": "2026-10-21T08:02:00.000Z" }] }
+```
 
-Each repository's own tests cover its side. The two sides are checked against each other in the test lab, not in either repository: `npm run contract:fence` there runs the suite's shared code against a real bridge in one storage folder: the ask the skill writes as the bridge reads it, each decision, `allowed.json` as the fence reads it, `DELETE /allowed?origin=`, the lock taken in turn, and an expired ask. Run it after changing anything here, on either side.
+Written where the fence refuses a request (`net.mts`, the browser's `through` and its main frame's navigations): the newest first, each origin once, at most 10, none older than 24 h. Not under a lock: two refusals at once may keep one. Read by the Vault page, which offers each one not let through since with an Allow button.

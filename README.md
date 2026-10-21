@@ -7,7 +7,7 @@ Agent skills that a stock AnythingLLM runs itself, and the command that installs
 | Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS and ssh2; browser bundles Puppeteer and runs the Chrome AnythingLLM's image ships, or the system's) |
 | The installer | `packages/install` | the command you run | Node 18+, no dependencies shipped |
 
-`packages/` holds what runs inside AnythingLLM and what puts it there. `docs/browser-tab.md` and `docs/fence-lean.md` are what the parts agree on with the phone app and the bridge.
+`packages/` holds what runs inside AnythingLLM and what puts it there. `docs/browser-tab.md` and `docs/page-links.md` are what the parts agree on with the phone app and the bridge; `docs/fence-lean.md` is the fence's own files.
 
 ## Install
 
@@ -47,7 +47,7 @@ packages/skills/    one folder per skill; each ships as its own zip, and inside 
 packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the vault, the fence, AnythingLLM's login)
 packages/package.json, tsconfig.json   the toolchain: one install, one type-check
 tools/              check, package, install, e2e, e2e-skill; versions.env, the AnythingLLM image every check uses (the test lab reads it too)
-docs/               architecture.md; browser-tab.md and fence-lean.md, the file formats the phone app and the bridge read; notes/ for decisions, repo-wide and per part
+docs/               architecture.md; browser-tab.md and page-links.md, the file formats the phone app and the bridge read; fence-lean.md, the fence's own; notes/ for decisions, repo-wide and per part
 .github/workflows/  the tests and the e2e, on Linux
 dist/               build output, ignored
 ```
