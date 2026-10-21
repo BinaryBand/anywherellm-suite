@@ -210,7 +210,7 @@ async function apply(e: Record<string, unknown>, secret: string): Promise<Applie
       return { relist: true };
     case "toolkit-lock":
     case "toolkit-unlock":
-      store.setLocked(store.serviceOf(e.service), e.ev === "toolkit-lock");
+      await store.setLocked(store.serviceOf(e.service), e.ev === "toolkit-lock");
       return { relist: true };
     case "target-save": {
       const sealed = text(e.sealed, 20000);

@@ -1,10 +1,9 @@
-// Locking a toolkit and its targets: a target a locked toolkit uses is for locked toolkits only, a
+// Locking a toolkit and its targets: a target a locked toolkit uses is for locked toolkits only, and a
 // locked toolkit uses a target only as it was when the user locked it (its host, port, account and
-// host key are pinned), and a toolkit locked before pins existed is pinned once, when first opened.
+// host key are pinned).
 // The machines don't exist: what is under test is the refusal that comes before any connection.
 
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -77,22 +76,6 @@ test("a locked toolkit refuses a target changed since it was locked, until the u
   assert.doesNotMatch(await answer("locked"), /can't be used/, "locked again, it takes the target as it is");
 });
 
-test("a toolkit locked before locking pinned its targets is pinned once, when it is first opened, and a second open writes nothing", async () => {
-  await toolkit("old", "box");
-  const old = kitJson("old");
-  fs.writeFileSync(kitFile("old"), JSON.stringify({ ...old, locked: true }, null, 2) + "\n"); // as it was saved before pins
-  assert.equal(kitJson("old").pins, undefined);
-  await call({ action: "library", service: "old" });
-  const pinned = fs.readFileSync(kitFile("old"), "utf8");
-  assert.deepEqual(Object.keys(JSON.parse(pinned).pins), ["box"]);
-  const at = fs.statSync(kitFile("old")).mtimeMs;
-  await new Promise((r) => setTimeout(r, 20));
-  await call({ action: "library", service: "old" });
-  assert.equal(fs.readFileSync(kitFile("old"), "utf8"), pinned);
-  assert.equal(fs.statSync(kitFile("old")).mtimeMs, at, "not written again");
-  assert.doesNotMatch(await answer("old"), /can't be used/, "it takes the target as it was when pinned");
-});
-
 test("a command a function runs is never in the run record, only its length", async () => {
   await toolkit("plain", "box");
   const source = `async function main(i, kit) { try { await kit.ssh.exec({ target: "box", command: "echo hunter2-token", timeout_s: 1 }); } catch (e) {} return "done"; }`;
@@ -128,48 +111,6 @@ test("a host is pinned in one form: an IPv4 address mapped into IPv6 is the same
   await toolkit("locked", "mapped");
   await page("toolkit-lock", "locked");
   assert.equal(kitJson("locked").pins.mapped, digest("v2", "192.0.2.5", "22", "sandbox", FINGERPRINT));
-  assert.equal(kitJson("locked").pinv, 2);
-});
-
-test("a toolkit pinned in the first form is pinned again in the second once, and one whose target changed since keeps refusing it", async () => {
-  await toolkit("old", "box");
-  saveTarget({ label: "moved", host: "moved.internal" });
-  await registered(2);
-  await toolkit("moved", "moved");
-  const v1 = (login: string, host = "box.internal") => digest(host, "22", login, FINGERPRINT);
-  const pinned = (service: string, target: string, pin: string) => fs.writeFileSync(kitFile(service), JSON.stringify({ ...kitJson(service), locked: true, pins: { [target]: pin }, pinv: undefined }, null, 2) + "\n");
-  pinned("old", "box", v1("sandbox")); // as it was when locked, in the first form
-  pinned("moved", "moved", v1("root", "moved.internal")); // the target's account has changed since
-  assert.equal(kitJson("old").pinv, undefined);
-  await call({ action: "library", service: "old" });
-  await call({ action: "library", service: "moved" });
-  assert.equal(kitJson("old").pins.box, digest("v2", "box.internal", "22", "sandbox", FINGERPRINT));
-  assert.equal(kitJson("old").pinv, 2);
-  assert.doesNotMatch(await answer("old"), /can't be used/, "still as it was: it takes the target");
-  assert.equal(kitJson("moved").pins.moved, v1("root", "moved.internal"), "kept as it was: it matches nothing now");
-  assert.match(await answer("moved"), /changed since the user locked moved/);
-  const text = fs.readFileSync(kitFile("old"), "utf8");
-  const at = fs.statSync(kitFile("old")).mtimeMs;
-  await new Promise((r) => setTimeout(r, 20));
-  await call({ action: "library", service: "old" });
-  assert.equal(fs.readFileSync(kitFile("old"), "utf8"), text);
-  assert.equal(fs.statSync(kitFile("old")).mtimeMs, at, "a second open writes nothing");
-});
-
-test("the migration reads the toolkit again under its lock: an unlock made meanwhile in another process is not written over", async () => {
-  await toolkit("racy", "box");
-  const file = kitFile("racy");
-  const lockedOld = { ...kitJson("racy"), locked: true, pins: { box: digest("box.internal", "22", "sandbox", FINGERPRINT) } };
-  fs.writeFileSync(file, JSON.stringify(lockedOld, null, 2) + "\n"); // locked, in the first form: due for migration
-  const unlocked = { ...kitJson("racy"), locked: undefined, pins: undefined };
-  const next = path.join(library, "racy-unlocked.json");
-  fs.writeFileSync(next, JSON.stringify(unlocked, null, 2) + "\n");
-  fs.mkdirSync(`${file}.lock`); // another process holds the toolkit's lock...
-  const other = new Promise<void>((resolve) => execFile("sh", ["-c", `sleep 0.3; cp '${next}' '${file}'; rmdir '${file}.lock'`], () => resolve())); // ...unlocks it, and lets go
-  await call({ action: "library", service: "racy" }); // opens it: waits for the lock, then reads it again
-  await other;
-  assert.equal(kitJson("racy").locked, undefined, "the unlock stands");
-  assert.equal(kitJson("racy").pins, undefined);
 });
 
 test("locking and unlocking take the toolkit's lock too, and a lock a dead process left is broken", async () => {

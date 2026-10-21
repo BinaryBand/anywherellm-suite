@@ -492,20 +492,6 @@ test("the user deletes a target on the page, and with it its key", async () => {
   assert.deepEqual(pageState().targets, []);
 });
 
-test("a toolkit saved before targets came is written again with none, once", async () => {
-  const file = path.join(library, "toolkits", "old", "toolkit.json");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const old = { service: "old", title: "Old", base_urls: ["https://api.example.com"], hosts: [], secrets: [], docs: [], notes: "", updated: "2026-10-01T00:00:00.000Z" };
-  fs.writeFileSync(file, JSON.stringify(old));
-  const said = await call({ action: "library", service: "old" });
-  assert.match(said, /Toolkit old: Old/);
-  assert.ok(!said.includes("Targets:"));
-  const now = JSON.parse(fs.readFileSync(file, "utf8"));
-  assert.deepEqual(now, { ...old, targets: [] }, "everything else is as it was");
-  await call({ action: "library", service: "old" });
-  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), now, "a second open changes nothing");
-});
-
 /** Runs the "ops.run" function on the target, as the agent does, with `req` for kit.ssh.exec. */
 const exec = (req: Record<string, unknown>) => call({ action: "run", name: "ops.run", inputs: { req } });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

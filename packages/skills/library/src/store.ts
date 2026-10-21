@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { objectOf } from "#shared/answer";
 import { storageDir } from "#shared/anythingllm";
-import { readJson as readJsonOr, writeAtomic } from "#shared/atomic";
+import { locked, readJson as readJsonOr, writeAtomic } from "#shared/atomic";
 import { checkUrl, hostOf } from "#shared/fence";
 import { canonicalHost } from "#shared/thishost";
 import { staticFiles, type StaticFiles } from "#shared/static";
@@ -65,8 +65,6 @@ export interface Toolkit {
   /** What locking pinned of each of its targets (pinOf), by name: a locked toolkit uses a target
    *  only while it is as it was when the user read the toolkit and locked it. */
   pins?: Record<string, string>;
-  /** The version of the digest the pins are (PIN_VERSION); one without it was pinned in the first form. */
-  pinv?: number;
 }
 
 export interface Input {
@@ -153,20 +151,14 @@ export function qualified(raw: unknown): { service: string; name: string } {
 /** The services the library has a toolkit for, sorted. */
 export const services = (): string[] => namesIn(path.join(libraryDir(), "toolkits")).filter((s) => SERVICE.test(s) && fs.existsSync(kitFile(s)));
 
-/** The version of the digest a pin is. 2 canonicalizes the host (case, an IPv6 spelling, an IPv4
- *  mapped into IPv6), so one machine isn't two. */
-const PIN_VERSION = 2;
-
 type Pinned = Pick<Target, "host" | "port" | "login" | "fingerprint">;
 
-/** What locking pins of a target: its host, port, account and host key, as a digest; "" for one that
- *  isn't registered. A target moved to another machine or account no longer matches. */
+/** What locking pins of a target: its host (canonical: case, an IPv6 spelling, an IPv4 mapped into
+ *  IPv6, so one machine isn't two), port, account and host key, as a digest; "" for one that isn't
+ *  registered. A target moved to another machine or account no longer matches. The "v2" is part of
+ *  every pin kept, so it stays. */
 export const pinOf = (t: Pinned | undefined): string =>
   t ? crypto.createHash("sha256").update(["v2", canonicalHost(t.host), t.port, t.login, t.fingerprint].join("\n")).digest("hex") : "";
-
-/** The first form of a pin, which a toolkit locked before PIN_VERSION 2 holds (read once, by the
- *  migration in `migrated`). */
-const pinV1 = (t: Pinned | undefined): string => (t ? crypto.createHash("sha256").update([t.host, t.port, t.login, t.fingerprint].join("\n")).digest("hex") : "");
 
 /** The pins of `names`, as the targets are now. */
 const pinsOf = (names: string[]): Record<string, string> => {
@@ -174,68 +166,8 @@ const pinsOf = (names: string[]): Record<string, string> => {
   return Object.fromEntries(names.map((n) => [n, pinOf(now.find((t) => t.label === n))]));
 };
 
-/** A toolkit's file kept for a moment by one process: the folder `lock`, made and removed as
- *  shared/atomic's `locked` does, so the two take turns; waits up to 5 s. For the few writes that
- *  must not lose a change made at the same time by the user's page (lock, unlock) in another process. */
-function lockedSync<T>(lock: string, fn: () => T): T {
-  const until = Date.now() + 5000;
-  for (;;) {
-    try {
-      fs.mkdirSync(lock);
-      break;
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e;
-    }
-    try {
-      if (Date.now() - fs.statSync(lock).mtimeMs > 10 * 1000) fs.rmSync(lock, { recursive: true, force: true });
-    } catch {} // released meanwhile
-    if (Date.now() > until) throw new LibraryError("the toolkit is busy; try again in a moment");
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
-  }
-  try {
-    return fn();
-  } finally {
-    fs.rmSync(lock, { recursive: true, force: true });
-  }
-}
-
-/** The toolkit `kit` in its current form, or null when it already is. Changes of format are made
- *  once, when a toolkit is first opened, so nothing else reads the old shape: one saved before
- *  targets came gets `targets` empty; a locked one saved before locking pinned its targets gets the
- *  pins they have now; and a locked one pinned in the first form (PIN_VERSION 1) gets each pin as
- *  the second form when the target is still as it was pinned, and keeps the old digest (which
- *  matches nothing now, so the toolkit refuses the target) when it is not. */
-function migrated(kit: Toolkit): Toolkit | null {
-  const noTargets = !Array.isArray(kit.targets);
-  const targets = noTargets ? [] : kit.targets;
-  const unpinned = kit.locked === true && (typeof kit.pins !== "object" || kit.pins === null);
-  const old = kit.locked === true && !unpinned && kit.pinv !== PIN_VERSION;
-  if (!noTargets && !unpinned && !old) return null;
-  const next: Toolkit = { ...kit, targets };
-  if (unpinned) {
-    next.pins = pinsOf(targets);
-    next.pinv = PIN_VERSION;
-  } else if (old) {
-    const now = registered();
-    next.pins = Object.fromEntries(Object.entries(kit.pins ?? {}).map(([name, pin]) => [name, pin === pinV1(now.find((t) => t.label === name)) ? pinOf(now.find((t) => t.label === name)) : pin]));
-    next.pinv = PIN_VERSION;
-  }
-  return next;
-}
-
-/** A toolkit as saved, in its current form (`migrated`): an older one is rewritten once, holding the
- *  toolkit's lock and reading it again inside, so a lock or unlock made at the same time in another
- *  process is not written over. */
-export const toolkit = (service: string): Toolkit | null => {
-  const kit = readJson<Toolkit>(kitFile(service));
-  if (!kit || !migrated(kit)) return kit;
-  return lockedSync(`${kitFile(service)}.lock`, () => {
-    const now = readJson<Toolkit>(kitFile(service));
-    const next = now && migrated(now);
-    if (next) writeJson(kitFile(service), next);
-    return next ?? now;
-  });
-};
+/** A toolkit as saved. */
+export const toolkit = (service: string): Toolkit | null => readJson<Toolkit>(kitFile(service));
 
 /** Where a toolkit's functions reach, as the agent and the page are shown it: its base addresses
  *  and its targets. */
@@ -260,14 +192,13 @@ function unlocked(service: string): Toolkit | null {
   return kit;
 }
 
-/** Locks the toolkit `service`, or unlocks it: the user's, from the Library page. */
-export function setLocked(service: string, on: boolean): void {
+/** Locks the toolkit `service`, or unlocks it: the user's, from the Library page. Under the
+ *  toolkit's lock, so a lock and an unlock at once from two processes don't lose one. */
+export async function setLocked(service: string, on: boolean): Promise<void> {
   if (!fs.existsSync(kitFile(service))) return;
-  lockedSync(`${kitFile(service)}.lock`, () => {
-    const was = readJson<Toolkit>(kitFile(service));
-    if (!was) return;
-    const kit = migrated(was) ?? was;
-    writeJson(kitFile(service), { ...kit, locked: on || undefined, pins: on ? pinsOf(kit.targets) : undefined, pinv: on ? PIN_VERSION : undefined });
+  await locked(`${kitFile(service)}.lock`, "the toolkit", () => {
+    const kit = readJson<Toolkit>(kitFile(service));
+    if (kit) writeJson(kitFile(service), { ...kit, locked: on || undefined, pins: on ? pinsOf(kit.targets) : undefined });
   });
 }
 
