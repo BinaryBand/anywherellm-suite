@@ -49,9 +49,9 @@ const advice = (app: Json): string[] => [parts.colourNote(app.page, app.rules)].
 
 /** How to make a new app, which list answers with, since the agent lists first. */
 const MAKING = (): string[] => [
-  `To make one: if a starter fits (${Object.keys(parts.starters()).join(", ")}), create with starter and title, then fit it with edit and do.`,
+  `To make one: if a starter fits (${Object.keys(parts.starters()).join(", ")}), create with starter, title and the user's first data: a whole app, ready to give them.`,
   "Otherwise guide, then guide once with every part you'll use, then create with a template, the parts, text (app.json: about, rules, card) and a plan, and fit it with edit.",
-  "Make one app and fit it with edit; a second only if the user asks.",
+  "Make one app; a second only if the user asks.",
 ];
 
 const PLAN_MIN = 40;
@@ -133,10 +133,23 @@ const ACTIONS = {
     // With no key for the pages there's no page yet: page says why.
     const url = pageUrl(await publish(made, workspace).catch((e) => (e instanceof Told ? null : Promise.reject(e))), baseOf(self));
     const defaults = filled.length ? [`Filled in what the data left out: ${filled.join(", ")}, with false, 0 or [].`] : [];
+    const at = url ? [`Its page is at ${url} and follows every change; the card's title opens it.`] : [];
+    // A starter is finished as made: its reply leaves out the page, which only invites rewriting it, and
+    // says to stop, since an agent told to fit an app goes on editing one that already works.
+    if (named !== undefined)
+      return [
+        `Made the app ${made.name}: ${made.title}, ${how} It's ready: give the user the card and one sentence on what it does. Change it (do for the data, edit for page.html) only for something they asked that it doesn't do yet.`,
+        ...defaults,
+        ...at,
+        "",
+        "app.json:",
+        store.definitionText(made),
+        ...cardBlock(made, url),
+      ].join("\n");
     return [
       `Made the app ${made.name}: ${made.title}, ${how} Fit it to what the user asked with edit (page.html, app.json) and do (the data)${url ? "." : ", then give them the page."}`,
       ...defaults,
-      ...(url ? [`Its page is at ${url} and follows every change; the card's title opens it.`] : []),
+      ...at,
       "",
       "app.json:",
       store.definitionText(made),
