@@ -12,24 +12,24 @@
    and the allowed addresses (either skill's: addresses.mts). What's done in a section is posted under its
    title and applied by the skill that owns it. The look is
    AnywhereLLM Lite's, as the browser's tab page has it; ?theme=light or dark keeps it to one. */
-:root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--accentbg:oklch(0.94 0.028 272);--onaccent:oklch(1 0 0);--hover:oklch(0.925 0.016 75);--badfg:oklch(0.47 0.16 20);--okfg:oklch(0.42 0.08 165);--okbg:oklch(0.945 0.04 165);--warnfg:oklch(0.45 0.1 70);--warnbg:oklch(0.95 0.045 80);
---float:0 12px 32px -8px oklch(0.3 0.04 280 / 0.28),0 2px 6px oklch(0.3 0.03 280 / 0.16);--sans:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:ui-monospace,Menlo,monospace;color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.78 0.018 280);--accent:oklch(0.78 0.1 272);--accentbg:oklch(0.33 0.06 272);--onaccent:oklch(0.2 0.03 280);--hover:oklch(0.29 0.02 280);--badfg:oklch(0.83 0.085 20);--okfg:oklch(0.82 0.1 165);--okbg:oklch(0.32 0.05 165);--warnfg:oklch(0.84 0.1 80);--warnbg:oklch(0.33 0.05 70);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
-:root[data-theme="dark"]{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.78 0.018 280);--accent:oklch(0.78 0.1 272);--accentbg:oklch(0.33 0.06 272);--onaccent:oklch(0.2 0.03 280);--hover:oklch(0.29 0.02 280);--badfg:oklch(0.83 0.085 20);--okfg:oklch(0.82 0.1 165);--okbg:oklch(0.32 0.05 165);--warnfg:oklch(0.84 0.1 80);--warnbg:oklch(0.33 0.05 70);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}
+:root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--edge:oklch(0.58 0.014 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--accentbg:oklch(0.94 0.028 272);--onaccent:oklch(1 0 0);--hover:oklch(0.925 0.016 75);--badfg:oklch(0.47 0.16 20);--okfg:oklch(0.42 0.08 165);--okbg:oklch(0.945 0.04 165);--warnfg:oklch(0.45 0.1 70);--warnbg:oklch(0.95 0.045 80);
+--float:0 12px 32px -8px oklch(0.3 0.04 280 / 0.28),0 2px 6px oklch(0.3 0.03 280 / 0.16);--sans:'Instrument Sans','Noto Sans','Segoe UI',system-ui,-apple-system,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--edge:oklch(0.6 0.022 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.78 0.018 280);--accent:oklch(0.78 0.1 272);--accentbg:oklch(0.33 0.06 272);--onaccent:oklch(0.2 0.03 280);--hover:oklch(0.29 0.02 280);--badfg:oklch(0.83 0.085 20);--okfg:oklch(0.82 0.1 165);--okbg:oklch(0.32 0.05 165);--warnfg:oklch(0.84 0.1 80);--warnbg:oklch(0.33 0.05 70);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
+:root[data-theme="dark"]{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--edge:oklch(0.6 0.022 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.78 0.018 280);--accent:oklch(0.78 0.1 272);--accentbg:oklch(0.33 0.06 272);--onaccent:oklch(0.2 0.03 280);--hover:oklch(0.29 0.02 280);--badfg:oklch(0.83 0.085 20);--okfg:oklch(0.82 0.1 165);--okbg:oklch(0.32 0.05 165);--warnfg:oklch(0.84 0.1 80);--warnbg:oklch(0.33 0.05 70);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--sans);-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input{font:inherit;color:var(--ink)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 [hidden]{display:none!important}
-.top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:12px;padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));background:var(--bg)}
-.top h1{margin:0;font-size:19px;font-weight:600}
+.top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:calc(12px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) 12px max(12px,env(safe-area-inset-left,0px));background:var(--bg)}
+.top h1{flex:1;min-width:0;margin:0;font-size:19px;font-weight:600}
 .rb{flex:none;width:48px;height:48px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;box-shadow:var(--float)}
 main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px}
 .lead,.cap{margin:0;padding:0 8px;font-size:13px;line-height:1.45;color:var(--muted)}
 .seg{display:flex;padding:3px;border-radius:16px;background:var(--hover)}
-.seg button{flex:1;min-height:44px;border-radius:13px;font-size:14.5px;color:var(--ink2)}
-.seg [aria-selected="true"]{background:var(--panel);color:var(--ink);font-weight:600}
+.seg button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:14px;line-height:1.2;text-align:center;color:var(--ink)}
+.seg [aria-selected="true"]{background:var(--panel);box-shadow:inset 0 0 0 1.5px var(--edge);color:var(--ink);font-weight:600}
 section{display:flex;flex-direction:column;gap:16px}
 .lab{padding:0 20px;margin-bottom:-8px;font-size:12px;font-weight:500;letter-spacing:.48px;text-transform:uppercase;color:var(--muted)}
 .card{background:var(--panel);border:1px solid var(--line2);border-radius:24px;padding:0 20px;display:flex;flex-direction:column}
@@ -38,8 +38,8 @@ section{display:flex;flex-direction:column;gap:16px}
 .row{min-height:68px;display:flex;align-items:center;gap:12px;padding:10px 0}
 .who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .who b{font-size:16px;font-weight:500;overflow-wrap:anywhere}
-.who small{font:12.5px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.del{flex:none;min-height:40px;padding:0 14px;border-radius:99px;color:var(--badfg);font-size:15px}
+.who small{font:12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.del{flex:none;min-height:44px;padding:0 14px;border-radius:99px;color:var(--badfg);font-size:15px}
 .tag{flex:none;padding:2px 8px;border-radius:6px;font-size:12px;background:var(--warnbg);color:var(--warnfg)}
 .tag.ok{background:var(--okbg);color:var(--okfg)}
 summary{list-style:none;cursor:pointer}
@@ -55,18 +55,44 @@ details[open] summary .chev{transform:rotate(180deg)}
 form{display:flex;flex-direction:column;gap:12px;margin:0}
 .need form,.card>form{padding:20px 0}
 .ff{display:flex;flex-direction:column;gap:6px}
-.ff>span{padding:0 8px;font-size:13px;color:var(--muted)}
-.fld{width:100%;min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--line);background:var(--bg);font-size:16px}
-.btn{min-height:44px;padding:0 14px;border-radius:14px;border:1px solid var(--line);background:var(--panel);font-size:15px;font-weight:500;text-align:center}
+.ff>span,.ff>label{padding:0 8px;font-size:13px;color:var(--muted)}
+.fld{width:100%;min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--edge);background:var(--bg);color:var(--ink);font-size:16px}
+input::placeholder{color:var(--muted);opacity:1}
+.peek{position:relative}
+.peek .fld{padding-right:76px}
+.peek button{position:absolute;right:4px;top:4px;min-width:44px;min-height:44px;padding:0 12px;border-radius:12px;color:var(--accent);font-size:14px;font-weight:600}
+.btn{min-height:44px;padding:0 12px;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;text-align:center}
 .pri{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
 .bad{color:var(--badfg)}
-.pair{display:flex;gap:8px}.pair .btn{flex:1}
+.pair{display:flex;gap:12px}.pair .btn{flex:1;padding:4px 12px}
 .add{min-height:60px;display:flex;align-items:center;gap:12px;color:var(--accent);font-size:16px;font-weight:600;width:100%}
-.ask{display:flex;flex-direction:column;gap:12px;padding:4px 0 16px}
-.ask p{margin:0;font-size:15px;line-height:1.5}
+.add+form{padding-bottom:20px}
 .empty{margin:0;padding:20px 0;font-size:15px;color:var(--muted)}
 .foot{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-top:8px}
-.foot .btn{border-color:transparent;background:none;color:var(--badfg);padding:0 8px}
+.foot .btn{border:0;background:none;color:var(--badfg);padding:0 8px;font-weight:500}
+:root{--scrim:oklch(0.25 0.03 280 / 0.4);--shadow:oklch(0.35 0.04 280 / 0.14)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--scrim:oklch(0.1 0.02 280 / 0.6);--shadow:oklch(0 0 0 / 0.35)}}
+:root[data-theme="dark"]{--scrim:oklch(0.1 0.02 280 / 0.6);--shadow:oklch(0 0 0 / 0.35)}
+.scrim{position:fixed;inset:0;z-index:3;background:var(--scrim);animation:fade .2s ease-out}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:4;max-width:640px;margin:0 auto;gap:0;background:var(--panel);border-radius:28px 28px 0 0;box-shadow:0 -12px 32px -12px var(--shadow);animation:rise .24s cubic-bezier(.2,.8,.2,1)}
+.grip{align-self:center;flex:none;width:40px;height:4px;margin-top:10px;border-radius:99px;background:var(--line)}
+.q{display:flex;flex-direction:column;gap:20px;padding:14px 24px calc(28px + env(safe-area-inset-bottom,0px))}
+.q h2{margin:0 0 6px;font-size:19px;font-weight:600}
+.q p{margin:0;font-size:15px;line-height:1.5;color:var(--ink2)}
+.two{display:flex;gap:12px}
+.two button{flex:1;min-height:52px;padding:0 12px;border-radius:16px;background:var(--panel);font-size:16px;font-weight:500}
+.two .keep{border:2px solid var(--accent);color:var(--ink)}
+.two .go{border:1px solid var(--edge, var(--line));color:var(--badfg)}
+@keyframes rise{from{transform:translateY(100%)}}
+@keyframes fade{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.sheet,.scrim{animation:none}}
+.link{width:100%;text-align:left}
+.link>svg{flex:none;color:var(--muted)}
+.card.solo{padding:20px;gap:12px}
+.card.solo>*+*{border-top:0}
+.one .lead,.one nav,.one #foot{display:none}
+.top h1{flex:1;min-width:0;overflow-wrap:anywhere}
+.top .tag{margin-right:4px}
 #toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);font-size:14px;text-align:center}
 </style>
 </head>
@@ -102,7 +128,10 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   const icon = (d, size = 18) => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", size); s.setAttribute("height", size); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "1.6"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); s.innerHTML = `<path d="${d}"/>`; return s; };
   let toastTimer = 0;
   const toast = (text) => { $("toast").textContent = text; $("toast").hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => ($("toast").hidden = true), 4000); };
-  $("close").onclick = () => (history.length > 1 ? history.back() : window.close());
+  /** The sign-in whose own page shows (its label), if any; and whether a history entry that page
+   *  made is left ahead of the list, which the close button doesn't count. */
+  let opened = history.state?.signin ?? null, forward = false;
+  $("close").onclick = () => (opened ? back() : history.length - (forward ? 1 : 0) > 1 ? history.back() : window.close());
 
   // ---- Posting: each thing done here is an event of its section, posted through AnythingLLM's
   // upload under the section's title, so the skill that owns the section applies it.
@@ -142,15 +171,32 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
 
   // A labelled field. Not a login form: a password field asks for a new value (so the browser fills
   // in no saved password, nor a user name beside it), and names hold nothing a browser reads as one.
-  const field = (inputs, name, label, type = "text", mono = false) =>
-    el("label", { className: "ff" }, el("span", { textContent: label }),
-      (inputs[name] = el("input", { className: "fld", type, name: `vault-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", autocapitalize: "off", spellcheck: false, style: mono ? "font:14px var(--mono)" : "" })));
+  // A password field has Show at its end, which shows what was typed until Hide; it is heard with
+  // the first word of the label ("Show key").
+  const field = (inputs, name, label, type = "text", mono = false, placeholder = "") => {
+    const input = (inputs[name] = el("input", { className: "fld", type, name: `vault-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", autocapitalize: "off", spellcheck: false, placeholder, style: mono ? "font:14px var(--mono)" : "" }));
+    if (type !== "password") return el("label", { className: "ff" }, el("span", { textContent: label }), input);
+    input.id = input.name;
+    const what = label.split(/[\s,]/)[0].toLowerCase();
+    const show = el("button", { type: "button" });
+    const reveal = (on) => {
+      input.type = on ? "text" : "password";
+      show.textContent = on ? "Hide" : "Show";
+      show.setAttribute("aria-pressed", String(on));
+      show.setAttribute("aria-label", `${show.textContent} ${what}`);
+    };
+    show.onclick = () => reveal(input.type === "password");
+    reveal(false);
+    return el("div", { className: "ff" }, el("label", { htmlFor: input.id, textContent: label }), el("div", { className: "peek" }, input, show));
+  };
 
-  /** A form of `fields` ([name, label, type?, mono?]) that sends with `submit`; `onsubmit` answers
-   *  whether it went, which clears it. `extra` goes between the fields and the button. */
+  /** A form of `fields` ([name, label, type?, mono?, placeholder?]) that sends with `submit`;
+   *  `onsubmit` answers whether it went, which clears it and hides any field shown. `extra` goes
+   *  between the fields and the button. */
   function form(fields, submit, onsubmit, extra = []) {
     const inputs = {};
-    const node = el("form", {}, ...fields.map(([name, label, type, mono]) => field(inputs, name, label, type, mono)), ...extra, el("button", { className: "btn pri", type: "submit", textContent: submit }));
+    const node = el("form", {}, ...fields.map(([name, label, type, mono, placeholder]) => field(inputs, name, label, type, mono, placeholder)), ...extra, el("button", { className: "btn pri", type: "submit", textContent: submit }));
+    node.addEventListener("reset", () => { for (const b of node.querySelectorAll('.peek [aria-pressed="true"]')) b.click(); });
     node.onsubmit = async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.value.trim()]));
@@ -165,20 +211,54 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
 
   const sealedNote = () => el("p", { className: "cap", style: "padding:0", textContent: "Sealed on this device before it is sent; the agent never sees it." });
 
-  /** A button that asks first, in place (`asked`, then Keep or `yes`), before it runs `run`; its
-   *  `del` goes where it shows, its `box` where the question opens. Heard as `label`. */
+  /** The question open in the sheet ({ close }), if any: busy() reads it, so no reload draws under it. */
+  let asking = null;
+
+  /** Asks `title` in a sheet over the page, `line` under it, then Keep and `yes`: `yes` closes it and
+   *  runs `run`, unless `from`, the button it was asked from, has since been drawn away. Keep, Esc and
+   *  the scrim close it; focus goes back to `from`. One at a time. */
+  function ask(title, line, yes, run, from) {
+    asking?.close();
+    const shade = [document.querySelector("header"), document.querySelector("main")];
+    const was = shade.map((n) => n.inert);
+    const id = "q" + Math.random().toString(36).slice(2, 8);
+    const keep = el("button", { className: "keep", type: "button", textContent: "Keep" });
+    const go = el("button", { className: "go", type: "button", textContent: yes });
+    const scrim = el("div", { className: "scrim" });
+    const sheet = el("section", { className: "sheet" }, el("span", { className: "grip" }),
+      el("div", { className: "q" }, el("div", {}, el("h2", { id: id + "t", textContent: title }), el("p", { id: id + "l", textContent: line })), el("div", { className: "two" }, keep, go)));
+    for (const [k, v] of [["role", "dialog"], ["aria-modal", "true"], ["aria-labelledby", id + "t"], ["aria-describedby", id + "l"]]) sheet.setAttribute(k, v);
+    const me = {
+      close: () => {
+        if (asking !== me) return;
+        asking = null;
+        scrim.remove(), sheet.remove();
+        shade.forEach((n, i) => (n.inert = was[i]));
+        if (from.isConnected) from.focus();
+      },
+    };
+    keep.onclick = scrim.onclick = me.close;
+    go.onclick = () => {
+      const live = from.isConnected;
+      me.close();
+      if (live) run();
+    };
+    for (const n of shade) n.inert = true;
+    document.body.append(scrim, sheet);
+    asking = me;
+    keep.focus();
+  }
+
+  /** A button that asks first, in the sheet (`asked`: the question and the line under it, then Keep
+   *  or `yes`), before it runs `run`; its `del` goes where it shows. Heard as `label`. */
   function remove(asked, label, run, { text = "Delete", className = "del", yes = "Delete" } = {}) {
-    const box = el("div", {});
     const del = el("button", { className, type: "button", textContent: text });
     del.setAttribute("aria-label", label);
     del.onclick = (e) => {
       e.preventDefault();
-      const keep = el("button", { className: "btn", type: "button", textContent: "Keep", onclick: () => box.replaceChildren() });
-      const go = el("button", { className: "btn bad", type: "button", textContent: yes, onclick: () => (box.replaceChildren(), run()) });
-      box.replaceChildren(el("div", { className: "ask", role: "group" }, el("p", { textContent: asked }), el("div", { className: "pair" }, keep, go)));
-      keep.focus();
+      ask(...asked, yes, run, del);
     };
-    return { del, box };
+    return { del };
   }
 
   /** A row of a card: its name over its detail (mono), then `end`, a Delete or a tag. */
@@ -193,21 +273,21 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   const named = (ks, name) => [...ks.secrets, ...(ks.signing ?? []).map((g) => ({ ...g, kind: "signing" }))].find((x) => x.label.toLowerCase() === name.trim().toLowerCase());
 
   function drawKeys(ks) {
-    const keys = $("keys"), signins = $("signins");
+    const keys = $("keys");
     count("keys", "Keys", ks.secrets.filter((x) => x.kind === "key").length);
     count("signins", "Sign-ins", ks.secrets.filter((x) => x.kind === "oauth").length);
     const needs = ks.needs.map((n) => {
-      const f = form([["value", "Key", "password"]], "Save key", async (v) => {
+      const f = form([["value", "Key", "password", false, "Paste the key"]], "Save key", async (v) => {
         if (!v.value) return toast("Paste the key first"), false;
         return post("keys", "key-save", { label: n.label, site: n.site, sealed: await seal(v.value) });
       }, [sealedNote()]);
-      f.prepend(el("div", { style: "display:flex;flex-direction:column;gap:4px" }, el("b", { style: "font-size:17px;font-weight:600", textContent: "The agent asked for a key" }), el("span", { className: "say", textContent: `It goes only to ${n.site}, and the agent never sees it.` })),
+      f.prepend(el("div", { style: "display:flex;flex-direction:column;gap:4px" }, el("b", { style: "font-size:17px;font-weight:600", textContent: "The agent asked for a key" }), el("span", { className: "cap", style: "padding:0;line-height:1.4", textContent: `It goes only to ${n.site}, and the agent never sees it.` })),
         el("dl", { className: "kv" }, el("dt", { textContent: "Name" }), el("dd", { textContent: n.label }), el("dt", { textContent: "Site" }), el("dd", { textContent: n.site })));
       return el("div", { className: "card need" }, f);
     });
     const saved = ks.secrets.filter((x) => x.kind === "key").map((k) => {
-      const { del, box } = remove(`Delete the key ${k.label}? The agent can't call ${k.site} with it after.`, `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
-      return el("div", {}, row(k.label, k.site, del), box);
+      const { del } = remove([`Delete the key ${k.label}?`, `The agent can't call ${k.site} with it after.`], `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
+      return row(k.label, k.site, del);
     });
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
       if (!v.value || !v.label || !v.site) return toast("Fill in every field"), false;
@@ -221,19 +301,88 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     keys.replaceChildren(...needs, el("div", { className: "lab", textContent: "API keys" }), el("div", { className: "card" }, ...saved, ...(saved.length ? [] : [el("p", { className: "empty", textContent: "No keys yet. The agent asks for one when a task needs it." })]), el("div", {}, add, adding ? addForm : null)),
       el("p", { className: "cap", textContent: "A key goes only to its own site, over https, at most 60 times a minute. Saving under the name of a key replaces that key; a sign-in's name can't be used for a key." }));
 
-    const oauth = ks.secrets.filter((x) => x.kind === "oauth");
-    const items = oauth.map((o) => {
-      const tag = el("span", { className: "tag" + (o.tag.ok ? " ok" : ""), textContent: o.tag.text });
-      const { del, box } = remove(`Delete the sign-in ${o.label}? The agent can't reach ${o.site} with it after. Remove its access in the provider's own settings too.`, `Delete the sign-in ${o.label}`, () => post("keys", "key-delete", { label: o.label }), { text: "Delete sign-in", className: "btn bad" });
-      return el("details", {},
-        el("summary", {}, el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.site}${o.scopes ? " · " + o.scopes : ""}` })), tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
-        el("div", { className: "body" }, el("dl", { className: "kv" }, el("dt", { textContent: "Status" }), el("dd", { textContent: o.status }), ...(o.scopes ? [el("dt", { textContent: "Scopes" }), el("dd", { textContent: o.scopes })] : [])), del, box));
-    });
-    signins.replaceChildren(el("div", { className: "lab", textContent: "Sign-ins" }),
-      el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No sign-ins yet. The agent starts one when a task needs it." })])),
-      el("p", { className: "cap", textContent: "One sign-in for each provider. Its tokens go only to the site named, and are renewed by themselves as they run out." }));
+    drawSignins(ks);
     drawSigning(ks);
   }
+
+  // ---- Sign-ins: a row for each, which opens that provider's own page in place of the list. The
+  // page is an entry of the browser's history, so Back returns to the list.
+  let keysNow = null;
+  const signinsCap = () => el("p", { className: "cap", textContent: "The agent starts a sign-in when a task needs one, one for each provider. The tokens go only to the site named, and are renewed by themselves as they run out." });
+  /** A sign-in's tag: where it is, as the library words it. */
+  const signinTag = (o) => el("span", { className: "tag" + (o.tag.ok ? " ok" : ""), textContent: o.tag.text });
+  const title = document.querySelector(".top h1"), vaultTitle = title.textContent;
+  const closeKids = [...$("close").childNodes], closeLabel = $("close").getAttribute("aria-label");
+
+  /** The header for the sign-in `o`'s page (Back, its name and its tag), or the Vault's (null). */
+  function head(o) {
+    document.body.classList.toggle("one", !!o);
+    $("close").replaceChildren(...(o ? [icon("M10 3.5 5.5 8l4.5 4.5")] : closeKids));
+    $("close").setAttribute("aria-label", o ? "Back to Sign-ins" : closeLabel);
+    title.textContent = o ? o.label : vaultTitle;
+    document.querySelector(".top .tag")?.remove();
+    if (o) title.after(signinTag(o));
+  }
+
+  /** The sign-ins tab: the list, or the page of the one `opened`; back to the list when that one is
+   *  gone (deleted here or elsewhere). */
+  function drawSignins(ks) {
+    keysNow = ks;
+    const oauth = ks.secrets.filter((x) => x.kind === "oauth");
+    const one = opened && oauth.find((o) => o.label === opened);
+    if (opened && !one) return back();
+    head(one);
+    if (one) {
+      select(document.querySelector('nav [data-tab="signins"]'));
+      const { del } = remove([`Delete the sign-in ${one.label}?`, `The agent can't reach ${one.site} with it after. Remove its access in the provider's own settings too.`], `Delete the sign-in ${one.label}`, () => post("keys", "key-delete", { label: one.label }), { text: "Delete sign-in", className: "btn bad" });
+      const facts = [["Site", one.site], ["Allows", one.scopes], ["Status", one.status]].filter(([, v]) => v);
+      return $("signins").replaceChildren(el("div", { className: "card solo" },
+        el("dl", { className: "kv" }, ...facts.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })])),
+        one.tag.text === "Enter the code" ? el("p", { className: "say", textContent: "The code is in the agent's answer, with where to enter it. Once the provider takes it, this reads Signed in." }) : null,
+        del), signinsCap());
+    }
+    const items = oauth.map((o) => {
+      const open = el("button", { className: "row link", type: "button", onclick: () => openSignin(o.label) },
+        el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.site}${o.scopes ? " · " + o.scopes : ""}` })), signinTag(o), icon("M6 4l4 4-4 4", 14));
+      open.dataset.label = o.label;
+      open.setAttribute("aria-label", `${o.label} sign-in, ${o.status}. Open`);
+      return open;
+    });
+    $("signins").replaceChildren(el("div", { className: "lab", textContent: "Sign-ins" }),
+      el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No sign-ins yet. The agent starts one when a task needs it." })])),
+      signinsCap());
+  }
+
+  /** Shows the sign-in `label`'s page (null: the list again), with focus on Back, or on the row the
+   *  page was opened from. */
+  function showSignin(label) {
+    const was = opened;
+    opened = label;
+    if (keysNow) drawSignins(keysNow);
+    if (opened) window.scrollTo(0, 0), $("close").focus();
+    else [...$("signins").querySelectorAll(".link")].find((b) => b.dataset.label === was)?.focus();
+  }
+  /** Opens the sign-in `label`'s page, as a history entry of its own. */
+  function openSignin(label) {
+    history.pushState({ signin: label }, "");
+    forward = false;
+    showSignin(label);
+  }
+  /** Back to the list: through the history entry the page made, when it's the one showing. */
+  function back() {
+    if (history.state?.signin) history.back();
+    else showSignin(null);
+  }
+  window.addEventListener("popstate", (e) => {
+    asking?.close();
+    forward = !e.state?.signin;
+    showSignin(e.state?.signin ?? null);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !(asking || opened)) return;
+    e.preventDefault();
+    asking ? asking.close() : back();
+  });
 
   // ---- Signing keys: the library's too. A function signs with one by its name and gets the
   // signature, never the key. Not a checkbox for scheduled jobs: an input with a value reads as busy.
@@ -242,7 +391,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     const list = ks.signing ?? [];
     count("signing", "Signing", list.length);
     const items = list.map((g) => {
-      const { del, box } = remove(`Delete the signing key ${g.label}? Nothing signs as it after, and it can't be made again: its peers would need a new public key.`, `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
+      const { del } = remove([`Delete the signing key ${g.label}?`, `Nothing signs as it after, and it can't be made again: its peers would need a new public key.`], `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
       const copy = g.public && el("button", { className: "btn", type: "button", textContent: "Copy public key", onclick: async () => {
         try { await navigator.clipboard.writeText(g.public); toast("Copied"); } catch (e) { toast("Can't copy here: select the key above and copy it"); }
       } });
@@ -255,7 +404,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
             el("dt", { textContent: "Public key" }), el("dd", { textContent: g.public ?? "damaged: delete it and import it again" }),
             ...(g.fingerprint ? [el("dt", { textContent: "Fingerprint" }), el("dd", { textContent: g.fingerprint })] : []),
             el("dt", { textContent: "Scheduled jobs" }), el("dd", { textContent: g.unattended ? "may sign" : "may not sign" })),
-          el("div", { className: "pair" }, copy, jobs), del, box));
+          el("div", { className: "pair" }, copy, jobs), del));
     });
     const addForm = form([["label", "Name, like muse"], ["namespace", "The namespace it signs in, like muse-coordination", "text", true], ["seed", "Seed to import, base64 (empty: make a new key)", "password"]], "Save signing key", async (v) => {
       if (!v.label || !v.namespace) return toast("Fill in the name and the namespace"), false;
@@ -276,9 +425,9 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     count("logins", "Logins", ls.logins.length);
     const rows = ls.logins.map((l) => {
       const passkey = l.kind === "passkey";
-      const asked = passkey ? `Delete the passkey for ${l.site}? The agent can't sign in with it after. Remove it in the site's own settings too.` : `Delete the login for ${l.site}? The agent can't sign in there with it after.`;
-      const { del, box } = remove(asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`, () => post("logins", "login-delete", { id: l.id }));
-      return el("div", {}, row(l.site, [l.user, passkey ? "Passkey" : "Password"].filter(Boolean).join(" · "), del), box);
+      const asked = passkey ? ["Delete this passkey?", `The agent can't sign in to ${l.site} with it after. Remove it in the site's own settings too.`] : ["Delete this login?", `The agent can't sign in to ${l.site} with it after.`];
+      const { del } = remove(asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`, () => post("logins", "login-delete", { id: l.id }));
+      return row(l.site, [l.user, passkey ? "Passkey" : "Password"].filter(Boolean).join(" · "), del);
     });
     $("logins").replaceChildren(el("div", { className: "lab", textContent: "Logins" }),
       el("div", { className: "card" }, ...rows, ...(rows.length ? [] : [el("p", { className: "empty", textContent: "No logins yet. The browser offers to save one when you sign in on its tab's page." })])),
@@ -292,8 +441,8 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     if (as.result && toldAt !== null && as.result.n !== toldAt) toast(as.result.error);
     toldAt = as.result ? as.result.n : 0;
     const allowed = as.origins.map((a) => {
-      const { del, box } = remove(`Stop letting the skills reach ${a.origin}?`, `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
-      return el("div", {}, row(a.origin, a.added ? `Added ${new Date(a.added).toLocaleDateString()}` : "", del), box);
+      const { del } = remove(["Remove this address?", `The skills can't reach ${a.origin} after.`], `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
+      return row(a.origin, a.added ? `Added ${new Date(a.added).toLocaleDateString()}` : "", del);
     });
     const refused = as.refused.map((r) => row(r.origin, `Refused ${new Date(r.at).toLocaleString()}`, el("button", { className: "btn", type: "button", textContent: "Allow", onclick: () => post("addresses", "address-allow", { origin: r.origin }) })));
     const addForm = form([["origin", "An address, like http://muse-vm:8463", "text", true]], "Allow", (v) => (v.origin ? post("addresses", "address-allow", { origin: v.origin }) : (toast("Write the address first"), false)));
@@ -305,11 +454,11 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   }
 
   // ---- The sections there are, each its own state file; a tab for each. A section the user is in
-  // the middle of (a form being filled) isn't drawn again under them.
+  // the middle of (a form being filled) isn't drawn again under them, nor any while a question is open.
   const drawn = { keys: drawKeys, logins: drawLogins, addresses: drawAddresses };
   const shown = new Set();
   const last = {};
-  const busy = (section) => [...document.querySelectorAll(`section[data-section="${section}"]`)].some((s) => s.querySelector(".ask") || [...s.querySelectorAll("input")].some((i) => i.value || i === document.activeElement));
+  const busy = (section) => !!asking || [...document.querySelectorAll(`section[data-section="${section}"]`)].some((s) => [...s.querySelectorAll("input")].some((i) => i.value || i === document.activeElement));
   const select = (b) => {
     for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
     for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
@@ -339,9 +488,9 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     }
   }
 
-  // ---- A new link, asked in place.
-  const rotate = remove("Make a new link? This one stops working, everywhere it was shared.", "Make a new link", () => post([...shown][0], "rotate"), { text: "New link", className: "btn", yes: "Make it" });
-  $("foot").append(el("div", { id: "rotatebox", hidden: true }, rotate.del, rotate.box));
+  // ---- A new link, asked first.
+  const rotate = remove(["Make a new link?", "This one stops working, everywhere it was shared."], "Make a new link", () => post([...shown][0], "rotate"), { text: "New link", className: "btn", yes: "Make it" });
+  $("foot").append(el("div", { id: "rotatebox", hidden: true }, rotate.del));
   load();
   setInterval(load, 5000);
 })();
