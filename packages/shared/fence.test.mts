@@ -66,7 +66,7 @@ test("hosts the user lets through in FENCE_ALLOW pass the fence", async () => {
   assert.match((await refused("http://127.0.0.2/"))!, /isn't a public address/);
 });
 
-test("origins the user let through for good in AnywhereLLM pass too, on their own port only, read again when they change", async (t) => {
+test("origins the user let through on the Vault page pass too, on their own port only, read again when they change", async (t) => {
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), "fence-"));
   const was = process.env.STORAGE_DIR;
   process.env.STORAGE_DIR = storage;
@@ -79,14 +79,12 @@ test("origins the user let through for good in AnywhereLLM pass too, on their ow
   assert.deepEqual(allowedHosts({}), [], "FENCE_ALLOW's hosts are its own");
   const refused = makeFence({ lookup: async () => [{ address: "100.101.102.103" }] });
   assert.equal(await refused("http://muse-vm:8463/v1/health"), null, "the browser's fence reads it for each request");
-  assert.match((await refused("http://muse-vm:3001/"))!, /on this machine or its network/, "another port on the same host still asks");
-  assert.match((await refused("https://muse-vm:8463/"))!, /on this machine or its network/, "another scheme still asks");
+  assert.match((await refused("http://muse-vm:3001/"))!, /on this machine or its network/, "another port on the same host is still refused");
+  assert.match((await refused("https://muse-vm:8463/"))!, /on this machine or its network/, "another scheme is still refused");
   assert.deepEqual([...allowedFor("http://muse-vm:8463")], ["muse-vm"]);
   assert.deepEqual([...allowedFor("http://muse-vm:3001")], []);
-  assert.ok(secureFor(new URL("http://muse-vm:8463/publish")), "a key may go over plain http to an origin let through for good");
+  assert.ok(secureFor(new URL("http://muse-vm:8463/publish")), "a key may go over plain http to an origin let through");
   assert.ok(!secureFor(new URL("http://muse-vm:3001/")), "not to another port of it");
-  write({ hosts: [{ host: "muse-vm" }] }, 2000);
-  assert.deepEqual(alwaysAllowed(), [], "an older file listing hosts lets nothing through");
   write({ origins: [] }, 3000);
   assert.match((await refused("http://muse-vm:8463/"))!, /on this machine or its network/);
   write("not a list", 4000);

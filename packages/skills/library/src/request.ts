@@ -1,11 +1,8 @@
 // One request the library sends, from call or from a function's kit.http: checked (its method,
-// headers and body), through policy, with a saved key put where it goes, and through the fence,
-// which lets through the hosts the user let through in this run too; a chat in AnywhereLLM asks the
-// user for a host the fence refuses, and sends it again once they let it through (withAsk). Each
-// caller decides where it may go before, and how its answer is shown after.
+// headers and body), through policy, with a saved key put where it goes, and through the fence.
+// Each caller decides where it may go before, and how its answer is shown after.
 
 import { bodyOf, headersOf, methodOf, withParams } from "#shared/answer";
-import { withAsk } from "#shared/ask";
 import * as net from "#shared/net";
 import { check } from "./policy";
 import { credentialed } from "./secrets";
@@ -34,6 +31,6 @@ export async function send(target: URL, spec: Spec, key: { label: string; as: st
   const body = bodyOf(method, spec.body, headers);
   check({ op: "http", fn, method, url: target.href, key: key?.label ?? null });
   const cred = key ? await credentialed(key.label, key.as, target.href, headers) : null;
-  const answer = await withAsk(() => net.send({ method, url: cred?.url ?? target.href, headers: cred?.headers ?? headers, body, signal, ...(cred ? { next: cred.next } : {}) }));
+  const answer = await net.send({ method, url: cred?.url ?? target.href, headers: cred?.headers ?? headers, body, signal, ...(cred ? { next: cred.next } : {}) });
   return { method, answer, secret: cred?.value ?? null };
 }

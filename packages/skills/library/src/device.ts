@@ -8,7 +8,7 @@
 // only the code the user enters.
 
 import { perProcess } from "#shared/anythingllm";
-import { outsideRun, secureFor } from "#shared/fence";
+import { secureFor } from "#shared/fence";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 import { REMOVED, isSignIn, postForm, refusal, tokenAnswer, tokensOf, type DeviceCode, type ProviderAnswer, type SignIn, type Tokens } from "./oauth";
@@ -143,7 +143,7 @@ async function asked(ids: string[], wait: boolean): Promise<void> {
 }
 
 /** Asks in this process while a code waits, each when it's due; timers that never hold the process
- *  open, nor the agent run that started them. */
+ *  open. */
 function keepAsking(): void {
   const state = loop();
   if (state.on) return;
@@ -153,5 +153,5 @@ function keepAsking(): void {
     if (waiting().length) setTimeout(tick, PAUSE_MS).unref();
     else loop().on = false;
   };
-  outsideRun(() => setTimeout(tick, PAUSE_MS).unref());
+  setTimeout(tick, PAUSE_MS).unref();
 }

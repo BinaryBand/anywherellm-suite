@@ -15,7 +15,7 @@ import http from "node:http";
 import https from "node:https";
 import net, { type LookupFunction } from "node:net";
 import zlib from "node:zlib";
-import { FENCED, Fenced, NetError, addressesRefused, allowedFor, allowedHosts, bareHost, hostRefused, httpUrl, pathRefused } from "./fence.mts";
+import { FENCED, NetError, addressesRefused, allowedFor, allowedHosts, bareHost, hostRefused, httpUrl, letThrough, noteRefused, pathRefused } from "./fence.mts";
 
 /** A server that didn't answer, or whose answer couldn't be read: worth trying again later. */
 export class Unreachable extends NetError {
@@ -104,6 +104,12 @@ function agentsFor(allowed: ReadonlySet<string>): Agents {
 const timedOut = (ms: number) => Object.assign(new Error(`no answer in ${Math.round(ms / 1000)} s`), { code: "ETIMEDOUT" });
 const stopped = () => Object.assign(new Error("the run stopped"), { code: "EABORTED" });
 
+/** The fence's refusal of a request for `origin`, noted for the Vault page to offer (noteRefused). */
+function refused(origin: string, why: string): NetError {
+  noteRefused(origin);
+  return new NetError(`${origin} isn't reached: ${why}. ${letThrough(origin)}`);
+}
+
 /** One request and its answer, with no redirect followed: the hosts allowedFor lets through for its
  *  origin are (or `allow`'s, which tests fix). */
 function once({ method, url, headers, body, timeout, maxBytes, allow, resolve, signal }: Once): Promise<Answer> {
@@ -113,7 +119,7 @@ function once({ method, url, headers, body, timeout, maxBytes, allow, resolve, s
   const host = bareHost(parsed).toLowerCase();
   const allowed = allow ? new Set(allow) : allowedFor(parsed.origin);
   const why = hostRefused(host, allowed);
-  if (why && why !== "lookup") throw new Fenced(`${parsed.origin} isn't reached: ${why}. ${FENCED}`, host, parsed.origin);
+  if (why && why !== "lookup") throw refused(parsed.origin, why);
   if (signal?.aborted) throw new NetError(`${parsed.origin} wasn't asked: the run stopped`);
   const https_ = parsed.protocol === "https:";
   // A stand-in lookup (the tests') gets connections of its own; the real one, the kept ones.
@@ -156,7 +162,7 @@ function once({ method, url, headers, body, timeout, maxBytes, allow, resolve, s
     const onAbort = () => req.destroy(stopped());
     signal?.addEventListener("abort", onAbort, { once: true });
     req.on("error", (e: NodeJS.ErrnoException) => {
-      if (e.code === "EFENCED") return finish(reject, new Fenced(`${parsed.origin} isn't reached: ${e.message}. ${FENCED}`, host, parsed.origin));
+      if (e.code === "EFENCED") return finish(reject, refused(parsed.origin, e.message));
       return finish(reject, new Unreachable(`${parsed.origin} didn't answer: ${e.message}`));
     });
     req.end(body);

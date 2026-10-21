@@ -13,15 +13,14 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { perProcess } from "#shared/anythingllm";
-import { withAsk } from "#shared/ask";
-import { FENCED, Fenced, allowedFor, bareHost, makeFence, outsideRun, pathRefused } from "#shared/fence";
+import { FENCED, NetError, letThrough, makeFence, noteRefused, originOf, pathRefused } from "#shared/fence";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
 import type { Browser, Page, Puppeteer } from "./host";
 import { forgetTab, redraw } from "./page";
 import * as passkey from "./passkey";
 import * as sessions from "./sessions";
-import { type Entry, type Tab, VIEWPORT, firstLine, granted, note, state, threadKey } from "./state";
+import { type Entry, type Tab, VIEWPORT, firstLine, note, state, threadKey } from "./state";
 
 /** Where a system Chrome or Chromium is looked for, after the ones Puppeteer downloaded (Linux only, so far). */
 const SYSTEM_CHROMES = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];
@@ -82,10 +81,10 @@ async function saveNow(workspace: string, entry: Entry): Promise<void> {
   entry.saved = await sessions.save(workspace, entry.browser, entry.saved).catch(() => entry.saved);
 }
 
-/** Saves the workspace's cookies SAVE_MS from now, in place of a save to come (outside the run). */
+/** Saves the workspace's cookies SAVE_MS from now, in place of a save to come. */
 function saveSoon(workspace: string, entry: Entry): void {
   clearTimeout(entry.saving ?? undefined);
-  entry.saving = outsideRun(() => setTimeout(() => void saveNow(workspace, entry), SAVE_MS));
+  entry.saving = setTimeout(() => void saveNow(workspace, entry), SAVE_MS);
   entry.saving.unref?.();
 }
 
@@ -119,12 +118,11 @@ async function closeEntry(workspace: string): Promise<void> {
   await (await entry.ready.catch(() => null))?.close().catch(() => {});
 }
 
-/** Keeps a workspace's browser open IDLE_MS from now (a timer outside the run that touched it, so
- *  it doesn't hold on to it). */
+/** Keeps a workspace's browser open IDLE_MS from now. */
 function touch(workspace: string, entry: Entry): void {
   entry.last = Date.now();
   clearTimeout(entry.timer ?? undefined);
-  entry.timer = outsideRun(() => setTimeout(() => void closeEntry(workspace), IDLE_MS));
+  entry.timer = setTimeout(() => void closeEntry(workspace), IDLE_MS);
   entry.timer.unref?.();
 }
 
@@ -156,9 +154,8 @@ async function entryFor(workspace: string): Promise<Entry> {
   if (!entry) {
     const others = [...browsers.entries()].sort((a, b) => a[1].last - b[1].last);
     while (others.length >= MAX_BROWSERS) await closeEntry(others.shift()![0]);
-    const made: Entry = { tabs: new Map(), notes: new Map(), needs: new Map(), offers: new Map(), msgs: new Map(), holds: new Map(), screens: new Map(), authenticators: new Map(), secrets: new Set(), fence: makeFence({ allow: (origin) => allowedFor(origin, granted(workspace)) }), last: Date.now(), timer: null, saving: null, saved: null, ready: null!, touch: () => touch(workspace, made), changed: () => saveSoon(workspace, made), busy: new Set() };
-    // Outside the run that opens it, which the browser would otherwise hold on to as long as it lives.
-    made.ready = outsideRun(() => launch(workspace)).then(async (browser) => {
+    const made: Entry = { tabs: new Map(), notes: new Map(), needs: new Map(), offers: new Map(), msgs: new Map(), holds: new Map(), screens: new Map(), authenticators: new Map(), secrets: new Set(), fence: makeFence(), last: Date.now(), timer: null, saving: null, saved: null, ready: null!, touch: () => touch(workspace, made), changed: () => saveSoon(workspace, made), busy: new Set() };
+    made.ready = launch(workspace).then(async (browser) => {
       made.saved = await sessions.restore(workspace, browser).catch(() => null);
       return (made.browser = browser);
     });
@@ -186,7 +183,7 @@ async function fenced(entry: Entry, page: Page, key?: string): Promise<void> {
     const why = await entry.fence(request.url());
     try {
       if (!why) return await request.continue();
-      if (key && request.isNavigationRequest() && request.frame() === page.mainFrame()) note(entry, key, `refused to open ${request.url().slice(0, 200)}: ${why}. ${FENCED}`);
+      if (key && request.isNavigationRequest() && request.frame() === page.mainFrame()) note(entry, key, `refused to open ${request.url().slice(0, 200)}: ${why}. ${refusal(request.url())}`);
       await request.abort("blockedbyclient");
     } catch {
       // the page went away meanwhile
@@ -258,16 +255,22 @@ export function existing(workspace: string, thread?: string | number): Tab {
   return { workspace, entry, page, key };
 }
 
-/** Whether the fence lets `url` through, asking the user when the run asks (withAsk): a Fenced
- *  saying why not, said as `what` ("isn't opened"). */
-export function through(entry: Entry, url: string, what: string): Promise<void> {
-  return withAsk(async () => {
-    const refused = await entry.fence(url);
-    if (!refused) return;
-    const parsed = new URL(url);
-    if (pathRefused(parsed)) throw new BrowserError(`${url} ${what}: ${refused}`); // nothing to let through
-    throw new Fenced(`${url} ${what}: ${refused}. The browser reaches the public web only, the hosts the user lets through in FENCE_ALLOW, and the addresses they let through in AnywhereLLM, which asks the user during a chat there. ${FENCED}`, bareHost(parsed).toLowerCase(), parsed.origin);
-  });
+/** What the agent is told after the fence refused `url`: where the user lets its origin through,
+ *  noted for the Vault page to offer (noteRefused); only that nothing else may reach it when there's
+ *  no origin to let through (a page of the skills', another scheme). */
+function refusal(url: string): string {
+  const origin = originOf(url);
+  if (!origin || pathRefused(new URL(url))) return FENCED;
+  noteRefused(origin);
+  return letThrough(origin);
+}
+
+/** Whether the fence lets `url` through: a NetError saying why not, said as `what` ("isn't opened"). */
+export async function through(entry: Entry, url: string, what: string): Promise<void> {
+  const refused = await entry.fence(url);
+  if (!refused) return;
+  if (pathRefused(new URL(url))) throw new BrowserError(`${url} ${what}: ${refused}`); // nothing to let through
+  throw new NetError(`${url} ${what}: ${refused}. The browser reaches the public web only, and the hosts and addresses the user lets through. ${refusal(url)}`);
 }
 
 /** Loads `url` in `page` of `entry`'s browser, the fence asked first (through); answers why loading

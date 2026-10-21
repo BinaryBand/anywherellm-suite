@@ -1,41 +1,30 @@
 // What the skills may reach: the public web only. They run inside AnythingLLM, whose machine
 // reaches its LAN and its tailnet, so a request is refused when its host is, or resolves to, an
 // address that isn't public, unless it's one of the hosts named in FENCE_ALLOW (comma-separated, any
-// port), or the request is for an origin the user let through for good from AnywhereLLM
-// (allowed.json, which its bridge writes: that scheme, host and port only); a chat in AnywhereLLM
-// can also ask the user to let an origin through (ask.mts). The requests a skill sends
+// port), or the request is for an origin the user let through on the Vault page (allowed.json:
+// that scheme, host and port only; addresses.mts writes it). The requests a skill sends
 // itself (net.mts) are checked at the lookup their connection uses, so a name can't resolve one way
 // for the check and another for the connection. makeFence is for what can only be checked before
 // (the browser's page requests): there a name could resolve differently in between.
 // Ported from the lean browser skill's fence.js.
 
-import { AsyncLocalStorage } from "node:async_hooks";
 import dns from "node:dns";
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { perBuild, perProcess, storageDir } from "./anythingllm.mts";
-import { readJson } from "./atomic.mts";
+import { perBuild, storageDir } from "./anythingllm.mts";
+import { readJson, writeAtomic } from "./atomic.mts";
 import { Told } from "./errors.mts";
 
 /** A request refused or failed, said as it is: a fenced address, a bad header, an unreachable server. */
 export class NetError extends Told {}
 
-/** A request the fence refused before anything was sent: `host` (as the allow-lists name it) and the
- *  `origin` it was for, so a chat can ask the user to let it through and send it again. */
-export class Fenced extends NetError {
-  override name = "Fenced";
-  readonly host: string;
-  readonly origin: string;
-  constructor(message: string, host: string, origin: string) {
-    super(message);
-    this.host = host;
-    this.origin = origin;
-  }
-}
-
 /** What the agent is told whenever the fence refuses an address. */
-export const FENCED = "That's final: don't reach it another way, with another tool or another address for the same place.";
+export const FENCED = "Don't reach it another way, with another tool or another address for the same place.";
+
+/** What the agent is told after the fence refused a request for `origin`: where the user lets it
+ *  through (addresses.mts), and that nothing else may reach it. */
+export const letThrough = (origin: string): string => `The user can let ${origin} through on the Vault page, under Allowed addresses, and then ask again. ${FENCED}`;
 
 /** The folders of AnythingLLM's public folder the skills' pages live in (#shared/pages writes only
  *  there): the Vault, the Library page, the browser's tab pages, the apps. */
@@ -101,9 +90,8 @@ export function privateName(host: string): boolean {
 export const bareHost = (url: URL): string => url.hostname.replace(/^\[|\]$/g, "");
 
 /** Whether a secret may go to `url` by its scheme: https, or plain http to what the user lets
- *  through for good (FENCE_ALLOW's hosts, allowed.json's origins). An origin let through once
- *  doesn't carry a secret over plain http. */
-export const secureFor = (url: URL): boolean => url.protocol === "https:" || (url.protocol === "http:" && allows(url.origin, NONE));
+ *  through (FENCE_ALLOW's hosts, allowed.json's origins). */
+export const secureFor = (url: URL): boolean => url.protocol === "https:" || (url.protocol === "http:" && allows(url.origin));
 
 /** `url` parsed, when it's an http(s) address; a NetError saying why not otherwise. */
 export function httpUrl(url: string): URL {
@@ -124,12 +112,42 @@ export function checkUrl(raw: unknown): string {
   return httpUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : `https://${url}`).href;
 }
 
-/** The fence's folder in AnythingLLM's storage: the asks waiting for the user (ask.mts) and the
- *  origins they let through for good. AnywhereLLM's bridge reads and writes it too. */
+/** The fence's folder in AnythingLLM's storage: the origins the user let through, and the ones it
+ *  refused lately. The suite's alone. */
 export const FENCE_DIR = "fence-lean";
 
-/** The origins the user let through for good: { origins: [{ origin, added }] }, written by the bridge. */
+/** The origins the user let through: { origins: [{ origin, added }] }, written from the Vault
+ *  page (addresses.mts). */
 export const allowedFile = (storage: string): string => path.join(storage, FENCE_DIR, "allowed.json");
+
+/** The origins the fence refused lately, newest first, for the Vault page to offer:
+ *  { refused: [{ origin, at }] }, at most MAX_REFUSED, none older than REFUSED_MS. */
+export const refusedFile = (storage: string): string => path.join(storage, FENCE_DIR, "refused.json");
+const MAX_REFUSED = 10;
+const REFUSED_MS = 24 * 60 * 60 * 1000;
+
+type Refusal = { origin: string; at: string };
+
+/** The origins in refused.json, newest first, the old ones left out; none when it can't be read. */
+export function recentlyRefused(now = Date.now()): Refusal[] {
+  try {
+    const kept = readJson<{ refused?: Refusal[] }>(refusedFile(storageDir()), () => ({})).refused;
+    if (!Array.isArray(kept)) return [];
+    return kept.filter((r) => r && originOf(r.origin) === r.origin && now - Date.parse(r.at) < REFUSED_MS).slice(0, MAX_REFUSED);
+  } catch {
+    return [];
+  }
+}
+
+/** Notes that the fence refused a request for `origin`, at the top of refused.json. Never throws: a
+ *  refusal is told whether or not it could be noted. Not under a lock: two refusals at once may keep
+ *  one, which is all the list is for. */
+export function noteRefused(origin: string, now = Date.now()): void {
+  try {
+    const refused = [{ origin, at: new Date(now).toISOString() }, ...recentlyRefused(now).filter((r) => r.origin !== origin)].slice(0, MAX_REFUSED);
+    writeAtomic(refusedFile(storageDir()), JSON.stringify({ refused }, null, 2) + "\n", 0o600);
+  } catch {}
+}
 
 /** `raw` as an origin (an http or https address's scheme, host and port, as URL.origin writes it), or
  *  null when it isn't one. */
@@ -145,8 +163,8 @@ export function originOf(raw: unknown): string | null {
 type Listed = { origins: string[]; hosts: string[] };
 const NOTHING: Listed = { origins: [], hosts: [] };
 
-/** allowed.json as it is now; read again when the file changes (by its stamp, as the vault's: the
- *  bridge replaces it). Nothing when there's no file, or one that can't be read: the fence stays
+/** allowed.json as it is now; read again when the file changes (by its stamp, as the vault's: it is
+ *  replaced whole). Nothing when there's no file, or one that can't be read: the fence stays
  *  shut. */
 function listed(): Listed {
   const kept = perBuild("fence.allowed", () => ({ last: null as ({ stamp: string } & Listed) | null }));
@@ -169,7 +187,7 @@ function listed(): Listed {
   return kept.last;
 }
 
-/** The origins the user let through for good from AnywhereLLM. */
+/** The origins the user let through on the Vault page. */
 export const alwaysAllowed = (): string[] => listed().origins;
 
 /** Their hosts: where a secret may be kept for (a single-label name like muse-vm isn't otherwise). */
@@ -185,41 +203,17 @@ export const allowedHosts = (env: NodeJS.ProcessEnv = process.env): string[] => 
   ),
 ];
 
-/** The agent run a skill's call is part of: the origins the user let through once in it, and, in a
- *  chat in AnywhereLLM, how to ask them for an origin the fence refuses (ask.mts). Each skill's
- *  handler sets it for the whole call; what the call starts keeps it (a library function's run,
- *  without asking). */
-export interface Run {
-  grants: ReadonlySet<string>;
-  ask?: (refused: Fenced) => Promise<void>;
-}
-
-const runs = () => perProcess("fence.run", () => new AsyncLocalStorage<Run>());
-
-/** Runs `fn` as part of `run`. */
-export const inRun = <T,>(run: Run, fn: () => T): T => runs().run(run, fn);
-
-/** Runs `fn` as part of no run: for what lives on after the call that starts it (a browser), which
- *  would otherwise keep that run, and its agent, as long as it lives. */
-export const outsideRun = <T,>(fn: () => T): T => runs().exit(fn);
-
-/** The run the code running now is part of, if any. */
-export const currentRun = (): Run | undefined => runs().getStore();
-
-const NONE: ReadonlySet<string> = new Set();
-
-/** Whether the user lets `origin` through: a FENCE_ALLOW host on any port, or that very origin let
- *  through for good (allowed.json) or once (`once`, by default the current run's grants). A host let
- *  through for one origin isn't for its other ports or scheme. */
-export function allows(origin: string, once: ReadonlySet<string> = currentRun()?.grants ?? NONE): boolean {
-  return allowedHosts().includes(bareHost(new URL(origin))) || alwaysAllowed().includes(origin) || once.has(origin);
+/** Whether the user lets `origin` through: a FENCE_ALLOW host on any port, or that very origin
+ *  (allowed.json). A host let through for one origin isn't for its other ports or scheme. */
+export function allows(origin: string): boolean {
+  return allowedHosts().includes(bareHost(new URL(origin))) || alwaysAllowed().includes(origin);
 }
 
 /** The hosts let through now for a request to `origin`, as the host checks below take them:
  *  FENCE_ALLOW's, and `origin`'s own host when allows says so. */
-export function allowedFor(origin: string, once: ReadonlySet<string> = currentRun()?.grants ?? NONE): Set<string> {
+export function allowedFor(origin: string): Set<string> {
   const hosts = new Set(allowedHosts());
-  if (allows(origin, once)) hosts.add(bareHost(new URL(origin)));
+  if (allows(origin)) hosts.add(bareHost(new URL(origin)));
   return hosts;
 }
 
@@ -239,6 +233,7 @@ export function addressesRefused(host: string, addresses: string[]): string | nu
 }
 
 type Lookup = (host: string) => Promise<{ address: string }[]>;
+const NONE: ReadonlySet<string> = new Set();
 
 /** A fence: `refused(url)` answers why a request to `url` is refused, or null. Lookups are kept for
  *  DNS_TTL_MS; the hosts `allow(origin)` answers for the request's origin are let through, asked only
@@ -246,7 +241,7 @@ type Lookup = (host: string) => Promise<{ address: string }[]>;
 export function makeFence({
   lookup = (host) => dns.promises.lookup(host, { all: true, verbatim: true }),
   now = Date.now,
-  allow = (origin) => allowedFor(origin),
+  allow = allowedFor,
 }: { lookup?: Lookup; now?: () => number; allow?: (origin: string) => ReadonlySet<string> } = {}) {
   const known = new Map<string, { addresses: Promise<string[]>; until: number }>();
   function addresses(host: string): Promise<string[]> {

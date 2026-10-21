@@ -6,10 +6,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { asksDir } from "#shared/ask";
-import { updateJson } from "#shared/atomic";
 import * as logins from "#shared/logins";
-import { agentRun, call as called, hideLinks, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultLogins, vaultNames, world } from "./harness.mts";
+import { call as called, hideLinks, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultAddresses, vaultLogins, vaultNames, world } from "./harness.mts";
 
 const LOGIN = "https://login.example/";
 site(LOGIN, {
@@ -40,7 +38,7 @@ test("open reads the page with refs and ends with the tab's card, whose page and
 
 test("the fence refuses what isn't the public web, and act never types into a password field", async () => {
   const call = (args: Record<string, unknown>) => called(args, { workspace: "fence" });
-  assert.match(await call({ action: "open", url: "http://127.0.0.1:9/" }), /^Browser: http:\/\/127\.0\.0\.1:9\/ isn't opened: 127\.0\.0\.1 isn't a public address\. .*FENCE_ALLOW, and the addresses they let through in AnywhereLLM, which asks the user during a chat there\. That's final[^.]*\.$/);
+  assert.match(await call({ action: "open", url: "http://127.0.0.1:9/" }), /^Browser: http:\/\/127\.0\.0\.1:9\/ isn't opened: 127\.0\.0\.1 isn't a public address\. The browser reaches the public web only, and the hosts and addresses the user lets through\. The user can let http:\/\/127\.0\.0\.1:9 through on the Vault page, under Allowed addresses, and then ask again\. Don't reach it another way[^.]*\.$/);
   await call({ action: "open", url: LOGIN });
   assert.match(await call({ action: "act", do: "fill", ref: "e2", text: "hunter2" }), /e2 is a password field, which act never types into/);
   assert.equal(lastPage().fields.e2.value, undefined);
@@ -425,32 +423,22 @@ test("a code field the page shows again under another ref counts as still asked,
   assert.equal(tabState("moved").need, null, "not asked again under a ref that's now another element");
 });
 
-/** Answers the ask the chat's lines name with `decision`, as AnywhereLLM's bridge writes it. */
-async function answerAsk(said: string[], decision: string): Promise<void> {
-  for (let i = 0; i < 400 && !said.some((l) => l.includes("[ask:")); i++) await new Promise((r) => setTimeout(r, 10));
-  const id = said.find((l) => l.includes("[ask:"))!.match(/\[ask:([0-9a-f]{32})\]/)![1];
-  await updateJson<Record<string, unknown>, void>(path.join(asksDir(), `${id}.json`), () => ({}), (a) => Object.assign(a, { decision, decided: new Date().toISOString() }));
-}
-
-test("a chat in AnywhereLLM asks the user for a host the fence refuses; a yes opens it for that run only", async () => {
-  site("http://nas.lan/", { title: "NAS", text: "Disks: 2" });
-  const said: string[] = [];
-  const run = agentRun("asks", null);
-  const opening = called({ action: "open", url: "http://nas.lan/" }, { workspace: "asks", thread: null, said, run });
-  await answerAsk(said, "once");
-  assert.match(said.find((l) => l.includes("[ask:"))!, /^Waiting for your approval in AnywhereLLM to reach nas\.lan \[ask:[0-9a-f]{32}\]$/);
-  assert.match(await opening, /^Opened http:\/\/nas\.lan\/ in this chat's tab\./);
-  const asks = () => said.filter((l) => l.includes("[ask:")).length;
-  assert.match(await called({ action: "look", url: "http://nas.lan/" }, { workspace: "asks", thread: null, said, run }), /Disks: 2/);
-  assert.equal(asks(), 1, "the same run isn't asked again");
-  const next: string[] = [];
-  const again = called({ action: "open", url: "http://nas.lan/" }, { workspace: "asks", thread: null, said: next });
-  await answerAsk(next, "deny");
-  assert.match(await again, /^Browser: http:\/\/nas\.lan isn't reached: the user declined it in AnywhereLLM\. That's final/, "another run is asked, and a no is final");
-});
-
-test("a chat AnywhereLLM doesn't stream (a thread: AnythingLLM's web UI) is refused without asking", async () => {
-  const said: string[] = [];
-  assert.match(await called({ action: "open", url: "http://nas.lan/" }, { workspace: "asks-ui", said }), /^Browser: http:\/\/nas\.lan\/ isn't opened: nas\.lan is a name on this machine or its network\. .*That's final/);
-  assert.deepEqual(said.filter((l) => l.includes("[ask:")), []);
+test("an address the fence refuses is offered on the Vault; allowed there, it opens, and removed, it's refused again", async () => {
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
+  // The installer's record of this machine, without which the Vault can't tell its own services apart.
+  fs.mkdirSync(path.join(storage, "anywherellm-suite"), { recursive: true });
+  fs.writeFileSync(path.join(storage, "anywherellm-suite", "this-host.json"), JSON.stringify({ fingerprints: [], addresses: [], hostname: "test-host" }));
+  site("http://192.168.7.7/", { title: "NAS", text: "Disks: 2" });
+  const call = inWorkspace("addresses");
+  const refused = /^Browser: http:\/\/192\.168\.7\.7\/ isn't opened: 192\.168\.7\.7 isn't a public address\. .*The user can let http:\/\/192\.168\.7\.7 through on the Vault page, under Allowed addresses, and then ask again\./;
+  assert.match(await call({ action: "open", url: "http://192.168.7.7/" }), refused);
+  await call({ action: "open", url: "https://shop.example/" });
+  assert.deepEqual(vaultAddresses().refused.map((r) => r.origin), ["http://192.168.7.7"]);
+  postVault({ ev: "address-allow", origin: "http://192.168.7.7" }, "addresses");
+  assert.match(await call({ action: "open", url: "http://192.168.7.7/" }), /^Opened http:\/\/192\.168\.7\.7\/ in this chat's tab\.\n\nPage: NAS/);
+  assert.deepEqual(vaultAddresses().origins.map((o) => o.origin), ["http://192.168.7.7"]);
+  assert.deepEqual(vaultAddresses().refused, [], "no longer offered");
+  postVault({ ev: "address-remove", origin: "http://192.168.7.7" }, "addresses");
+  assert.match(await call({ action: "open", url: "http://192.168.7.7/" }), refused);
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
 });

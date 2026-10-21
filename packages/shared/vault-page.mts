@@ -1,15 +1,18 @@
 // The Vault: one page where the user sees every secret the instance's vault keeps, by name and
 // never by value, and deletes it: the browser's logins and passkeys, the library's API keys, OAuth
-// sign-ins and signing keys. Each skill that keeps secrets bundles this module and serves the page itself, so
+// sign-ins and signing keys; and the addresses on their network they let the skills reach
+// (addresses.mts). Each skill that keeps secrets bundles this module and serves the page itself, so
 // either skill works installed alone; installed together, they serve the same page.
 //
 // The page (vault.html) lives under one random name in AnythingLLM's public folder
 // (public/vault-lean/<token>.html), kept with the secret its events carry beside the vault
 // (vault-lean/vault-page.json). Each skill writes only its own section's state beside it
-// (<token>-logins.json, <token>-keys.json), nothing secret, and the page shows a tab for each
-// section it finds: a skill installed alone shows its own. What the user does in a section is
-// posted under that section's title (vault-lean-logins, vault-lean-keys) and applied by the skill
-// that owns it, as its events come while the page was shown lately, and at the start of its calls.
+// (<token>-logins.json, <token>-keys.json) and the addresses section's (<token>-addresses.json),
+// nothing secret, and the page shows a tab for each section it finds: a skill installed alone shows
+// its own. What the user does in a section is posted under that
+// section's title (vault-lean-logins, vault-lean-keys, vault-lean-addresses) and applied by the
+// skill that owns it (either, for the addresses), as its events come while the page was shown
+// lately, and at the start of its calls.
 //
 // A skill shipping an older page doesn't write over a newer one another skill wrote (VERSION).
 //
@@ -29,11 +32,12 @@ import { inTurn, listPublic, newSecret, pageHtml, publicPath, removePublic, same
 import { vaultDir } from "./vault.mts";
 import template from "./vault.html";
 
-/** A section of the Vault, and the skill that owns it: logins (the browser), keys (the library). */
-export type Section = "logins" | "keys";
+/** A section of the Vault, and the skill that owns it: logins (the browser), keys (the library),
+ *  addresses (both). */
+export type Section = "logins" | "keys" | "addresses";
 
 /** The page's version: a skill writes the page unless the one there is newer. */
-const VERSION = 5;
+const VERSION = 6;
 /** How long a section's events are watched for after the page was last shown for it. */
 const WATCH_MS = 30 * 60 * 1000;
 const MARKER = "vault_lean_event";
@@ -91,7 +95,7 @@ async function writePage(names: Names): Promise<void> {
 /** A file of the Vault's pages in the public folder: <token>.html or <token>-<section>.json, the
  *  token being at least 8 base64url characters. Its token, or null for any other file. */
 function tokenOf(file: string): string | null {
-  const found = /^([A-Za-z0-9_-]{8,})\.html$/.exec(file) ?? /^([A-Za-z0-9_-]{8,})-(?:logins|keys)\.json$/.exec(file);
+  const found = /^([A-Za-z0-9_-]{8,})\.html$/.exec(file) ?? /^([A-Za-z0-9_-]{8,})-(?:logins|keys|addresses)\.json$/.exec(file);
   return found ? found[1] : null;
 }
 
@@ -153,9 +157,15 @@ export const settleVault = (section: Section, drain: () => Promise<void>): Promi
 export async function show(section: Section, state: unknown, drain: () => Promise<void>, base: string | null): Promise<string> {
   await settle(section, drain);
   const names = await quiet("write the page", () => publish((n) => void writePublic(pub(`${n.token}-${section}.json`), JSON.stringify(state))));
+  watchFor(section, drain);
+  return `${base ?? ""}/${pub(`${names.token}.html`)}`;
+}
+
+/** Applies the section's events with `drain` as they come for a while (#shared/pages watch), as
+ *  show does for the section it writes. */
+export function watchFor(section: Section, drain: () => Promise<void>): void {
   const until = Date.now() + WATCH_MS;
   watch(titleOf(section), drain, () => until);
-  return `${base ?? ""}/${pub(`${names.token}.html`)}`;
 }
 
 /** The page's address, as show answers it, when there's a Vault; else null. */

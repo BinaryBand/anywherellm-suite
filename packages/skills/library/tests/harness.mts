@@ -56,27 +56,22 @@ export const cardsShown: unknown[] = [];
 export interface Call {
   slug?: string | null;
   base?: string;
-  /** A chat through AnythingLLM's developer API (AnywhereLLM's): no thread, and the lines the skill
-   *  shows in the chat kept here. */
-  said?: string[];
-  /** The agent run the call is part of (self.super), to call again in the same run. */
-  run?: object;
   /** The skill's other settings (NTFY_URL...), as the user set them. */
   settings?: Record<string, string>;
 }
 
-/** An agent run for `call`'s `run`, in workspace `slug`; through the developer API when `api`. */
-export function agentRun(slug: string | null = "work", api = false): object {
+/** An agent run in workspace `slug` (null: none), in a chat of AnythingLLM's web UI. */
+function agentRun(slug: string | null): object {
   const card = { requestUserClarification: async (q: unknown) => (cardsShown.push(q), { skipped: true }), addClarifyingQuestionSurvey: () => {} };
-  return { handlerProps: { invocation: slug ? { workspace: { slug }, ...(api ? {} : { thread_id: 3 }) } : {} }, ...card };
+  return { handlerProps: { invocation: slug ? { workspace: { slug }, thread_id: 3 } : {} }, ...card };
 }
 
 /** Calls the skill as AnythingLLM's agent would: from workspace `slug` (null: none, as a job; given
  *  alone, or in a Call), in a chat that could show a question card, and with ANYTHINGLLM_URL set to
  *  `base`. */
 export function call(args: Record<string, unknown>, at: Call | string | null = {}): Promise<string> {
-  const { slug = "work", base, said, run, settings } = at === null || typeof at === "string" ? { slug: at } : at;
-  const self = { super: run ?? agentRun(slug, !!said), runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {}, ...(said ? { introspect: (m: string) => said.push(m) } : {}) };
+  const { slug = "work", base, settings } = at === null || typeof at === "string" ? { slug: at } : at;
+  const self = { super: agentRun(slug), runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {} };
   return handler().call(self, args);
 }
 
@@ -137,13 +132,13 @@ export function post(event: Record<string, unknown>): void {
   fs.utimesSync(file, at, at);
 }
 
-/** What the Vault posts in its keys section, written as AnythingLLM's collector writes it, with the
- *  Vault's secret unless the event names another; each after the one before. */
-export function postVault(event: Record<string, unknown>): void {
+/** What the Vault posts in its keys section (or `section`), written as AnythingLLM's collector writes
+ *  it, with the Vault's secret unless the event names another; each after the one before. */
+export function postVault(event: Record<string, unknown>, section: "keys" | "addresses" = "keys"): void {
   const dir = path.join(storage, "documents", "custom-documents");
   fs.mkdirSync(dir, { recursive: true });
   const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-vault-lean-keys-${id}.json`);
+  const file = path.join(dir, `raw-vault-lean-${section}-${id}.json`);
   fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, secret: vaultConfig().secret, ...event }) }));
   const at = new Date(Date.now() + ++posts * 10);
   fs.utimesSync(file, at, at);
@@ -156,8 +151,8 @@ export function vaultConfig(): { token: string; secret: string; key: string; pub
   return JSON.parse(html.match(/const cfg = (\{.*?\});/)![1]);
 }
 
-/** What the Vault's keys section shows, as the Vault reads it. */
-export const vaultState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultConfig().token}-keys.json`), "utf8"));
+/** What the Vault's keys section (or `section`) shows, as the Vault reads it. */
+export const vaultState = (section: "keys" | "addresses" = "keys") => JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultConfig().token}-${section}.json`), "utf8"));
 
 /** The page's own settings: its token and secret, and the key and public key it was written with. */
 export function pageConfig(): { token: string; secret: string; key: string; pub: string } {

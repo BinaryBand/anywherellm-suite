@@ -72,20 +72,12 @@ export interface Call {
   thread?: number | null;
   base?: string;
   settings?: Record<string, string>;
-  /** The lines the skill shows in the chat, kept here. */
-  said?: string[];
-  /** The agent run the call is part of (self.super), to call again in the same run. */
-  run?: object;
 }
-
-/** An agent run for `call`'s `run`: from `workspace` and `thread` (null: none, as through
- *  AnythingLLM's developer API). */
-export const agentRun = (workspace: string | null = "home", thread: number | null = 1): object => ({ handlerProps: { invocation: workspace ? { workspace: { slug: workspace }, thread_id: thread } : {} } });
 
 /** Calls the skill as AnythingLLM's agent would: from `workspace` and `thread` (null: none), with
  *  ANYTHINGLLM_URL set to `base`. The agent can't show a question card: the skill never asks one. */
-export function call(args: Record<string, unknown>, { workspace = "home", thread = 1, base, settings = {}, said, run }: Call = {}): Promise<string> {
-  const self = { super: run ?? agentRun(workspace, thread), introspect: (m: string) => said?.push(m), runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {} };
+export function call(args: Record<string, unknown>, { workspace = "home", thread = 1, base, settings = {} }: Call = {}): Promise<string> {
+  const self = { super: { handlerProps: { invocation: workspace ? { workspace: { slug: workspace }, thread_id: thread } : {} } }, introspect: () => {}, runtimeArgs: { ...(base ? { ANYTHINGLLM_URL: base } : {}), ...settings }, logger: () => {} };
   return handler().call(self, args);
 }
 
@@ -116,12 +108,16 @@ export function vaultNames(): { token: string; secret: string } {
 export const vaultLogins = (): { id: string; site: string; user: string; kind: string }[] =>
   JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultNames().token}-logins.json`), "utf8")).logins;
 
-/** What the Vault posts in its logins section, written as AnythingLLM's collector writes it. */
-export function postVault(event: Record<string, unknown>): void {
+/** What the Vault's addresses section shows, as the Vault reads it. */
+export const vaultAddresses = (): { origins: { origin: string }[]; refused: { origin: string }[]; result: { error: string } | null } =>
+  JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultNames().token}-addresses.json`), "utf8"));
+
+/** What the Vault posts in its logins section (or `section`), written as AnythingLLM's collector writes it. */
+export function postVault(event: Record<string, unknown>, section: "logins" | "addresses" = "logins"): void {
   const dir = path.join(storage, "documents", "custom-documents");
   fs.mkdirSync(dir, { recursive: true });
   const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-vault-lean-logins-${id}.json`);
+  const file = path.join(dir, `raw-vault-lean-${section}-${id}.json`);
   fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, secret: vaultNames().secret, ...event }) }));
   const at = new Date(Date.now() + ++posts * 10);
   fs.utimesSync(file, at, at);

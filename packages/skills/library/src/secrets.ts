@@ -49,7 +49,7 @@ export function labelOf(label: unknown): string {
 }
 
 /** A site or host as a person writes it ("https://API.example.com/v1"), as a host: a public name,
- *  a host the user lets through (FENCE_ALLOW), or the host of an origin they let through for good;
+ *  a host the user lets through (FENCE_ALLOW), or the host of an origin they let through on the Vault;
  *  null when it's none of these. */
 export function publicSite(raw: unknown): string | null {
   const want = siteOf(raw);

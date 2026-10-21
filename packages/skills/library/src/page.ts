@@ -25,6 +25,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import * as addresses from "#shared/addresses";
 import { mask } from "#shared/answer";
 import { locked, updateJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
@@ -242,10 +243,12 @@ async function settle(base: string | null): Promise<boolean> {
   return rotatePage((p) => p.hidden !== true);
 }
 
-/** Writes the Vault with its keys section, watches for the section's events for a while, and
+/** Writes the Vault with its keys and addresses sections, watches for their events for a while, and
  *  answers its address (absolute when AnythingLLM's address is known). */
-export function showVault(base: string | null): Promise<string> {
-  return vaultPage.show("keys", keysState(read()), () => drainKeys(), base);
+export async function showVault(base: string | null): Promise<string> {
+  const link = await vaultPage.show("keys", keysState(read()), () => drainKeys(), base);
+  addresses.show(base);
+  return link;
 }
 
 /** Writes both pages' state again, where there are pages, as a run ends; a hint, so a failure is
@@ -258,6 +261,7 @@ export function refresh(base: string | null): void {
   } catch (e) {
     console.error(`library-lean couldn't refresh the pages: ${(e as Error).message}`);
   }
+  addresses.refresh(); // a refusal of the run's
 }
 
 /** Writes the Vault's keys section again, where there is a Vault, as a sign-in starts or ends. */
@@ -352,6 +356,7 @@ export const settleVault = (): Promise<void> => vaultPage.settleVault("keys", dr
 export const caughtUp = async (base: string | null): Promise<void> => {
   await inTurn(TITLE, () => drain(base));
   await vaultPage.inTurnFor("keys", drainKeys);
+  await addresses.caughtUp(base);
 };
 
 /** What goes back to the agent when masking the text can't be done: nothing of the error. */

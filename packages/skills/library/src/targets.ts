@@ -7,7 +7,7 @@
 //
 // The connection goes through the fence (#shared/net connect). A private address is reached only as
 // a target the user ticked "on my network", at its own host and port; FENCE_ALLOW and the origins
-// let through for requests (allowed.json, a run's grants) play no part.
+// let through for requests (allowed.json) play no part.
 // The client is ssh2 (docs/notes/README.md): public-key sign-in only, no agent, no forwarding, no
 // X11, and a channel the machine opens toward us is refused (ssh2 refuses any it didn't ask for).
 // Files go over SFTP, the subsystem OpenSSH offers by default.
@@ -24,7 +24,7 @@ import { perProcess, storageDir } from "#shared/anythingllm";
 import { NetError, hostRefused } from "#shared/fence";
 import { connect, send } from "#shared/net";
 import { removePublic, writePublic } from "#shared/pages";
-import { thisHostAddresses, thisHostKeyRefusal, thisHostRefusal, thisHostUsable } from "#shared/thishost";
+import { OWN_PORTS, thisHostAddresses, thisHostKeyRefusal, thisHostRefusal, thisHostUsable } from "#shared/thishost";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 import { countUse } from "./secrets";
@@ -225,9 +225,6 @@ interface Found {
 
 const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
-/** The ports a machine is tried on at each of this host's own addresses: AnythingLLM's, a proxy's
- *  https, and the bridge's (the host, reached from another machine on the network, shows one of them). */
-const PROBE_PORTS = [3001, 443, 8467];
 const MAX_PROBES = 40;
 
 /** The address of an interface that a machine could reach this one by: not the machine's own loopback,
@@ -239,15 +236,16 @@ function outside(address: string): boolean {
 }
 
 /** What a machine is asked to fetch `rel` from: AnythingLLM's own address as it is given (ANYTHINGLLM_URL),
- *  and each of this host's recorded addresses on PROBE_PORTS. Each is checked against ADDRESS, so a
- *  fixed command can carry it. */
+ *  and each of this host's recorded addresses on OWN_PORTS (the host, reached from another machine
+ *  on the network, shows one of them). Each is checked against ADDRESS, so a fixed command can
+ *  carry it. */
 function probes(base: string | null, rel: string): string[] {
   const urls = new Set<string>();
   if (base && ADDRESS.test(base)) urls.add(`${base}/${rel}`);
   for (const raw of thisHostAddresses()) {
     const a = raw.split("%", 1)[0];
     if (!outside(a)) continue;
-    for (const port of PROBE_PORTS) {
+    for (const port of OWN_PORTS) {
       const origin = `${port === 443 ? "https" : "http"}://${net.isIP(a) === 6 ? `[${a}]` : a}:${port}`;
       if (ADDRESS.test(origin)) urls.add(`${origin}/${rel}`);
     }

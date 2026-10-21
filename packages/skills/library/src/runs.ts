@@ -12,7 +12,6 @@
 
 import { jobTimeLeft, perProcess } from "#shared/anythingllm";
 import { DATA, clipped, mask, shownHeaders, textOf } from "#shared/answer";
-import { quietly } from "#shared/ask";
 import { checkUrl, onSite } from "#shared/fence";
 import { LibraryError } from "./errors";
 import { cryptoKit } from "./extensions/crypto";
@@ -92,8 +91,7 @@ export function begin(qualifiedName: string, input: unknown, start: Start): { ru
   store.record(running);
   store.markUnseen(base.id);
   const stop = new AbortController();
-  // Its requests reach the hosts the user let through in the agent run that starts it; it never asks.
-  const done = quietly(() => call(kit, f, values, budget, 0, stop.signal))
+  const done = call(kit, f, values, budget, 0, stop.signal)
     .catch((e): Outcome => ({ ok: false, error: { name: "Error", message: (e as Error)?.message || String(e) } }))
     .then((outcome) => {
       const ended = new Date();

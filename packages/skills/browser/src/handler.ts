@@ -10,9 +10,9 @@
 //
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
+import * as addresses from "#shared/addresses";
 import { BINARY, answerText, bodyOf, headersOf, keepOf, methodOf, withParams } from "#shared/answer";
 import { baseUrlOf, workspaceOf } from "#shared/anythingllm";
-import { grantsOf, runAs } from "#shared/ask";
 import { Told } from "#shared/errors";
 import { checkUrl, hostOf, onSite } from "#shared/fence";
 import * as logins from "#shared/logins";
@@ -242,15 +242,6 @@ const ACTIONS: Record<string, (self: HandlerContext, scope: Scope, args: Args) =
   call: (self, scope, args) => call(scope, args),
 };
 
-/** What each action that may ask the user for a host the fence refuses would do at its origin, as
- *  the ask says it; the others don't ask. */
-const WHY: Record<string, (origin: string) => string> = {
-  open: (o) => `Open ${o} in the browser`,
-  look: (o) => `Read a page on ${o}`,
-  search: (o) => `Search with ${o}`,
-  call: (o) => `Send a request to ${o} from the browser`,
-};
-
 export const runtime = {
   handler: async function (this: HandlerContext, args: Args = {}): Promise<string> {
     const action = clean(args.action).toLowerCase() || "read";
@@ -261,15 +252,15 @@ export const runtime = {
       // with the switch on replaces the ones the agent may have been given.
       await settlePages().catch((e) => this.logger?.(`browser-lean couldn't settle the Vault page: ${firstLine(e)}`));
       // What the user did on a tab's page since the last call.
-      if (workspaceOf(this)) await caughtUp().catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
+      if (workspaceOf(this)) await caughtUp(baseUrlOf(this)).catch((e) => this.logger?.(`browser-lean couldn't apply the tab pages' events: ${firstLine(e)}`));
       const scope = scopeOf(this);
-      // The origins this run was let through, for its workspace's pages to load meanwhile.
-      if (workspaceOf(this) && this.super) state().grants.set(scope.workspace, { origins: grantsOf(this), last: Date.now() });
-      return await runAs(this, "Browser", WHY[action], () => (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args)));
+      return await (ON_TAB.has(action) ? onTab(scope, () => fn(this, scope, args)) : fn(this, scope, args));
     } catch (e) {
       if (e instanceof Told) return `Browser: ${e.message.replace(/\.$/, "")}.`;
       this.logger?.(`browser-lean ${action} failed: ${(e as Error)?.stack || e}`);
       return `Browser ${action} failed: ${firstLine(e)}. Tell the user what went wrong; don't retry on your own.`;
+    } finally {
+      addresses.refresh(); // an address the call was refused
     }
   },
 };

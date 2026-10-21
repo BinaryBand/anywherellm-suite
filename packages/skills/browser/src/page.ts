@@ -15,6 +15,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import * as addresses from "#shared/addresses";
 import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hostOf } from "#shared/fence";
@@ -232,10 +233,12 @@ async function stillAsks(at: Tab, need: Need): Promise<"same" | "other" | null> 
   return need.kind === "login" && asksPassword(snap) ? "other" : null;
 }
 
-/** Applies what the tabs' pages posted, for a call, in its turn with the watch's (#shared/pages inTurn). */
-export const caughtUp = async (): Promise<void> => {
+/** Applies what the tabs' pages and the Vault posted, for a call, in its turn with the watch's
+ *  (#shared/pages inTurn); `base` is AnythingLLM's address as the call has it. */
+export const caughtUp = async (base: string | null): Promise<void> => {
   await inTurn(TITLE, drain);
   await vaultPage.inTurnFor("logins", drainLogins);
+  await addresses.caughtUp(base);
 };
 
 /** Brings the Vault's names in line with the links switch (#shared/page-links) at the start of a call,
@@ -246,9 +249,13 @@ export const settlePages = (): Promise<void> => vaultPage.settleVault("logins", 
 /** The saved logins and passkeys, as the Vault's logins section shows them: never a password or a key. */
 const loginsState = () => ({ logins: logins.list() });
 
-/** Writes the Vault with its logins section and watches for the section's events for a while;
+/** Writes the Vault with its logins and addresses sections and watches for their events for a while;
  *  answers its path on this host, for the tab's page to link to. */
-const showVault = (): Promise<string> => vaultPage.show("logins", loginsState(), drainLogins, null);
+async function showVault(): Promise<string> {
+  const link = await vaultPage.show("logins", loginsState(), drainLogins, null);
+  addresses.show(null);
+  return link;
+}
 
 /** Applies what the user did in the Vault's logins section since the last time (#shared/vault-page
  *  take checked its secret): a deleted passkey leaves every tab's authenticator at once. Then writes

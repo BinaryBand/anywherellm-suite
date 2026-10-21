@@ -11,9 +11,9 @@
 //
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
+import * as addresses from "#shared/addresses";
 import { baseUrlOf as baseOf, serial, workspaceOf } from "#shared/anythingllm";
 import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
-import { runAs } from "#shared/ask";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
 import { notify, topicUrl, type Ntfy } from "#shared/notify";
@@ -391,15 +391,16 @@ export const runtime = {
       targets.noteBase(baseOf(this));
       await fromPage(this);
       await askDevices(action === "library");
-      // In a chat in AnywhereLLM, the agent's own call asks the user for a host the fence refuses.
-      return await runAs(this, "Library", action === "call" ? (o) => `Send a request to ${o}` : undefined, () => act(args, this));
+      return await act(args, this);
     } catch (e) {
       if (e instanceof Told) return `Library: ${page.plain(e.message)}.`;
       this.logger?.(`library-lean ${action} failed: ${(e as Error)?.stack || e}`);
       return `Library ${action} failed: ${page.plain(String((e as Error)?.message || e))}. Tell the user what went wrong; don't retry on your own.`;
     } finally {
-      // Whatever the call changed (a save, a run's end, runs shown), even one that failed partway.
+      // Whatever the call changed (a save, a run's end, runs shown, an address refused), even one that
+      // failed partway.
       listing.refresh(this.logger);
+      addresses.refresh();
     }
   },
 };

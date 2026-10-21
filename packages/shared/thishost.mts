@@ -163,22 +163,28 @@ function ownAddresses(): net.BlockList {
   return mine;
 }
 
-/** Why `ip` is this machine's own, or null. An IPv4 address carried inside an IPv6 one is checked as
- *  IPv4. */
-export function thisHostRefusal(ip: string): string | null {
+/** Whether `ip` is this machine's own. An IPv4 address carried inside an IPv6 one is checked as IPv4. */
+export function isThisHost(ip: string): boolean {
   const address = bare(ip);
   const kind = net.isIP(address);
-  if (!kind) return null;
+  if (!kind) return false;
   const except = (globalThis as unknown as Record<symbol, Set<string> | undefined>)[THISHOST_EXCEPT];
-  if (except?.has(address)) return null;
+  if (except?.has(address)) return false;
   const mine = ownAddresses();
   const own = (a: string): boolean => {
     const family = net.isIP(a) === 6 ? "ipv6" : "ipv4";
     return ALWAYS.check(a, family) || mine.check(a, family);
   };
-  const refused = own(address) || embedded(address).some((v4) => !except?.has(v4) && own(v4));
-  return refused ? `${ip} is an address of this machine itself, which a target can't be: signing in here would read what AnythingLLM keeps beside it, the vault's key and the pages' secrets` : null;
+  return own(address) || embedded(address).some((v4) => !except?.has(v4) && own(v4));
 }
+
+/** Why `ip` is this machine's own, or null. */
+export const thisHostRefusal = (ip: string): string | null =>
+  isThisHost(ip) ? `${ip} is an address of this machine itself, which a target can't be: signing in here would read what AnythingLLM keeps beside it, the vault's key and the pages' secrets` : null;
+
+/** The ports the suite's own services listen on at this machine's addresses: AnythingLLM's, a
+ *  proxy's https, and the bridge's. */
+export const OWN_PORTS = [3001, 443, 8467];
 
 /** A host as it is compared: a name in lower case without a trailing dot; an address in one form
  *  (IPv4-mapped IPv6 as IPv4, IPv6 compressed, no zone, lower case). */

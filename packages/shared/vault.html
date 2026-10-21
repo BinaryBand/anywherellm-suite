@@ -8,8 +8,9 @@
 <title>Vault</title>
 <style>
 /* The Vault, shared by the skills that keep secrets (packages/shared/vault-page.mts): a tab for each
-   section a skill wrote, the keys, sign-ins and signing keys (the library's) and the logins (the browser's). What's
-   done in a section is posted under its title and applied by the skill that owns it. The look is
+   section a skill wrote, the keys, sign-ins and signing keys (the library's), the logins (the browser's)
+   and the allowed addresses (either skill's: addresses.mts). What's done in a section is posted under its
+   title and applied by the skill that owns it. The look is
    AnywhereLLM Lite's, as the browser's tab page has it; ?theme=light or dark keeps it to one. */
 :root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--accentbg:oklch(0.94 0.028 272);--onaccent:oklch(1 0 0);--hover:oklch(0.925 0.016 75);--badfg:oklch(0.47 0.16 20);--okfg:oklch(0.42 0.08 165);--okbg:oklch(0.945 0.04 165);--warnfg:oklch(0.45 0.1 70);--warnbg:oklch(0.95 0.045 80);
 --float:0 12px 32px -8px oklch(0.3 0.04 280 / 0.28),0 2px 6px oklch(0.3 0.03 280 / 0.16);--sans:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:ui-monospace,Menlo,monospace;color-scheme:light}
@@ -81,11 +82,13 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
     <button role="tab" data-tab="signins" data-section="keys" hidden>Sign-ins</button>
     <button role="tab" data-tab="signing" data-section="keys" hidden>Signing</button>
     <button role="tab" data-tab="logins" data-section="logins" hidden>Logins</button>
+    <button role="tab" data-tab="addresses" data-section="addresses" hidden>Addresses</button>
   </nav>
   <section id="keys" hidden></section>
   <section id="signins" hidden></section>
   <section id="signing" hidden></section>
   <section id="logins" hidden></section>
+  <section id="addresses" hidden></section>
   <div class="foot" id="foot"><p class="cap">Anyone with this page's link can see what it shows and act on it.</p></div>
 </main>
 <div id="toast" role="status" hidden></div>
@@ -282,9 +285,28 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
       el("p", { className: "cap", textContent: "Saved as you sign in on the agent's browser, and typed in there on their own site only. To change a password, sign in on the tab again and save it." }));
   }
 
+  // ---- Allowed addresses: either skill's, the origins on the user's network the skills may reach.
+  let toldAt = null;
+  function drawAddresses(as) {
+    count("addresses", "Addresses", as.origins.length);
+    if (as.result && toldAt !== null && as.result.n !== toldAt) toast(as.result.error);
+    toldAt = as.result ? as.result.n : 0;
+    const allowed = as.origins.map((a) => {
+      const { del, box } = remove(`Stop letting the skills reach ${a.origin}?`, `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
+      return el("div", {}, row(a.origin, a.added ? `Added ${new Date(a.added).toLocaleDateString()}` : "", del), box);
+    });
+    const refused = as.refused.map((r) => row(r.origin, `Refused ${new Date(r.at).toLocaleString()}`, el("button", { className: "btn", type: "button", textContent: "Allow", onclick: () => post("addresses", "address-allow", { origin: r.origin }) })));
+    const addForm = form([["origin", "An address, like http://muse-vm:8463", "text", true]], "Allow", (v) => (v.origin ? post("addresses", "address-allow", { origin: v.origin }) : (toast("Write the address first"), false)));
+    $("addresses").replaceChildren(el("div", { className: "lab", textContent: "Allowed addresses" }),
+      el("div", { className: "card" }, ...allowed, ...(allowed.length ? [] : [el("p", { className: "empty", textContent: "None yet. The skills reach the public web only." })]), addForm),
+      el("div", { className: "lab", textContent: "Recently refused" }),
+      el("div", { className: "card" }, ...refused, ...(refused.length ? [] : [el("p", { className: "empty", textContent: "Nothing refused in the last day." })])),
+      el("p", { className: "cap", textContent: "Each is one scheme, host and port on your own network, which every skill may then reach, and send a key to over plain http. AnythingLLM's own address and this machine's own services can't be added." }));
+  }
+
   // ---- The sections there are, each its own state file; a tab for each. A section the user is in
   // the middle of (a form being filled) isn't drawn again under them.
-  const drawn = { keys: drawKeys, logins: drawLogins };
+  const drawn = { keys: drawKeys, logins: drawLogins, addresses: drawAddresses };
   const shown = new Set();
   const last = {};
   const busy = (section) => [...document.querySelectorAll(`section[data-section="${section}"]`)].some((s) => s.querySelector(".ask") || [...s.querySelectorAll("input")].some((i) => i.value || i === document.activeElement));
@@ -294,6 +316,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
   };
   for (const s of ["keys", "signins", "signing"]) $(s).dataset.section = "keys";
   $("logins").dataset.section = "logins";
+  $("addresses").dataset.section = "addresses";
   for (const b of document.querySelectorAll("nav button")) b.onclick = () => select(b);
   async function load() {
     try {

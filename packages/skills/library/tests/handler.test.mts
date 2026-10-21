@@ -8,12 +8,12 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { asksDir } from "#shared/ask";
-import { updateJson } from "#shared/atomic";
 import { allowedFile } from "#shared/fence";
 import { lf } from "#shared/static";
 import { check } from "../src/sandbox.ts";
-import { agentRun, call, cardsShown, giveKey, hideLinks, idOf, installed, library, pageConfig, publicDir, reset, runRecord, skillDir, storage, until, vaultConfig } from "./harness.mts";
+import { call, cardsShown, giveKey, hideLinks, idOf, installed, library, pageConfig, postVault, publicDir, reset, runRecord, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
+
+const readAllowed = () => JSON.parse(fs.readFileSync(allowedFile(storage), "utf8"));
 
 const KEY = "tok-1234567890";
 
@@ -298,50 +298,59 @@ test("the installed skill's description ends with the functions saved now, for t
 // A host the fence refuses (localhost: a name on this machine), the stand-in API behind it.
 const INSIDE = BASE.replace("127.0.0.1", "localhost");
 
-/** Answers the ask a chat's lines name with `decision`, as AnywhereLLM's bridge writes it. */
-async function answerAsk(said: string[], decision: string): Promise<string> {
-  await until(() => said.some((l) => l.includes("[ask:")));
-  const id = said.find((l) => l.includes("[ask:"))!.match(/\[ask:([0-9a-f]{32})\]/)![1];
-  await updateJson<Record<string, unknown>, void>(path.join(asksDir(), `${id}.json`), () => ({}), (a) => Object.assign(a, { decision, decided: new Date().toISOString() }));
-  return id;
-}
+const insideOrigin = new URL(INSIDE).origin;
+const REFUSED = /^Library: http:\/\/localhost:\d+ isn't reached: localhost is a name on this machine or its network\. The user can let http:\/\/localhost:\d+ through on the Vault page, under Allowed addresses, and then ask again\. Don't reach it another way/;
 
-test("a chat in AnywhereLLM asks the user for a host the fence refuses, and a yes lets it through for the run", async () => {
+test("a host the fence refuses is refused at once, saying where the user lets it through, and offered on the Vault", async () => {
   fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
-  const said: string[] = [];
-  const run = agentRun("work", true);
-  const asked = call({ action: "call", url: `${INSIDE}/echo` }, { said, run });
-  const id = await answerAsk(said, "once");
-  assert.match(said[0], /^Waiting for your approval in AnywhereLLM to reach localhost \[ask:[0-9a-f]{32}\]$/);
-  assert.match(await asked, /Status: 200/);
-  assert.ok(!fs.existsSync(path.join(asksDir(), `${id}.json`)), "the ask is taken away once answered");
-  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, { said, run }), /Status: 200/, "the same run isn't asked again");
-  assert.equal(said.length, 1);
-  // A function the run starts reaches it too, though a function never asks itself.
-  await call({ action: "save", service: "inside", toolkit: { base_urls: [INSIDE] }, function: { name: "echo", description: "Echoes.", source: "async function main(input, kit) { return (await kit.http({ path: '/echo', auth: false })).status; }" } }, { said, run });
-  assert.match(await call({ action: "run", name: "inside.echo", inputs: {} }, { said, run }), /Result \(JSON\):\n200/);
-  assert.match(await call({ action: "run", name: "inside.echo", inputs: {} }), /localhost:\d+ isn't reached: localhost is a name on this machine or its network\. That's final/, "another run's function isn't let through");
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }), REFUSED);
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), REFUSED, "a scheduled job's too");
+  await call({ action: "library" });
+  assert.deepEqual(vaultState("addresses").refused.map((r: { origin: string }) => r.origin), [insideOrigin]);
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
 });
 
-test("a no, or no answer, keeps the fence's refusal, and it's final", async () => {
-  const said: string[] = [];
-  const asked = call({ action: "call", url: `${INSIDE}/echo` }, { said });
-  await answerAsk(said, "deny");
-  assert.match(await asked, /^Library: http:\/\/localhost:\d+ isn't reached: the user declined it in AnywhereLLM\. That's final/);
-});
-
-test("a scheduled job, or a chat AnywhereLLM doesn't stream, is refused without asking; an origin let through for good passes for both, and gets its key over plain http", async () => {
+test("an origin the user allows on the Vault passes, its functions' runs and a scheduled job's included, on its own port only, and gets its key over plain http; removed, it's refused again", async () => {
   fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
-  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), /^Library: http:\/\/localhost:\d+ isn't reached: localhost is a name on this machine or its network\. That's final/);
-  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }), /isn't reached: localhost is a name/);
-  assert.ok(!fs.existsSync(asksDir()), "nobody was asked");
-  fs.mkdirSync(path.dirname(allowedFile(storage)), { recursive: true });
-  fs.writeFileSync(allowedFile(storage), JSON.stringify({ origins: [{ origin: new URL(INSIDE).origin, added: new Date().toISOString() }] }));
+  await call({ action: "library" });
+  postVault({ ev: "address-allow", origin: `${INSIDE}/any/path` }, "addresses");
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }), /Status: 200/);
+  assert.deepEqual(readAllowed().origins.map((o: { origin: string }) => o.origin), [insideOrigin], "its origin, in allowed.json");
+  assert.deepEqual(vaultState("addresses").origins.map((o: { origin: string }) => o.origin), [insideOrigin]);
+  assert.deepEqual(vaultState("addresses").refused, [], "no longer offered");
+  await call({ action: "save", service: "inside", toolkit: { base_urls: [INSIDE] }, function: { name: "echo", description: "Echoes.", source: "async function main(input, kit) { return (await kit.http({ path: '/echo', auth: false })).status; }" } });
+  assert.match(await call({ action: "run", name: "inside.echo", inputs: {} }), /Result \(JSON\):\n200/);
   assert.match(await call({ action: "call", url: `${INSIDE}/echo` }, null), /Status: 200/);
   assert.match(await call({ action: "call", url: "http://localhost:9/" }, null), /isn't reached: localhost is a name/, "another port of the same host is still refused");
   await giveKey("inside", "localhost", KEY);
   const keyed = await call({ action: "call", url: `${INSIDE}/echo`, auth: '{"key": "inside", "as": "bearer"}' }, null);
   assert.match(keyed, /Status: 200/);
   assert.match(keyed, /Bearer •••/, "the key went to the origin over plain http");
+  postVault({ ev: "address-remove", origin: insideOrigin }, "addresses");
+  assert.match(await call({ action: "call", url: `${INSIDE}/echo` }), REFUSED);
+  assert.deepEqual(readAllowed().origins, []);
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
+});
+
+test("the Vault lets through no public address and none of AnythingLLM's own services, and says why", async () => {
+  fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
+  const base = { base: "http://192.168.50.2:3001" };
+  await call({ action: "library" }, base);
+  for (const [origin, why] of [
+    ["http://93.184.216.34", /it's on the public web/],
+    ["http://localhost:3001", /port 3001 of this machine/],
+    ["https://127.0.0.1", /port 443 of this machine/],
+    ["http://[::1]:8467", /port 8467 of this machine/],
+    ["http://192.168.50.2:3001", /that's AnythingLLM itself/],
+    ["muse-vm:8463", /isn't an address: write its scheme, host and port/],
+  ] as const) {
+    postVault({ ev: "address-allow", origin }, "addresses");
+    await call({ action: "library" }, base);
+    assert.match(vaultState("addresses").result.error, why, origin);
+  }
+  assert.ok(!fs.existsSync(allowedFile(storage)), "nothing let through");
+  postVault({ ev: "address-allow", origin: "http://localhost:8080" }, "addresses");
+  await call({ action: "library" }, base);
+  assert.deepEqual(readAllowed().origins.map((o: { origin: string }) => o.origin), ["http://localhost:8080"], "another port of this machine is the user's");
   fs.rmSync(path.join(storage, "fence-lean"), { recursive: true, force: true });
 });

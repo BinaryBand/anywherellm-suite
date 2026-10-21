@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import zlib from "node:zlib";
-import { Fenced } from "./fence.mts";
+import { recentlyRefused, refusedFile } from "./fence.mts";
 import * as net from "./net.mts";
 
 type Route = (req: http.IncomingMessage, res: http.ServerResponse, body: string) => void;
@@ -30,7 +33,7 @@ type Resolve = NonNullable<net.Send["resolve"]>;
 
 test("a request reaches only public addresses, unless the user lets a host through", async () => {
   const s = await serve({ "/": (req, res) => res.end("hi") });
-  await assert.rejects(net.send({ url: `${s.url}/`, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. That's final/);
+  await assert.rejects(net.send({ url: `${s.url}/`, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. The user can let http:\/\/127\.0\.0\.1:\d+ through on the Vault page, under Allowed addresses, and then ask again\. Don't reach it another way/);
   await assert.rejects(net.send({ url: "http://anythingllm:3001/", allow: [] }), /anythingllm is a name on this machine or its network/);
   await assert.rejects(net.send({ url: "file:///etc/passwd", allow: [] }), /only http and https/);
   const answer = await net.send({ url: `${s.url}/`, allow: ["127.0.0.1"] });
@@ -39,15 +42,25 @@ test("a request reaches only public addresses, unless the user lets a host throu
   s.close();
 });
 
-test("a refusal names the host and origin, so a chat can ask the user and send it again", async () => {
-  const byName = await net.send({ url: "http://Muse-VM:8463/x?token=1", allow: [] }).catch((e) => e);
-  assert.ok(byName instanceof Fenced);
-  assert.equal(byName.host, "muse-vm");
-  assert.equal(byName.origin, "http://muse-vm:8463");
+test("a refusal is noted by its origin, newest first, for the Vault page to offer", async (t) => {
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), "net-"));
+  const was = process.env.STORAGE_DIR;
+  process.env.STORAGE_DIR = storage;
+  t.after(() => {
+    if (was === undefined) delete process.env.STORAGE_DIR;
+    else process.env.STORAGE_DIR = was;
+    fs.rmSync(storage, { recursive: true, force: true });
+  });
+  await assert.rejects(net.send({ url: "http://Muse-VM:8463/x?token=1", allow: [] }), /http:\/\/muse-vm:8463 isn't reached/);
   const sneaky: Resolve = (host, options, callback) => callback(null, [{ address: "10.0.0.5", family: 4 }]);
-  const byAddress = await net.send({ url: "https://inside.example/", allow: [], resolve: sneaky }).catch((e) => e);
-  assert.ok(byAddress instanceof Fenced, "refused at the lookup too");
-  assert.equal(byAddress.host, "inside.example");
+  await assert.rejects(net.send({ url: "https://inside.example/", allow: [], resolve: sneaky }), /inside\.example resolves to 10\.0\.0\.5/);
+  assert.deepEqual(recentlyRefused().map((r) => r.origin), ["https://inside.example", "http://muse-vm:8463"], "refused at the lookup too");
+  await assert.rejects(net.send({ url: "http://muse-vm:8463/again", allow: [] }));
+  assert.deepEqual(recentlyRefused().map((r) => r.origin), ["http://muse-vm:8463", "https://inside.example"], "once each, the latest first");
+  for (let i = 0; i < 12; i++) await assert.rejects(net.send({ url: `http://10.0.0.${i}/`, allow: [] }));
+  assert.equal(recentlyRefused().length, 10, "the last 10");
+  assert.equal(recentlyRefused(Date.now() + 25 * 60 * 60 * 1000).length, 0, "for a day");
+  assert.equal((fs.statSync(refusedFile(storage)).mode & 0o777).toString(8), "600");
 });
 
 test("a name is looked up once, every address it has is checked, and the one checked is the one connected to", async () => {
@@ -134,7 +147,7 @@ test("a request never reaches the skills' pages or AnythingLLM's upload for them
   for (const p of ["/library-lean/t.html", "/API/browser-extension/upload-content", "//vault-lean/t.html"]) {
     const e = await net.send({ url: `${s.url}${p}`, allow: ["127.0.0.1"] }).catch((err) => err);
     assert.match(e.message, /isn't reached: that's one of the skills' own pages/, p);
-    assert.ok(!(e instanceof Fenced), "nothing to let through");
+    assert.doesNotMatch(e.message, /Allowed addresses/, "nothing to let through");
   }
   await assert.rejects(net.send({ url: `${s.url}/go`, allow: ["127.0.0.1"] }), /one of the skills' own pages/);
   assert.equal((await net.send({ url: `${s.url}/`, allow: ["127.0.0.1"] })).body.toString(), "hi");
@@ -146,7 +159,7 @@ test("a TCP connection for another protocol is fenced as a request is: refused i
   const server = (await import("node:net")).createServer((sock) => sock.end("hello\n"));
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as AddressInfo;
-  await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. That's final/);
+  await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. Don't reach it another way/);
   await assert.rejects(net.connect({ host: "pi", port, allow: [] }), /pi is a name on this machine or its network/);
   const inside: Resolve = (host, options, callback) => callback(null, [{ address: "127.0.0.1", family: 4 }]);
   await assert.rejects(net.connect({ host: "box.example", port, allow: [], resolve: inside }), /box\.example resolves to 127\.0\.0\.1/);
