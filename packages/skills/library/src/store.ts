@@ -207,13 +207,17 @@ export async function setLocked(service: string, on: boolean): Promise<void> {
 const sameAccount = (a: Target, b: Target): boolean =>
   a.login === b.login && (a.fingerprint === b.fingerprint || (a.port === b.port && canonicalHost(a.host) === canonicalHost(b.host)));
 
-/** heldBy for any number of targets, with the targets and the locked toolkits read once. */
-export function holders(): (name: string, except?: string) => string | null {
-  const now = registered();
-  const kits = services().flatMap((s) => {
+/** The toolkits the user locked. */
+const lockedKits = (): Toolkit[] =>
+  services().flatMap((s) => {
     const kit = toolkit(s);
     return kit?.locked ? [kit] : [];
   });
+
+/** heldBy for any number of targets, with the targets and the locked toolkits read once. */
+export function holders(): (name: string, except?: string) => string | null {
+  const now = registered();
+  const kits = lockedKits();
   return (name, except = "") => {
     const mine = now.find((t) => t.label === name);
     const same = (n: string) => n === name || (!!mine && now.some((t) => t.label === n && sameAccount(t, mine)));
@@ -233,6 +237,21 @@ export function targetBar(kit: Toolkit, name: string): string | null {
   const holder = heldBy(name, kit.service);
   return holder ? `kept for locked toolkits (${holder})` : null;
 }
+
+/** keyBar for any number of keys, with the locked toolkits read once. */
+export function keyHolders(): (label: string, kit?: Toolkit) => string | null {
+  const held = new Map(lockedKits().flatMap((k) => k.secrets.map((s): [string, string] => [s.label.toLowerCase(), k.service])));
+  return (label, kit) => {
+    const holder = kit?.locked ? null : held.get(label.toLowerCase());
+    return holder ? `kept for locked toolkits (${holder})` : null;
+  };
+}
+
+/** Why `kit` (none: the agent's own call) may not send with the key `label` now, in a few words, or
+ *  null when it may. A key a locked toolkit names is for locked toolkits only: what they send with
+ *  it is what the user read, and a call or an unlocked toolkit could send anything with it. Read at
+ *  each request, so a lock holds from the next one. */
+export const keyBar = (label: string, kit?: Toolkit): string | null => keyHolders()(label, kit);
 
 /** Saves a toolkit: what's given replaces what was there, and the rest stays. */
 export function saveToolkit(service: string, given: Record<string, unknown>): Toolkit {

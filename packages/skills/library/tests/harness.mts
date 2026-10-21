@@ -79,6 +79,12 @@ export function call(args: Record<string, unknown>, at: Call | string | null = {
 /** The run id an answer names. */
 export const idOf = (text: string): string => text.match(/\((r-[\w-]+)\)/)![1];
 
+/** How running the function `name` with `input` ended: its result, or its error as "Name: message". */
+export async function outcome(name: string, input: Record<string, unknown> = {}): Promise<any> {
+  const record = runRecord(idOf(await call({ action: "run", name, inputs: input })));
+  return record.status === "ok" ? record.result : `${record.error.name}: ${record.error.message}`;
+}
+
 /** A run as recorded. */
 export function runRecord(id: string): Record<string, any> {
   const dir = path.join(library, "runs");

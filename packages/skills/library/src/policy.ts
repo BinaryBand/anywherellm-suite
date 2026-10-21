@@ -4,7 +4,8 @@
 // everything is
 // allowed (the user is testing it); approval of new or changed code (this.super.requestToolApproval),
 // and keys that only read until the user says otherwise, go here, and a refusal is a LibraryError
-// with what to tell the user.
+// with what to tell the user. What a locked toolkit holds isn't decided here: its keys
+// (store.keyBar, in request.ts) and its targets (store.targetBar, in runs.ts) are its own.
 
 export type Op =
   | { op: "save"; fn: string; source: string }

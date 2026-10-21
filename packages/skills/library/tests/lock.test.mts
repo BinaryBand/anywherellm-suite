@@ -1,10 +1,13 @@
 // A toolkit the user locks on the Library page: nothing the agent does changes or removes it, or its
 // functions, until the user unlocks it there; its functions still run, and run only locked
-// toolkits' functions; and an event without the page's secret locks or unlocks nothing.
+// toolkits' functions, and its keys are for locked toolkits only; and an event without the page's
+// secret locks or unlocks nothing.
 
 import assert from "node:assert/strict";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { call, idOf, page, pageState, post, reset, runRecord } from "./harness.mts";
+import { call, giveKey, idOf, outcome, page, pageState, post, reset, runRecord } from "./harness.mts";
 
 const LOCKED = /the user locked the toolkit chan on the Library page: it can't be changed or removed/;
 const fn = (name: string, source: string) => ({ name, description: `${name}.`, source });
@@ -60,4 +63,33 @@ test("a locked toolkit's functions run only locked toolkits' functions", async (
   assert.match(refused.error.message, /chan is locked, and a locked toolkit's functions run only locked toolkits' functions: helper isn't locked/);
   await page("toolkit-lock", "helper");
   assert.equal(runRecord(idOf(await call({ action: "run", name: "chan.relay" }))).result, "helped");
+});
+
+test("a key a locked toolkit names is for locked toolkits only: not for call, nor an unlocked toolkit, until the user unlocks it", async (t) => {
+  const api = http.createServer((req, res) => res.end(JSON.stringify(req.headers.authorization === "Bearer tok-1" ? "posted" : "no key")));
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  t.after(() => api.close());
+  const base = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+  await giveKey("tok", "127.0.0.1", "tok-1");
+  const posting = "async function main(i, kit) { return (await kit.http({ method: 'POST', path: '/topic', body: 'hi' })).body; }";
+  const kit = (title: string) => ({ title, base_urls: [base], secrets: [{ label: "tok", as: "bearer" }] });
+  await call({ action: "save", service: "chan", toolkit: kit("A channel"), function: fn("send", posting) });
+  await call({ action: "save", service: "other", toolkit: kit("Another"), function: fn("send", posting) });
+  const called = (auth: unknown = { key: "tok", as: "bearer" }) => call({ action: "call", url: `${base}/topic`, method: "POST", body: "hi", auth });
+  assert.equal(await outcome("other.send"), "posted", "before the lock, any toolkit naming it");
+  assert.match(await called(), /"posted"/);
+
+  await page("toolkit-lock", "chan");
+  assert.equal(await outcome("chan.send"), "posted", "the locked toolkit");
+  assert.match(await outcome("other.send"), /the key "tok" can't be used by the other toolkit: kept for locked toolkits \(chan\)/);
+  assert.match(await called(), /the key "tok" can't be used in call: kept for locked toolkits \(chan\)/);
+  assert.match(await called("bearer"), /can't be used in call/, "nor found by its host");
+  assert.match(await call({ action: "library", service: "other" }), /tok \(bearer, [^)]*, not usable here: kept for locked toolkits \(chan\)\)/);
+
+  await page("toolkit-lock", "other");
+  assert.equal(await outcome("other.send"), "posted", "another locked toolkit");
+  await page("toolkit-unlock", "other");
+  await page("toolkit-unlock", "chan");
+  assert.equal(await outcome("other.send"), "posted", "unlocked, it's free again");
+  assert.match(await called(), /"posted"/);
 });

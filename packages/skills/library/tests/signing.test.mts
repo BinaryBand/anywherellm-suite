@@ -12,7 +12,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
-import { call, giveKey, idOf, library, page, pageState, postVault, reset, runRecord, seal, skillDir, storage, vaultState } from "./harness.mts";
+import { call, giveKey, idOf, library, outcome, page, pageState, postVault, reset, runRecord, seal, skillDir, storage, vaultState } from "./harness.mts";
 import * as vault from "#shared/vault";
 
 const hasKeygen = spawnSync("ssh-keygen", ["-?"]).error === undefined;
@@ -211,12 +211,6 @@ function adapted(name: string, constant: string, settings: unknown): string {
   const source = snippet.replace(new RegExp(`const ${constant} = \\{[\\s\\S]*?\\n\\};`), `const ${constant} = ${JSON.stringify(settings)};`);
   assert.notEqual(source, snippet);
   return source;
-}
-
-/** How running the function `name` with `input` ended: its result, or its error as "Name: message". */
-async function outcome(name: string, input: Record<string, unknown>): Promise<any> {
-  const record = runRecord(idOf(await call({ action: "run", name, inputs: input })));
-  return record.status === "ok" ? record.result : `${record.error.name}: ${record.error.message}`;
 }
 
 /** The sshsig-channel snippet saved as chan.channel with `channel` and locked, as the snippet asks:

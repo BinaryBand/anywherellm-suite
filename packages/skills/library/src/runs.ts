@@ -281,7 +281,7 @@ async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: A
   const key = label ? kit.secrets.find((s) => s.label.toLowerCase() === label.toLowerCase()) : null;
   if (label && !key) throw new LibraryError(`the ${kit.service} toolkit has no key "${label}"; its keys are ${kit.secrets.map((s) => s.label).join(", ") || "none"}`);
   const made = { method: String(req.method || "GET").toUpperCase(), host: target.host, path: target.pathname };
-  const sent = await recorded(budget, made, () => send(target, req, key ?? null, `${kit.service}.${f.name}`, signal), (sent) => sent.answer.status);
+  const sent = await recorded(budget, made, () => send(target, req, key ?? null, { kit, fn: `${kit.service}.${f.name}` }, signal), (sent) => sent.answer.status);
   if (sent.secret && !budget.secrets.includes(sent.secret)) budget.secrets.push(sent.secret);
   const got = textOf(sent.answer);
   const text = mask(got.text, budget.secrets);
