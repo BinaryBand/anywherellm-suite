@@ -301,7 +301,7 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
       el("div", { className: "card" }, ...allowed, ...(allowed.length ? [] : [el("p", { className: "empty", textContent: "None yet. The skills reach the public web only." })]), addForm),
       el("div", { className: "lab", textContent: "Recently refused" }),
       el("div", { className: "card" }, ...refused, ...(refused.length ? [] : [el("p", { className: "empty", textContent: "Nothing refused in the last day." })])),
-      el("p", { className: "cap", textContent: "Each is one scheme, host and port on your own network, which every skill may then reach, and send a key to over plain http. AnythingLLM's own address and this machine's own services can't be added." }));
+      el("p", { className: "cap", textContent: "Each is one scheme, host and port on your own network, which every skill may then reach, and send a key to over plain http. AnythingLLM's own address, this machine's own services and loopback addresses (localhost, 127.0.0.1) can't be added: give the machine's name or address on your network." }));
   }
 
   // ---- The sections there are, each its own state file; a tab for each. A section the user is in

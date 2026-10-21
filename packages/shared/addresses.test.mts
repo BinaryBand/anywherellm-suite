@@ -48,14 +48,18 @@ const lookup = async (host: string) => (/^[\d.]+$|:/.test(host) ? [host] : (NAME
 const why = (origin: string, base: string | null = null) => addresses.refusalOf(origin, base, lookup);
 
 test("an origin on this machine's network is let through, a public one isn't", async () => {
-  for (const ok of ["http://muse-vm:8463", "http://192.168.1.5", "https://nas.example:5001", "http://[fd00::5]:8080", "http://localhost:8080"]) assert.equal(await why(ok), null, ok);
+  for (const ok of ["http://muse-vm:8463", "http://192.168.1.5", "https://nas.example:5001", "http://[fd00::5]:8080", "http://192.168.1.20:8463"]) assert.equal(await why(ok), null, ok);
   assert.match((await why("http://93.184.216.34"))!, /on the public web/);
   assert.match((await why("https://public.example"))!, /on the public web/, "by what the name resolves to");
   assert.match((await why("http://nowhere.lan:80"))!, /nowhere\.lan can't be looked up from AnythingLLM/, "what can't be told is refused");
 });
 
+test("no loopback address, on any port: AnythingLLM's own machine or container", async () => {
+  for (const origin of ["http://localhost:8888", "http://127.0.0.2:80", "http://[::1]:5000", "http://[::ffff:127.0.0.1]:8080", "http://127.0.0.1:3001", "http://loop.example:9000"]) assert.match((await addresses.refusalOf(origin, null, async (h) => (h === "loop.example" ? ["10.0.0.9", "127.0.0.1"] : lookup(h))))!, /that's a loopback address, AnythingLLM's own machine or container/, origin);
+});
+
 test("none of the suite's own services: this machine's addresses on 3001, 443 and 8467, and AnythingLLM's own address", async () => {
-  for (const origin of ["http://127.0.0.1:3001", "https://localhost", "http://[::1]:8467", "http://192.168.1.10:3001", "https://gir", "http://[::ffff:100.90.1.2]:8467"]) assert.match((await why(origin))!, /of this machine, where AnythingLLM, its bridge or a proxy/, origin);
+  for (const origin of ["http://192.168.1.10:3001", "https://gir", "http://100.90.1.2:8467", "http://[::ffff:100.90.1.2]:8467"]) assert.match((await why(origin))!, /of this machine, where AnythingLLM, its bridge or a proxy/, origin);
   assert.equal(await why("http://192.168.1.10:9000"), null, "another port of this machine is the user's");
   assert.match((await why("http://192.168.1.10:9000", "http://192.168.1.10:9000"))!, /that's AnythingLLM itself/);
   assert.match((await why("http://gir:8080", "https://llm.example:8080"))!, /of this machine/, "AnythingLLM's own port, at this machine's addresses");
@@ -66,7 +70,6 @@ test("without the installer's record, AnythingLLM's address and the interfaces d
   delete g[THISHOST_RECORD];
   assert.match((await why("http://muse-vm:8463"))!, /this machine isn't recorded and AnythingLLM's address isn't set/);
   assert.equal(await why("http://muse-vm:8463", "http://192.168.1.10:3001"), null);
-  assert.match((await why("http://127.0.0.1:3001", "http://192.168.1.10:3001"))!, /of this machine/, "an interface's address");
   assert.match((await why("http://192.168.1.10:443", "http://192.168.1.10:3001"))!, /of this machine/, "AnythingLLM's host");
   assert.match((await why("http://muse-vm:8463", "https://unknown.example"))!, /can't be looked up and this machine isn't recorded/);
 });

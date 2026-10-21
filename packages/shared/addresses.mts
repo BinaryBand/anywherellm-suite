@@ -5,8 +5,10 @@
 // once), so it works with the browser alone or the library alone.
 //
 // An origin is let through only when it's on this machine or its network: a public one needs
-// nothing, and plain http to it would carry a key (fence.mts secureFor). Never one of the suite's own
-// services either: AnythingLLM's address (ANYTHINGLLM_URL), or this machine's own addresses
+// nothing, and plain http to it would carry a key (fence.mts secureFor). Never a loopback address, on
+// any port: inside AnythingLLM's container that is the container itself (its server, its collector),
+// and on Desktop the machine has a name on its network. Never one of the suite's own services
+// either: AnythingLLM's address (ANYTHINGLLM_URL), or this machine's own addresses
 // (#shared/thishost: its interfaces', and those the installer recorded) on OWN_PORTS or AnythingLLM's
 // port. What can't be told (a name that can't be looked up; neither the record nor AnythingLLM's
 // address) is refused, and the page says why.
@@ -41,6 +43,12 @@ const told = () => perProcess("addresses.told", () => ({ result: null as { n: nu
 
 const portOf = (url: URL): number => Number(url.port) || (url.protocol === "https:" ? 443 : 80);
 
+/** Whether `ip` is a loopback address (127.0.0.0/8, ::1; an IPv4-mapped one as its IPv4). */
+const loopback = (ip: string): boolean => {
+  const a = canonicalHost(ip);
+  return a === "::1" || (net.isIP(a) === 4 && a.startsWith("127."));
+};
+
 /** Why `origin` isn't let through, or null: AnythingLLM's address `base` and `lookup` say where its
  *  own services are. */
 export async function refusalOf(origin: string, base: string | null, lookup: Lookup = lookupAll): Promise<string | null> {
@@ -50,6 +58,7 @@ export async function refusalOf(origin: string, base: string | null, lookup: Loo
   const addresses = await lookup(host);
   if (!addresses) return `${host} can't be looked up from AnythingLLM, so it can't be told from AnythingLLM's own services: check the name, or give its address`;
   if (!privateName(host) && !addresses.some(privateAddress)) return "it's on the public web, which the skills reach already: only an address on this machine or its network is let through here";
+  if (addresses.some(loopback)) return "that's a loopback address, AnythingLLM's own machine or container: give the machine's name or address on your network instead";
   const anythingllm = originOf(base);
   const recorded = thisHostRecorded();
   if (!anythingllm && !recorded) return "this machine isn't recorded and AnythingLLM's address isn't set, so it can't be told from AnythingLLM's own services: run the installer on the host (it records this machine), or set the skill's ANYTHINGLLM_URL";

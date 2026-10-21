@@ -12,7 +12,7 @@ An origin is an http or https address's scheme, host and port as `URL.origin` wr
 
 Written from the Vault page's Allowed addresses (`packages/shared/addresses.mts`), under its lock (`allowed.json.lock`, `updateJson`); read by every skill for each request to an address the fence refuses by itself, cached by inode, modification time and size. An entry lets that origin through, never its host's other ports or scheme. An entry that isn't an origin is skipped; a file that can't be read lets nothing through and is never written over. `FENCE_ALLOW`, the hosts in AnythingLLM's environment, stays separate: it lets a host through on every port.
 
-The Vault adds no public origin (plain http to it would carry a key), and none of the suite's own services: AnythingLLM's own address, and this machine's addresses (its interfaces', and `anywherellm-suite/this-host.json`'s) on 3001, 443, 8467 and AnythingLLM's port. What it can't tell (a name that doesn't resolve, or neither that record nor AnythingLLM's address) it refuses.
+The Vault adds no public origin (plain http to it would carry a key), no loopback one on any port (inside AnythingLLM's container, that is the container itself: its server and its collector), and none of the suite's own services: AnythingLLM's own address, and this machine's addresses (its interfaces', and `anywherellm-suite/this-host.json`'s) on 3001, 443, 8467 and AnythingLLM's port. What it can't tell (a name that doesn't resolve, or neither that record nor AnythingLLM's address) it refuses.
 
 ## Refused lately, `refused.json`
 
