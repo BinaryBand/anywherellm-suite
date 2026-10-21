@@ -32,7 +32,7 @@ const JOB = { margin: 30 * 1000, least: 10 * 1000 };
 const ENDED: Record<string, RunRecord["status"]> = { Timeout: "timeout", Stopped: "stopped" };
 
 export interface Start {
-  trigger: RunRecord["trigger"];
+  /** The workspace the run was asked for in (workspaceOf), null for none. */
   workspace: string | null;
 }
 
@@ -46,7 +46,8 @@ interface Budget {
   made: RunRecord["calls"];
   /** Every key a request sent, to hide wherever it shows. */
   secrets: string[];
-  trigger: Start["trigger"];
+  /** Whether it is a scheduled job's run (triggerOf): what every gate reads. */
+  trigger: RunRecord["trigger"];
   signed: NonNullable<RunRecord["signed"]>;
 }
 
@@ -67,26 +68,32 @@ function prelude(): Record<string, string> {
   return Object.fromEntries(s.list("prelude/").map((f) => [`prelude/${f}`, s.get(`prelude/${f}`)!.text]));
 }
 
+/** Whether a run is a scheduled job's, decided once as it starts, for every gate to read (the policy,
+ *  the deadline, a signing key's and a target's "may run unattended"): one with no workspace, or any
+ *  in the process AnythingLLM forks for a job's run, whatever the invocation says. */
+const triggerOf = (start: Start): RunRecord["trigger"] => (start.workspace && jobTimeLeft() === null ? "chat" : "job");
+
 /** When a run must end: its own limit, or before a scheduled job's time runs out. */
-function deadlineFor(start: Start): number {
+function deadlineFor(trigger: RunRecord["trigger"]): number {
   const now = Date.now();
-  const left = start.trigger === "job" ? jobTimeLeft() : null;
+  const left = trigger === "job" ? jobTimeLeft() : null;
   if (left === null) return now + LIMITS.wallMs;
   if (left - JOB.margin < JOB.least) throw new LibraryError("too little of the scheduled job's time is left to run a function");
   return now + Math.min(LIMITS.wallMs, left - JOB.margin);
 }
 
 /** Starts the function `qualifiedName` ("github.list_issues"), recorded as running and not shown
- *  yet: that record, and its record once it ends. */
+ *  yet: that record (its `trigger` says whether it is a scheduled job's), and its record once it ends. */
 export function begin(qualifiedName: string, input: unknown, start: Start): { running: RunRecord; done: Promise<RunRecord> } {
   const { service, name } = store.qualified(qualifiedName);
   const { kit, f } = loaded(service, name);
   const values = store.inputChecked(f, input);
-  check({ op: "run", fn: `${service}.${name}`, trigger: start.trigger });
-  const deadline = deadlineFor(start);
-  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [], trigger: start.trigger, signed: [] };
+  const trigger = triggerOf(start);
+  check({ op: "run", fn: `${service}.${name}`, trigger });
+  const deadline = deadlineFor(trigger);
+  const budget: Budget = { prelude: prelude(), deadline, requests: 0, logs: [], made: [], secrets: [], trigger, signed: [] };
   const started = new Date();
-  const base = { id: store.runId(started), fn: `${service}.${name}`, trigger: start.trigger, workspace: start.workspace, started: started.toISOString(), logs: budget.logs, calls: budget.made, signed: budget.signed };
+  const base = { id: store.runId(started), fn: `${service}.${name}`, trigger, workspace: start.workspace, started: started.toISOString(), logs: budget.logs, calls: budget.made, signed: budget.signed };
   const running: RunRecord = { ...base, pid: process.pid, until: new Date(deadline).toISOString(), ended: base.started, ms: 0, status: "running" };
   store.record(running);
   store.markUnseen(base.id);
@@ -245,7 +252,7 @@ async function ssh(call: SshCall, kit: Toolkit, f: Fn, req: Record<string, unkno
   // A command is not recorded (a function can put anything in one); a path is, masked as kit.log is.
   const shown = call === "exec" ? `(${detail.length} characters)` : mask(detail.split("\n")[0], budget.secrets).slice(0, 80);
   const made = { method: "SSH", host: name, path: ` ${mark} ${shown}`, ms: 0 };
-  const use = { deadline: budget.deadline, job: budget.trigger === "job" || jobTimeLeft() !== null, signal };
+  const use = { deadline: budget.deadline, job: budget.trigger === "job", signal };
   const t0 = Date.now();
   try {
     const out = await targets[call](name, req, use);

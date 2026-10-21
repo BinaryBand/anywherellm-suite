@@ -147,6 +147,18 @@ test("a key signs in a scheduled job only when the user lets it", async () => {
   assert.equal((await ran("job", source, {}, false)).result, "test-ns", "and in a chat, as always");
 });
 
+test("a run in a scheduled job's process is a job's for the signing gate, even when its call names a workspace", async (t) => {
+  await makeKey("muse", "test-ns");
+  const source = `async function main(i, kit) { return (await kit.secret.sign({ key: "muse", data: "x" })).namespace; }`;
+  const send = process.send;
+  process.send = (() => true) as never; // the process AnythingLLM forks for a job's run
+  t.after(() => void (process.send = send));
+  const refused = await ran("forked", source); // from the workspace "work"
+  assert.equal(refused.trigger, "job");
+  assert.equal(refused.status, "error");
+  assert.match(refused.error.message, /the signing key "muse" doesn't sign in a scheduled job/);
+});
+
 test("a key signs at most 60 times a minute", async () => {
   await makeKey("muse", "test-ns");
   const run = await ran("many", `async function main(i, kit) {

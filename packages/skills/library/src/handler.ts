@@ -290,16 +290,15 @@ async function within<T>(done: Promise<T>, ms: number): Promise<T | null> {
  *  shown until an answer shows how it ended: a scheduled job's that didn't end well stays so, for
  *  the next chat. */
 async function runNow(name: string, inputs: unknown, self: HandlerContext): Promise<string> {
-  const workspace = workspaceOf(self);
-  const trigger = workspace ? "chat" : "job";
-  const { running, done } = runs.begin(name, inputs, { trigger, workspace });
+  const { running, done } = runs.begin(name, inputs, { workspace: workspaceOf(self) });
+  const job = running.trigger === "job";
   // Only what the end needs, so a background run doesn't hold on to the agent that started it.
   const base = baseOf(self);
   const ntfy = { url: topicUrl(clean(self.runtimeArgs?.NTFY_URL)), token: clean(self.runtimeArgs?.NTFY_TOKEN) };
   void done.then(() => page.refresh(base));
-  const record = trigger === "job" ? await done : await within(done, waitMs());
+  const record = job ? await done : await within(done, waitMs());
   if (record) {
-    if (trigger === "chat" || record.status === "ok") store.markSeen(record.id);
+    if (!job || record.status === "ok") store.markSeen(record.id);
     return runs.runText(record);
   }
   page.refresh(base);
