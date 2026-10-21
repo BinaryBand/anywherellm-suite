@@ -369,7 +369,7 @@ async function fromPage(self: HandlerContext): Promise<void> {
   // Each step has its own try: one that fails (a busy lock, a damaged names file) must not keep the
   // call from applying what the user did on the pages. The log is the server's, not the answer.
   const steps: [string, () => Promise<void>][] = [
-    ["settle the Library page", () => page.settleNow(base)],
+    ["settle the Library page", () => page.settle(base)],
     ["settle the Vault", () => page.settleVault()],
     ["apply the Library page's events", async () => (workspaceOf(self) ? page.caughtUp(base) : undefined)],
   ];

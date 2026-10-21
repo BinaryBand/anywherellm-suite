@@ -231,10 +231,10 @@ test("the page's own rotate keeps the mark of the switch and moves the link", as
   assert.equal(SUITE_DIR, "anywherellm-suite");
 });
 
-test("settleVault replaces the names without a page shown: the page is written under the new ones and the link stamped", async () => {
+test("settle replaces the names without a page shown: the page is written under the new ones and the link stamped", async () => {
   seedOld();
   hide(true);
-  await vaultPage.settleVault("logins", async () => {});
+  await vaultPage.settle("logins", async () => {});
   const now = names();
   assert.notEqual(now.token, "oldtoken");
   assert.equal(now.hidden, true);
@@ -243,13 +243,13 @@ test("settleVault replaces the names without a page shown: the page is written u
   assert.ok(fs.existsSync(inPublic(`${now.token}.html`)), "the page is there for the link the user is given");
   assert.equal(readLinks().vault, `/vault-lean/${now.token}.html`);
   assert.ok(readLinks().rotated?.vault);
-  await vaultPage.settleVault("logins", async () => {});
+  await vaultPage.settle("logins", async () => {});
   assert.equal(names().token, now.token, "once");
 });
 
-test("settleVault with no Vault does nothing, and makes none", async () => {
+test("settle with no Vault does nothing, and makes none", async () => {
   hide(true);
-  await vaultPage.settleVault("logins", async () => {});
+  await vaultPage.settle("logins", async () => {});
   assert.equal(fs.existsSync(namesFile()), false);
   assert.equal(fs.existsSync(linksFile()), false);
 });
@@ -275,7 +275,7 @@ test("with the switch on a failed write says nothing of a token; with it off the
     seedOld();
     hide(true);
     let failure: Error | null = null;
-    await renamesFail(() => vaultPage.settleVault("logins", async () => {}).catch((e) => void (failure = e)));
+    await renamesFail(() => vaultPage.settle("logins", async () => {}).catch((e) => void (failure = e)));
     const now = names(); // the names were replaced before the move failed
     assert.ok(failure, "the failure is told");
     assert.equal((failure as unknown as Error).message, "the Vault page couldn't be written");
@@ -306,9 +306,9 @@ test("a show removes every page file that isn't under the current token, and kee
   for (const f of ["stalestalestale.html", "stalestalestale-keys.json", "stalestalestale-logins.json"]) assert.equal(fs.existsSync(inPublic(f)), false, f);
   for (const f of ["notes.txt", "index.html", "short-keys.json"]) assert.equal(fs.existsSync(inPublic(f)), true, f);
   assert.ok(fs.existsSync(inPublic(`${token}.html`)) && fs.existsSync(inPublic(`${token}-keys.json`)));
-  // and a call that shows no page (settleVault) clears them too
+  // and a call that shows no page (settle) clears them too
   fs.writeFileSync(inPublic("leftoverleftover.html"), "stale");
-  await vaultPage.settleVault("logins", async () => {});
+  await vaultPage.settle("logins", async () => {});
   assert.equal(fs.existsSync(inPublic("leftoverleftover.html")), false);
 });
 
@@ -341,7 +341,7 @@ test("take reads the events before it reads the names", () => {
   assert.ok(order.indexOf("names") < 0 || order.indexOf("events") < order.indexOf("names"), order.join(","));
 });
 
-const GAP = Symbol.for("anywherellm-suite.vaultpage.gap");
+const GAP = Symbol.for("anywherellm-suite.vault-page.gap");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test("a call that comes while a rotation holds the names lock waits for it: the moved sections and the new page are all there after", async () => {
@@ -352,7 +352,7 @@ test("a call that comes while a rotation holds the names lock waits for it: the 
   g[GAP] = async () => {
     g[GAP] = undefined; // once
     // a settle and a show from "another process", started in the old gap between the new names and the moved files
-    second = Promise.all([vaultPage.settleVault("logins", async () => {}), show(async () => {})]);
+    second = Promise.all([vaultPage.settle("logins", async () => {}), show(async () => {})]);
     await sleep(200);
   };
   try {
@@ -375,7 +375,7 @@ test("with the switch off and no mark, a settle removes nothing and doesn't touc
   const lock = `${namesFile()}.lock`;
   fs.mkdirSync(lock); // held by "someone else": a settle that took it would wait and fail as busy
   try {
-    const done = await Promise.race([vaultPage.settleVault("keys", async () => {}).then(() => "done"), sleep(1500).then(() => "waited")]);
+    const done = await Promise.race([vaultPage.settle("keys", async () => {}).then(() => "done"), sleep(1500).then(() => "waited")]);
     assert.equal(done, "done", "returned without taking the lock");
   } finally {
     fs.rmSync(lock, { recursive: true, force: true });

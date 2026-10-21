@@ -22,13 +22,12 @@
 // Whatever the switch, show and rotate keep the page's path in the links file for whoever shows it
 // to the user.
 
-import fs from "node:fs";
 import path from "node:path";
 import { mask } from "./answer.mts";
-import { locked, readJson, updateJson, writeAtomic } from "./atomic.mts";
 import { Told } from "./errors.mts";
-import { linksHidden, noteLink } from "./page-links.mts";
-import { inTurn, listPublic, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "./pages.mts";
+import { linksHidden } from "./page-links.mts";
+import { inTurn, pageHtml, readPublic, sameSecret, takeEvents, watch, writePublic } from "./pages.mts";
+import { type Names, tokenPage } from "./token-page.mts";
 import { vaultDir } from "./vault.mts";
 import template from "./vault.html";
 
@@ -42,17 +41,18 @@ const VERSION = 6;
 const WATCH_MS = 30 * 60 * 1000;
 const MARKER = "vault_lean_event";
 
-interface Names {
-  token: string;
-  secret: string;
-  /** Made while the links were kept from the agent, and not given to it since. Absent: they may have been. */
-  hidden?: true;
-}
-
-/** Keeps the Vault's link in the links file (`rotated`: its token was just replaced); a failure (a
- *  file that can't be written) is logged and never reaches the page or the answer that shows it. */
-const keepLink = (rel: string, rotated = false): Promise<void> =>
-  noteLink("vault", rel, rotated ? { rotated: true } : {}).catch((e) => console.error(`vault-lean couldn't keep the page's link: ${(e as Error).message}`));
+/** The Vault's names (#shared/token-page): its page is <token>.html, and each section's state
+ *  <token>-<section>.json, the token being at least 8 base64url characters; a section's state moves
+ *  under a new token, since another skill may own it. */
+const page = tokenPage<Names>({
+  kind: "vault",
+  folder: "vault-lean",
+  file: () => path.join(vaultDir(), "vault-page.json"),
+  what: "the Vault's page",
+  fresh: (names) => names,
+  pattern: /^([A-Za-z0-9_-]{8,})(\.html|-(?:logins|keys|addresses)\.json)$/,
+  carried: (rest) => rest !== ".html",
+});
 
 /** Runs a write of the page's files. While the links are kept from the agent, a failure says nothing
  *  of a path (a Node file error names the page's token, even the new one): the detail is logged with
@@ -64,7 +64,7 @@ async function quiet<T>(what: string, fn: () => Promise<T> | T): Promise<T> {
     if (e instanceof Told || !linksHidden()) throw e;
     let names: string[] = [];
     try {
-      const n = readNames();
+      const n = page.read();
       if (n) names = [n.token, n.secret];
     } catch {}
     console.error(`vault-lean couldn't ${what}: ${mask(String((e as Error)?.message ?? e), names)}`);
@@ -72,91 +72,39 @@ async function quiet<T>(what: string, fn: () => Promise<T> | T): Promise<T> {
   }
 }
 
-const namesFile = () => path.join(vaultDir(), "vault-page.json");
-const fresh = (): Names => ({ token: newSecret(), secret: newSecret(), ...(linksHidden() ? { hidden: true as const } : {}) });
-const readNames = (): Names | null => readJson<Names | null>(namesFile(), () => null);
 /** A file of the Vault's in AnythingLLM's public folder. */
 const pub = (name: string) => `vault-lean/${name}`;
 /** The title a section's events are posted under, as the page posts them. */
 export const titleOf = (section: Section): string => `vault-lean-${section}`;
 
-/** Writes the page under `names`, unless the one there was written by a newer version of it. */
-async function writePage(names: Names): Promise<void> {
-  const file = publicPath(pub(`${names.token}.html`));
-  let there = 0;
-  try {
-    there = Number(/"version":(\d+)/.exec(fs.readFileSync(file, "utf8"))?.[1] ?? 0);
-  } catch {
-    // no page yet
-  }
-  if (there <= VERSION) writePublic(pub(`${names.token}.html`), await pageHtml(template, { token: names.token, secret: names.secret, version: VERSION }));
+/** Writes `text` to the Vault's public file `name`; answers the name. */
+const put = (name: string, text: string): string => (writePublic(pub(name), text), name);
+
+/** Writes the page under `names`, unless the one there was written by a newer version of it; answers its name. */
+async function writePage(names: Names): Promise<string> {
+  const name = `${names.token}.html`;
+  const there = readPublic(pub(name));
+  if (Number(/"version":(\d+)/.exec(there ?? "")?.[1] ?? 0) <= VERSION) writePublic(pub(name), await pageHtml(template, { token: names.token, secret: names.secret, version: VERSION }), there);
+  return name;
 }
 
-/** A file of the Vault's pages in the public folder: <token>.html or <token>-<section>.json, the
- *  token being at least 8 base64url characters. Its token, or null for any other file. */
-function tokenOf(file: string): string | null {
-  const found = /^([A-Za-z0-9_-]{8,})\.html$/.exec(file) ?? /^([A-Za-z0-9_-]{8,})-(?:logins|keys|addresses)\.json$/.exec(file);
-  return found ? found[1] : null;
-}
+/** Writes the page and the files `write` answers under the names (#shared/token-page publish). */
+const publish = (write: (names: Names) => string[], rotated = false, hidden = linksHidden()): Promise<Names> =>
+  quiet("write the page", () => page.publish(async (n) => [await writePage(n), ...write(n)], rotated, hidden));
 
-/** Removes every page file of the Vault's that isn't under `token`: what a rotation left when it died
- *  between writing the new names and removing the old files, or what a writer put back. Other files stay. */
-function sweep(token: string): void {
-  for (const file of listPublic(pub(""))) {
-    const there = tokenOf(file);
-    if (there !== null && there !== token) removePublic(pub(file));
-  }
-}
-
-const namesLock = () => `${namesFile()}.lock`;
-
-/** Writes the page under the names as they are under their lock, so that no rotation can slip in
- *  between reading the names and writing under them, then `write`s the section's files, keeps the
- *  link (`rotated`: the token was just replaced) and sweeps what isn't under the token. */
-async function publish(write: (names: Names) => void | Promise<void>, rotated = false): Promise<Names> {
-  const seen = readNames() ?? (await updateJson(namesFile(), fresh, (n) => n));
-  return locked(namesLock(), "the Vault's page", async () => {
-    const names = readNames() ?? seen;
-    await writePage(names);
-    await write(names);
-    await keepLink(`/${pub(`${names.token}.html`)}`, rotated);
-    // Only while the links are kept from the agent: with the switch off nothing of the Vault's is removed.
-    if (linksHidden()) sweep(names.token);
-    return names;
-  });
-}
-
-/** Brings the names in line with the switch (#shared/page-links). Switch off: the mark goes, since
- *  the links go out again. Switch on, names not marked: what the section's page posted under the old
- *  secret is applied first, then the names are replaced, so the link the agent may have is dead, and
- *  the page is written under the new ones. Then whatever isn't under the current token goes. */
-async function settle(section: Section, drain: () => Promise<void>): Promise<void> {
-  const names = readNames();
-  if (!names) return;
-  if (!linksHidden()) {
-    // Switch off: the mark goes, since the links go out again. Nothing is replaced, swept or locked
-    // beyond that: the Vault behaves as it did before the switch.
-    if (names.hidden) await updateJson(namesFile(), fresh, (n) => void delete n.hidden);
-    return;
-  }
-  if (!names.hidden) {
-    await inTurn(titleOf(section), drain);
-    const { replaced } = await quiet("replace the page", () => rotateNames((n) => !n.hidden));
-    if (replaced) return void (await quiet("write the page", () => publish(() => {}, true)));
-  }
-  await quiet("clear the old page", () => locked(namesLock(), "the Vault's page", () => void (readNames() && sweep(readNames()!.token))));
-}
-
-/** Replaces the Vault's names once if the switch asks for it and a call hasn't yet (what show starts
- *  with), without writing the section: for a skill's calls that show no page. Nothing without a Vault. */
-export const settleVault = (section: Section, drain: () => Promise<void>): Promise<void> => settle(section, drain);
+/** Brings the names in line with the switch (#shared/page-links) at the start of a skill's call that
+ *  may show no page (#shared/token-page settleCall): what the section's page posted under the old
+ *  secret is applied first (with `drain`). Nothing without a Vault. */
+export const settle = (section: Section, drain: () => Promise<void>): Promise<void> =>
+  quiet("settle the page", () => page.settleCall(() => inTurn(titleOf(section), drain), (hidden) => publish(() => [], true, hidden)));
 
 /** Writes the Vault's page and the section's `state` (nothing secret), and applies the section's
  *  events with `drain` as they come for a while (#shared/pages watch); answers the page's address,
  *  from AnythingLLM's address `base` (null: from the root of the host the link is opened on). */
 export async function show(section: Section, state: unknown, drain: () => Promise<void>, base: string | null): Promise<string> {
-  await settle(section, drain);
-  const names = await quiet("write the page", () => publish((n) => void writePublic(pub(`${n.token}-${section}.json`), JSON.stringify(state))));
+  const hidden = linksHidden();
+  const rotated = await quiet("replace the page", () => page.settle(() => inTurn(titleOf(section), drain), hidden));
+  const names = await publish((n) => [put(`${n.token}-${section}.json`, JSON.stringify(state))], rotated, hidden);
   watchFor(section, drain);
   return `${base ?? ""}/${pub(`${names.token}.html`)}`;
 }
@@ -170,73 +118,28 @@ export function watchFor(section: Section, drain: () => Promise<void>): void {
 
 /** The page's address, as show answers it, when there's a Vault; else null. */
 export function linkOf(base: string | null): string | null {
-  const names = readNames();
+  const names = page.read();
   return names && `${base ?? ""}/${pub(`${names.token}.html`)}`;
 }
 
 /** Writes the section's state again, when there's a Vault. */
-export function refresh(section: Section, state: unknown): void {
-  const names = readNames();
-  if (names) writePublic(pub(`${names.token}-${section}.json`), JSON.stringify(state));
-}
+export const refresh = (section: Section, state: unknown): void => page.refresh((n) => [put(`${n.token}-${section}.json`, JSON.stringify(state))]);
 
 /** The section's events posted since the last time, oldest first: only those with the Vault's secret. */
 export function take(section: Section): Record<string, unknown>[] {
   // The events first, the names after: a rotation in between leaves the names newer than the events,
   // which are then dropped (they carry the old secret), never the other way round.
   const events = takeEvents(titleOf(section), MARKER);
-  const names = readNames();
+  const names = page.read();
   return events.filter((e) => !!names && sameSecret(e.secret, names.secret));
 }
 
 /** Runs `pass` in turn with the section's watch (#shared/pages inTurn). */
 export const inTurnFor = (section: Section, pass: () => Promise<void>): Promise<void> => inTurn(titleOf(section), pass);
 
-/** The test seam: awaited inside the names lock after the new names are written and before the old
- *  page's files move, so a test can start another call in what used to be a gap. Nothing shipped sets it. */
-export const VAULTPAGE_GAP = Symbol.for("anywherellm-suite.vaultpage.gap");
-
-/** Moves each section's state from under the old token to the new one and removes the old page. A
- *  file already gone is nothing to move; one that can't be moved is logged (masked) and left for the
- *  next sweep, since the sections' state is written again at every show. Called holding the names lock. */
-function moveSections(old: Names, now: Names): void {
-  for (const file of listPublic(pub("")).filter((f) => f.startsWith(`${old.token}-`) && f.endsWith(".json"))) {
-    try {
-      fs.renameSync(publicPath(pub(file)), publicPath(pub(`${now.token}${file.slice(old.token.length)}`)));
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
-      console.error(`vault-lean couldn't move a section to the new page: ${mask(String((e as Error)?.message ?? e), [old.token, old.secret, now.token, now.secret])}`);
-    }
-  }
-  removePublic(pub(`${old.token}.html`));
-}
-
-/** New names when `due` says so of the names as they are under the lock (always, by default); the
- *  old page goes, and each section's state moves under the new name. All of it, from reading the names
- *  to removing the old page, happens under the one names lock, so no other call (a sweep, a show from
- *  another process) can run between the new names and the moved files. Answers the names now and
- *  whether they were replaced. */
-async function rotateNames(due: (names: Names) => boolean = () => true): Promise<{ now: Names; replaced: boolean }> {
-  return locked(namesLock(), "the Vault's page", async () => {
-    const current = readNames();
-    const now: Names = current ? { ...current } : fresh();
-    let old: Names | null = null;
-    if (due(now)) {
-      old = current ? { token: current.token, secret: current.secret } : null;
-      delete now.hidden;
-      Object.assign(now, fresh());
-    }
-    writeAtomic(namesFile(), JSON.stringify(now, null, 2) + "\n", 0o600);
-    if (old) {
-      await (globalThis as unknown as Record<symbol, (() => Promise<void>) | undefined>)[VAULTPAGE_GAP]?.();
-      moveSections(old, now);
-    }
-    return { now: { ...now }, replaced: old !== null };
-  });
-}
-
 /** A new link: new names; the old page goes, and each section's state moves under the new name. */
 export async function rotate(): Promise<void> {
-  await quiet("replace the page", () => rotateNames());
-  await quiet("write the page", () => publish(() => {}, true));
+  const hidden = linksHidden();
+  await quiet("replace the page", () => page.rotate(undefined, hidden));
+  await publish(() => [], true, hidden);
 }

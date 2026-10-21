@@ -65,11 +65,11 @@ test("a damaged file is replaced, and what it held is not trusted", async () => 
 test("a rotation is stamped beside the link, for that page only, and a plain note never stamps", async () => {
   await noteLink("vault", "/vault-lean/aaa.html");
   assert.equal(readLinks().rotated, undefined);
-  await noteLink("vault", "/vault-lean/aaa.html", { rotated: true });
+  await noteLink("vault", "/vault-lean/aaa.html", true);
   const first = readLinks().rotated?.vault;
   assert.match(first ?? "", /^\d{4}-\d\d-\d\dT[\d:.]+Z$/, "stamped even when the link is the same: the token was replaced and is the same by chance only");
   assert.equal(readLinks().rotated?.library, undefined);
-  await noteLink("library", "/library-lean/bbb.html", { rotated: true });
+  await noteLink("library", "/library-lean/bbb.html", true);
   assert.deepEqual(Object.keys(readLinks().rotated ?? {}).sort(), ["library", "vault"]);
   await noteLink("vault", "/vault-lean/ccc.html");
   assert.equal(readLinks().rotated?.vault, first, "a plain note keeps the stamp as it was");

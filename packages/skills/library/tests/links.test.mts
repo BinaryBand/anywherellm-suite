@@ -211,7 +211,7 @@ test("while the links are kept from the agent an error that names a page's path 
   }
 });
 
-const SEAM = Symbol.for("anywherellm-suite.library.after-state-write");
+const SEAM = Symbol.for("anywherellm-suite.library-page.written");
 const seamed = globalThis as unknown as Record<symbol, (() => void) | undefined>;
 test.afterEach(() => void delete seamed[SEAM]);
 

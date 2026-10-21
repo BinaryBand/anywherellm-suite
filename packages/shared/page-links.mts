@@ -51,23 +51,29 @@ export function readLinks(storage: string = storageDir()): Links {
 
 /** Keeps `rel` (root-relative, like "/vault-lean/<token>.html") as the link of `kind`, without
  *  touching the other page's. No write when it is the link already, unless `rotated`: the token was
- *  just replaced by a rotation, and the time is kept beside the link. */
-export async function noteLink(kind: PageKind, rel: string, opts: { rotated?: true } = {}): Promise<void> {
-  if (readLinks()[kind] === rel && !opts.rotated) return;
+ *  just replaced by a rotation, and the time is kept beside the link. A hint for whoever shows the
+ *  page to the user: a failure (a file that can't be written) is logged, and never reaches the page
+ *  or the answer that shows it. */
+export async function noteLink(kind: PageKind, rel: string, rotated = false): Promise<void> {
+  if (readLinks()[kind] === rel && !rotated) return;
   const file = linksFile();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
   const keep = (links: Record<string, unknown>) => {
     links[kind] = rel;
-    if (opts.rotated) {
+    if (rotated) {
       const stamps = links.rotated && typeof links.rotated === "object" ? (links.rotated as Record<string, unknown>) : {};
       stamps[kind] = new Date().toISOString();
       links.rotated = stamps;
     }
   };
-  // Read as a fresh start: a damaged file is derived data, replaced by the next write.
-  await updateJson<Record<string, unknown>, void>(file, () => ({}), keep).catch(async (e) => {
-    if (!(e instanceof SyntaxError)) throw e;
-    fs.rmSync(file, { force: true });
-    await updateJson<Record<string, unknown>, void>(file, () => ({}), keep);
-  });
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // Read as a fresh start: a damaged file is derived data, replaced by the next write.
+    await updateJson<Record<string, unknown>, void>(file, () => ({}), keep).catch(async (e) => {
+      if (!(e instanceof SyntaxError)) throw e;
+      fs.rmSync(file, { force: true });
+      await updateJson<Record<string, unknown>, void>(file, () => ({}), keep);
+    });
+  } catch (e) {
+    console.error(`${kind}-lean couldn't keep the page's link: ${(e as Error)?.message ?? e}`);
+  }
 }

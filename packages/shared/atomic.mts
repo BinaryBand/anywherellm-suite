@@ -16,8 +16,18 @@ export function writeAtomic(file: string, data: string | Uint8Array, mode = 0o64
   }
 }
 
+/** What `file` holds, or null when there is no file. */
+export function readText(file: string): string | null {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw e;
+  }
+}
+
 /** Whether `file` holds exactly `text`; false when there is no file. */
-export const sameText = (file: string, text: string): boolean => fs.existsSync(file) && fs.readFileSync(file, "utf8") === text;
+export const sameText = (file: string, text: string): boolean => readText(file) === text;
 
 /** Writes `text` to `file` atomically unless it holds it already; whether it wrote. */
 export function writeAtomicIfChanged(file: string, text: string, mode?: number): boolean {
@@ -67,14 +77,8 @@ export function locked<T>(lock: string, what: string, fn: () => T | Promise<T>):
 /** What the JSON file `file` holds, or `fresh()` when there's none. A file that can't be parsed is an
  *  error, never taken for an empty one: a change would write over what it held. */
 export function readJson<S>(file: string, fresh: () => S): S {
-  let text: string;
-  try {
-    text = fs.readFileSync(file, "utf8");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return fresh();
-    throw e;
-  }
-  return JSON.parse(text) as S;
+  const text = readText(file);
+  return text === null ? fresh() : (JSON.parse(text) as S);
 }
 
 /** Changes the JSON file `file` under its lock (`file`.lock): `change` gets what it holds now (or

@@ -15,7 +15,7 @@ import path from "node:path";
 import { pageKeyFile, perBuild, perProcess, readPageKey, serial, serverDir, storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
 import { PAGE_FOLDERS } from "./fence.mts";
-import { writeAtomic, writeAtomicIfChanged } from "./atomic.mts";
+import { readText, writeAtomic } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
 
 /** A file still being written is left this long before it's dropped as unreadable. */
@@ -40,11 +40,21 @@ export function publicPath(rel: string): string {
   return file;
 }
 
+/** What the public file `rel` holds, or null when there's none. */
+export const readPublic = (rel: string): string | null => readText(publicPath(rel));
+
 /** Writes a file into the public folder, at `rel` ("library-lean/<token>.json"), unless it holds
- *  `text` already; whether it wrote. */
-export const writePublic = (rel: string, text: string): boolean => writeAtomicIfChanged(publicPath(rel), text, 0o644);
+ *  `text` already (`there`: what it holds, when the caller read it already); whether it wrote. */
+export function writePublic(rel: string, text: string, there: string | null = readPublic(rel)): boolean {
+  if (there === text) return false;
+  writeAtomic(publicPath(rel), text, 0o644);
+  return true;
+}
 
 export const removePublic = (rel: string): void => fs.rmSync(publicPath(rel), { force: true });
+
+/** Moves the public file `from` to `to`, both in the public folder. */
+export const renamePublic = (from: string, to: string): void => fs.renameSync(publicPath(from), publicPath(to));
 
 /** The files in a folder of the public folder ("library-lean"); none when there's none. */
 export function listPublic(rel: string): string[] {
