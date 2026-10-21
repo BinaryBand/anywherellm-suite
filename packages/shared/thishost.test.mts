@@ -34,7 +34,7 @@ afterEach(() => {
   fs.rmSync(storage, { recursive: true, force: true });
 });
 
-const record = (more: Partial<ThisHost> = {}): ThisHost => ({ fingerprints: ["SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], addresses: ["100.90.1.2", "fd7a:115c:a1e0::1:2"], hostname: "gir", ...more });
+const record = (more: Partial<ThisHost> = {}): ThisHost => ({ fingerprints: ["SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], addresses: ["100.90.1.2", "fd7a:115c:a1e0::1:2"], ...more });
 const write = (text: string) => {
   fs.mkdirSync(path.dirname(thisHostFile()), { recursive: true });
   fs.writeFileSync(thisHostFile(), text);

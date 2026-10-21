@@ -105,13 +105,15 @@ function template(): string {
 /** Writes `text` to the public file `name` unless it holds it already; answers the name. */
 const put = (name: string, text: string): string => (writePublic(pub(name), text), name);
 
+/** The needs of `kind` that haven't run out, as a page shows them. */
+const needsOf = (p: PageFile | null, kind: Need["kind"]) => (p?.needs ?? []).filter((n) => n.kind === kind && n.until > Date.now()).map(({ label, site }) => ({ label, site }));
+
 /** The Library page's state, as it reads it: nothing secret. */
 function state(p: PageFile, base: string | null) {
-  const now = Date.now();
   const heldBy = store.holders();
   return {
     vault: vaultPage.linkOf(base),
-    needs: p.needs.filter((n) => n.kind === "target" && n.until > now).map(({ label, site }) => ({ label, site })),
+    needs: needsOf(p, "target"),
     targets: targets.targets().map((m) => ({ ...m, held: heldBy(m.label) })),
     result: p.result ?? null,
     toolkits: store.services().map((service) => {
@@ -124,9 +126,8 @@ function state(p: PageFile, base: string | null) {
 
 /** The Vault's keys section, as the Vault reads it: nothing secret. */
 function keysState(p: PageFile | null) {
-  const now = Date.now();
   return {
-    needs: (p?.needs ?? []).filter((n) => n.kind === "key" && n.until > now).map(({ label, site }) => ({ label, site })),
+    needs: needsOf(p, "key"),
     secrets: secrets.secrets(),
     signing: signing.signingKeys(),
   };

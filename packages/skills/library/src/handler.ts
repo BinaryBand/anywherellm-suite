@@ -354,15 +354,9 @@ async function run(args: Args, self: HandlerContext): Promise<string> {
 const ACTIONS: Record<string, (args: Args, self: HandlerContext) => Promise<string> | string> = { guide, library, secret, call, save, run };
 
 /** Applies what the user did on the Library page since the last call, before a call from a chat (a
- *  scheduled job's leaves it to the chat's watch). With no public folder where AnythingLLM runs,
- *  there's no page and nothing to apply. */
-async function fromPage(self: HandlerContext): Promise<void> {
-  let base: string | null = null;
-  try {
-    base = baseOf(self);
-  } catch {
-    // no address known: the pages are relative
-  }
+ *  scheduled job's leaves it to the chat's watch); `base` is AnythingLLM's address as the call has
+ *  it. With no public folder where AnythingLLM runs, there's no page and nothing to apply. */
+async function fromPage(self: HandlerContext, base: string | null): Promise<void> {
   // Every call, a chat's or a job's, makes the pages' names fit the switch first: with it on, the
   // links the agent held go dead at the first call after, not at one that happens to show a page.
   // Each step has its own try: one that fails (a busy lock, a damaged names file) must not keep the
@@ -387,8 +381,9 @@ export const runtime = {
     const act = ACTIONS[action];
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
-      noteBase(baseOf(this));
-      await fromPage(this);
+      const base = baseOf(this);
+      noteBase(base);
+      await fromPage(this, base);
       await askDevices(action === "library");
       return await act(args, this);
     } catch (e) {

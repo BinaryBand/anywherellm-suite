@@ -251,12 +251,18 @@ async function ssh(call: SshCall, kit: Toolkit, f: Fn, req: Record<string, unkno
   check({ op: "ssh", fn, target: name, action: call, detail });
   // A command is not recorded (a function can put anything in one); a path is, masked as kit.log is.
   const shown = call === "exec" ? `(${detail.length} characters)` : mask(detail.split("\n")[0], budget.secrets).slice(0, 80);
-  const made = { method: "SSH", host: name, path: ` ${mark} ${shown}`, ms: 0 };
   const use = { deadline: budget.deadline, job: budget.trigger === "job", signal };
+  const sent = (): Promise<object> => targets[call](name, req, use);
+  return recorded(budget, { method: "SSH", host: name, path: ` ${mark} ${shown}` }, sent, (out) => ("exit" in out ? ((out as targets.Ran).exit ?? -1) : 0));
+}
+
+/** What `send` answers, its request recorded in the run as `made`, with the time it took and how it
+ *  ended: the status `statusOf` reads from the answer, or the error. */
+async function recorded<T>(budget: Budget, made: Pick<RunRecord["calls"][number], "method" | "host" | "path">, send: () => Promise<T>, statusOf: (out: T) => number): Promise<T> {
   const t0 = Date.now();
   try {
-    const out = await targets[call](name, req, use);
-    budget.made.push({ ...made, status: "exit" in out ? (out.exit ?? -1) : 0, ms: Date.now() - t0 });
+    const out = await send();
+    budget.made.push({ ...made, status: statusOf(out), ms: Date.now() - t0 });
     return out;
   } catch (e) {
     budget.made.push({ ...made, error: (e as Error).message.slice(0, 200), ms: Date.now() - t0 });
@@ -274,24 +280,17 @@ async function http(kit: Toolkit, f: Fn, req: Request, budget: Budget, signal: A
   const label = req.auth === false || req.auth === "none" ? null : typeof req.auth === "string" ? req.auth : (kit.secrets[0]?.label ?? null);
   const key = label ? kit.secrets.find((s) => s.label.toLowerCase() === label.toLowerCase()) : null;
   if (label && !key) throw new LibraryError(`the ${kit.service} toolkit has no key "${label}"; its keys are ${kit.secrets.map((s) => s.label).join(", ") || "none"}`);
-  const made = { method: String(req.method || "GET").toUpperCase(), host: target.host, path: target.pathname, ms: 0 };
-  const t0 = Date.now();
+  const made = { method: String(req.method || "GET").toUpperCase(), host: target.host, path: target.pathname };
+  const sent = await recorded(budget, made, () => send(target, req, key ?? null, `${kit.service}.${f.name}`, signal), (sent) => sent.answer.status);
+  if (sent.secret && !budget.secrets.includes(sent.secret)) budget.secrets.push(sent.secret);
+  const got = textOf(sent.answer);
+  const text = mask(got.text, budget.secrets);
+  let body: unknown = text;
   try {
-    const sent = await send(target, req, key ?? null, `${kit.service}.${f.name}`, signal);
-    if (sent.secret && !budget.secrets.includes(sent.secret)) budget.secrets.push(sent.secret);
-    budget.made.push({ ...made, status: sent.answer.status, ms: Date.now() - t0 });
-    const got = textOf(sent.answer);
-    const text = mask(got.text, budget.secrets);
-    let body: unknown = text;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {}
-    const status = sent.answer.status;
-    return { status, ok: status >= 200 && status < 300, headers: shownHeaders(sent.answer.headers), body: got.binary ? null : body, cut: got.cut, ...(got.binary ? { binary: got.bytes } : {}) };
-  } catch (e) {
-    budget.made.push({ ...made, error: (e as Error).message.slice(0, 200), ms: Date.now() - t0 });
-    throw e;
-  }
+    body = text ? JSON.parse(text) : null;
+  } catch {}
+  const status = sent.answer.status;
+  return { status, ok: status >= 200 && status < 300, headers: shownHeaders(sent.answer.headers), body: got.binary ? null : body, cut: got.cut, ...(got.binary ? { binary: got.bytes } : {}) };
 }
 
 /** A run as the agent reads it. */

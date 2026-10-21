@@ -50,13 +50,14 @@ export function pages(ctx: Ctx, opts: PagesOptions = {}): number {
   if (opts.hide) {
     ctx.print(hide(storage) ? `kept the pages' links from the agent: ${hiddenFile(storage)}` : `unchanged: the pages' links are kept from the agent already (${hiddenFile(storage)})`);
     const waiting = waitingEvents(storage);
-    if (waiting.total) {
+    const total = waiting.keys + waiting.logins + waiting.library;
+    if (total) {
       const where = [
         waiting.keys && `Vault keys: ${waiting.keys}`,
         waiting.logins && `Vault logins: ${waiting.logins}`,
         waiting.library && `Library page: ${waiting.library}`,
       ].filter(Boolean);
-      ctx.print(`${waiting.total} page event${waiting.total === 1 ? " waits" : "s wait"} to be applied (${where.join(", ")}): ask the agent to call library and open a tab first, or they're dropped when the links change`);
+      ctx.print(`${total} page event${total === 1 ? " waits" : "s wait"} to be applied (${where.join(", ")}): ask the agent to call library and open a tab first, or they're dropped when the links change`);
     }
   } else if (opts.show) {
     ctx.print(show(storage) ? `gave the pages' links to the agent again: removed ${hiddenFile(storage)}` : `unchanged: the pages' links are not kept from the agent (no ${hiddenFile(storage)})`);

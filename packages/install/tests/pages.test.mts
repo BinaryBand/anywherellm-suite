@@ -234,7 +234,7 @@ test("a page's own state, with its secret, is never read or printed", () => {
 test("health says which way the links go, and fails on a links file that isn't sound", async () => {
   fs.mkdirSync(path.join(storage, "plugins", "agent-skills", "library-lean"), { recursive: true });
   fs.writeFileSync(path.join(storage, "plugins", "agent-skills", "library-lean", "handler.js"), "// library\n");
-  ctx.host = { sshDir: path.join(home, "no-ssh"), interfaces: { eth0: [{ address: "192.0.2.10" }] as never }, hostname: "stand-in" };
+  ctx.host = { sshDir: path.join(home, "no-ssh"), interfaces: { eth0: [{ address: "192.0.2.10" }] as never } };
   keep(BOTH);
   await health(ctx, { storage });
   assert.match(out(), /ok +the pages' links: switch off: given to the agent too \(pages --hide keeps them from it\)/);

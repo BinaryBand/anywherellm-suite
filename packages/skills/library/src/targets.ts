@@ -324,18 +324,12 @@ async function looked(client: Client, base: string | null, until: number, signal
   return found;
 }
 
-/** Keeps what looking at a target found. */
-const keep = (label: string, found: Found): Promise<void> =>
+/** Keeps what was learned of a target, for the page and the agent to see: how signing in went
+ *  (`status`), or what looking at it found. */
+const patch = (label: string, fields: Partial<Pick<Entry, "status" | "barred" | "notes" | "probed">>): Promise<void> =>
   vault.update((v) => {
     const now = v.entries.find(named(label));
-    if (now) Object.assign(now, { barred: found.barred, notes: found.notes, probed: found.probed });
-  });
-
-/** Keeps how signing in to a target went, for the page and the agent to see. */
-const say = (label: string, status: string): Promise<void> =>
-  vault.update((v) => {
-    const now = v.entries.find(named(label));
-    if (now) now.status = status;
+    if (now) Object.assign(now, fields);
   });
 
 /** Signs in to a target once, without running anything else but what shows what it can reach, and
@@ -354,7 +348,7 @@ export async function check(label: string, base: string | null = null): Promise<
       { deadline: until, job: false },
       until,
       async (client) => {
-        await say(label, "signed in");
+        await patch(label, { status: "signed in" });
         signedIn = true;
         seen = await looked(client, base ?? lastBase(), until);
       },
@@ -362,10 +356,10 @@ export async function check(label: string, base: string | null = null): Promise<
     );
   } catch (err) {
     if (!(err instanceof NetError || err instanceof LibraryError)) throw err;
-    if (!signedIn) await say(label, err.message);
+    if (!signedIn) await patch(label, { status: err.message });
     else seen = { barred: null, notes: [`couldn't finish looking at what it reaches: ${err.message}`], probed: false };
   }
-  if (seen) await keep(label, seen);
+  if (seen) await patch(label, seen);
 }
 
 /** A turn at one of a target's command slots: waits for one to free up, at most until `until`. */
@@ -468,7 +462,7 @@ async function withTarget<T>(label: string, { job, signal }: Use, until: number,
       // The first use since it was saved looks at what it reaches too, when AnythingLLM's address is known.
       if (!checking && !e.probed && lastBase()) {
         const seen = await looked(client, lastBase(), until, signal);
-        await keep(label, seen);
+        await patch(label, seen);
         if (seen.barred) throw new LibraryError(`the target "${label}" isn't used: ${seen.barred}`);
       }
       return await use(client);

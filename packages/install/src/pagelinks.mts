@@ -90,11 +90,10 @@ export interface Waiting {
   keys: number;
   logins: number;
   library: number;
-  total: number;
 }
 
 export function waitingEvents(storage: string): Waiting {
-  const waiting: Waiting = { keys: 0, logins: 0, library: 0, total: 0 };
+  const waiting: Waiting = { keys: 0, logins: 0, library: 0 };
   let names: string[] = [];
   try {
     names = fs.readdirSync(eventsDir(storage));
@@ -105,8 +104,6 @@ export function waitingEvents(storage: string): Waiting {
     if (name.startsWith("raw-vault-lean-keys-")) waiting.keys++;
     else if (name.startsWith("raw-vault-lean-logins-")) waiting.logins++;
     else if (name.startsWith("raw-library-lean-event-")) waiting.library++;
-    else continue;
-    waiting.total++;
   }
   return waiting;
 }

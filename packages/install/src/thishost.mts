@@ -14,15 +14,14 @@ import { writeAtomicIfChanged } from "#shared/atomic";
 import { type ThisHost, bare, recorded, sshFingerprint, thisHostFile } from "#shared/thishost";
 import { type Check, refuseLinks } from "./addons.mts";
 
-/** The machine as install sees it: where its SSH host keys are, its interfaces and its name (a test
- *  says another). */
+/** The machine as install sees it: where its SSH host keys are, and its interfaces (a test says
+ *  another). */
 export interface HostView {
   sshDir: string;
   interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>;
-  hostname: string;
 }
 
-export const realHost = (): HostView => ({ sshDir: "/etc/ssh", interfaces: os.networkInterfaces(), hostname: os.hostname() });
+export const realHost = (): HostView => ({ sshDir: "/etc/ssh", interfaces: os.networkInterfaces() });
 
 /** `SHA256:…` of a public key line ("ssh-ed25519 AAAA… comment"), as ssh-keygen -lf prints it; null
  *  for a line that isn't one. */
@@ -48,7 +47,7 @@ export function recordOf(host: HostView): ThisHost {
     }
   });
   const addresses = Object.values(host.interfaces).flatMap((list) => (list ?? []).map((a) => bare(a.address)));
-  return { fingerprints: [...new Set(fingerprints)].sort(), addresses: [...new Set(addresses)].sort(), hostname: host.hostname };
+  return { fingerprints: [...new Set(fingerprints)].sort(), addresses: [...new Set(addresses)].sort() };
 }
 
 /** Records this machine in the storage; what it did. It never fails an install: a refusal or an

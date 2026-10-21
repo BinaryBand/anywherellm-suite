@@ -256,7 +256,7 @@ test.beforeEach(() => {
   reset();
   Object.assign(seen, { auths: 0, open: 0, most: 0, refused: [], hung: 0, closed: 0, execs: 0, unanswered: 0, authDelay: 0, fetched: [] });
   Object.assign(machine, { tools: true, serve: () => null, hostname: "vm-1", uid: "1001", sees: false });
-  (globalThis as unknown as Record<symbol, unknown>)[THISHOST_RECORD] = { fingerprints: [THIS_HOST_FINGERPRINT], addresses: [], hostname: "test-host" };
+  (globalThis as unknown as Record<symbol, unknown>)[THISHOST_RECORD] = { fingerprints: [THIS_HOST_FINGERPRINT], addresses: [] };
   failRemove.clear();
   stallRenames.clear();
   files.clear();
@@ -836,7 +836,7 @@ test("without a good record of this machine no target is saved or used", async (
     ["no file", () => fs.rmSync(recordFile(), { force: true }), /this machine isn't recorded.*is missing.*run the installer on the host/],
     ["a file that isn't JSON", () => writeRecord("not json"), /this machine isn't recorded.*isn't JSON/],
     ["a file that isn't a record", () => writeRecord('{"fingerprints":"x"}'), /this machine isn't recorded.*isn't a record of this machine/],
-    ["no host key in it", () => writeRecord(JSON.stringify({ fingerprints: [], addresses: [], hostname: "h" })), /holds no SSH host key.*run the installer on the host/],
+    ["no host key in it", () => writeRecord(JSON.stringify({ fingerprints: [], addresses: [] })), /holds no SSH host key.*run the installer on the host/],
   ];
   for (const [what, make] of cases.map(([w, m]) => [w, m] as const)) {
     record(undefined); // the file, as shipped code reads it
@@ -855,7 +855,7 @@ test("without a good record of this machine no target is saved or used", async (
 test("a machine that shows this host's SSH host key is refused, whatever its address", async () => {
   await call({ action: "secret", kind: "ssh", label: "twin" }); // makes the page
   // The address is not this machine's by anything the container sees or the record holds; the key is.
-  record({ fingerprints: [fingerprint(otherHostKey.public)], addresses: [], hostname: "test-host" });
+  record({ fingerprints: [fingerprint(otherHostKey.public)], addresses: [] });
   assert.match((await savedAs("twin", { fingerprint: fingerprint(otherHostKey.public) })) ?? "", /^SHA256:\S+ is this machine's own SSH host key: signing in there would read what AnythingLLM keeps beside it/, "refused when the user gives its fingerprint");
   assert.deepEqual(pageState().targets, []);
   // Saved with a fingerprint that isn't this host's, at a machine that shows this host's key: the
@@ -868,7 +868,7 @@ test("a machine that shows this host's SSH host key is refused, whatever its add
 });
 
 test("a target is asked to fetch the pages from AnythingLLM's address and from each of this host's, on each port, at once", async () => {
-  record({ fingerprints: [THIS_HOST_FINGERPRINT], addresses: ["127.0.0.1", "fe80::1", "10.1.2.3", "2001:db8::5"], hostname: "test-host" });
+  record({ fingerprints: [THIS_HOST_FINGERPRINT], addresses: ["127.0.0.1", "fe80::1", "10.1.2.3", "2001:db8::5"] });
   const page = (u: URL) => pageOf(u);
   const miss = await registered();
   assert.equal(miss.barred, null);

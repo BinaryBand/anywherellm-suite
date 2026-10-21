@@ -34,7 +34,6 @@ export interface ThisHost {
   fingerprints: string[];
   /** Every address of every interface it has, IPv4 and IPv6. */
   addresses: string[];
-  hostname: string;
 }
 
 /** Where the installer records this host, in AnythingLLM's storage `storage`. */
@@ -88,8 +87,8 @@ function read(file: string): Recorded {
   }
   const fingerprints = strings(value?.fingerprints);
   const addresses = strings(value?.addresses);
-  if (!fingerprints || !addresses || typeof value.hostname !== "string") return { why: `${file} isn't a record of this machine` };
-  return { host: { fingerprints, addresses, hostname: value.hostname } };
+  if (!fingerprints || !addresses) return { why: `${file} isn't a record of this machine` };
+  return { host: { fingerprints, addresses } };
 }
 
 /** Whether the host is recorded (a file that is a record, even an empty one). */

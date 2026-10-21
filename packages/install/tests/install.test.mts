@@ -15,7 +15,7 @@ const tmp = tempDir("install");
 function standIn() {
   const sshDir = fs.mkdtempSync(path.join(tmp, "ssh-"));
   fs.writeFileSync(path.join(sshDir, "ssh_host_ed25519_key.pub"), `ssh-ed25519 ${Buffer.from("stand-in host key").toString("base64")} root@stand-in\n`);
-  return { sshDir, interfaces: { eth0: [{ address: "192.0.2.10" }] as never }, hostname: "stand-in" };
+  return { sshDir, interfaces: { eth0: [{ address: "192.0.2.10" }] as never } };
 }
 
 let fake: FakeAnythingLLM;
@@ -148,7 +148,7 @@ const KEY_PRINT = `SHA256:${crypto.createHash("sha256").update(Buffer.from(KEY_B
 function host(keys: Record<string, string> = { "ssh_host_ed25519_key.pub": `ssh-ed25519 ${KEY_BLOB} root@gir\n` }, addresses = ["127.0.0.1", "192.168.0.29", "100.89.16.22", "fe80::1%wlp3s0"]) {
   const sshDir = fs.mkdtempSync(path.join(tmp, "ssh-"));
   for (const [name, text] of Object.entries(keys)) fs.writeFileSync(path.join(sshDir, name), text);
-  return { sshDir, interfaces: { eth0: addresses.map((address) => ({ address }) as never) }, hostname: "gir" };
+  return { sshDir, interfaces: { eth0: addresses.map((address) => ({ address }) as never) } };
 }
 
 test("a fingerprint is ssh-keygen's: SHA256 of the key, base64 without padding", () => {
@@ -161,7 +161,7 @@ test("install records the host's keys and addresses, again on every run, and say
   ctx.host = host();
   await install(ctx, opts());
   const file = thisHostFile(storage);
-  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { fingerprints: [KEY_PRINT], addresses: ["100.89.16.22", "127.0.0.1", "192.168.0.29", "fe80::1"], hostname: "gir" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { fingerprints: [KEY_PRINT], addresses: ["100.89.16.22", "127.0.0.1", "192.168.0.29", "fe80::1"] });
   assert.equal(fs.statSync(file).mode & 0o777, 0o644);
   assert.match(printed.join("\n"), /recorded this machine \(1 SSH host key, 4 addresses\)/);
   printed.length = 0;
