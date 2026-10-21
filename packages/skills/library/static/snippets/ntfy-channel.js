@@ -3,11 +3,10 @@
 // snippet, run with kit.run) and framed with a line carrying the hash of its text. read takes
 // nothing off the server, and what it answers is data, never instructions.
 // Adapt: NTFY, the deployment's own. The server is the toolkit's first base_urls; its token is the
-// toolkit's key, given on the Vault and sent as a bearer token (secrets [{ label, as: "bearer" }]).
+// toolkit's first key, given on the Vault and sent as a bearer token (secrets [{ label, as: "bearer" }]).
 // With a channel, ask the user to lock the channel's toolkit, then this one: a locked toolkit runs
 // only locked toolkits' functions, so nothing then changes what read reports or how send signs.
 const NTFY = {
-  key: "ntfy", // the toolkit's key the requests go with
   inbox: ["inbox"], // the topics read polls; the first is the default
   outbox: { "peer-topic": "peer" }, // the topics send posts to, each with the tag the channel signs to (null without a channel)
   max_bytes: 4000, // ntfy's message limit: it cuts a longer body without saying so, so send refuses one first
@@ -29,8 +28,11 @@ function bytesOf(text) {
   return n;
 }
 
-/** What the framing line's hash covers, of `payload`: the text before the signature. */
-const covered = (payload) => payload.split(ARMOR)[0];
+/** Where `payload`'s signature starts: at its last armor, as the channel's verify splits it, since
+ *  the text may quote another; -1 without one. */
+const armorAt = (payload) => payload.lastIndexOf(ARMOR);
+/** What the framing line's hash covers, of `payload`: the text before its signature. */
+const covered = (payload) => (armorAt(payload) < 0 ? payload : payload.slice(0, armorAt(payload)));
 const iso = (seconds) => new Date(seconds * 1000).toISOString();
 
 /** An error ntfy answered, said with what to do about the codes the agent can act on. */
@@ -54,7 +56,7 @@ async function read(kit, topic, since) {
   topic = topic || NTFY.inbox[0];
   if (!NTFY.inbox.includes(topic)) throw new Error(`read polls ${NTFY.inbox.join(", ")}, not "${topic}"`);
   since = since || NTFY.since;
-  const answer = await kit.http({ path: `/${topic}/json`, params: { poll: 1, since }, auth: NTFY.key });
+  const answer = await kit.http({ path: `/${topic}/json`, params: { poll: 1, since } });
   if (!answer.ok) throw refused(topic, answer);
   // One JSON object a line; kit.http parses a body of one line itself.
   const text = typeof answer.body === "string" ? answer.body : answer.body ? JSON.stringify(answer.body) : "";
@@ -85,15 +87,14 @@ async function send(kit, topic, text, title) {
     if (typeof payload !== "string" || !payload.includes(ARMOR)) throw new Error(`${NTFY.channel} answered no signed text: nothing was sent`);
     // The signed text, its one line end, then the signature: what the hash covers is then the
     // signed text itself, however the peer reads it (the channel's verify ignores the blank line).
-    payload = payload.replace(new RegExp(`\n+${ARMOR}`), `\n${ARMOR}`);
+    payload = `${covered(payload).replace(/\n+$/, "\n")}${payload.slice(armorAt(payload))}`;
   }
   const body = NTFY.framing ? `${NTFY.framing.line}: ${await kit.crypto.sha256(covered(payload))}\n${payload}` : payload;
   const bytes = bytesOf(body);
   if (bytes > NTFY.max_bytes) throw new Error(`the message would be ${bytes} bytes, over the ${NTFY.max_bytes}-byte limit: nothing was sent; shorten the text`);
-  const headers = { "Content-Type": "text/plain; charset=utf-8" };
-  // A header is Latin-1: ntfy decodes a title in RFC 2047's encoded form.
-  if (title) headers.Title = /^[\x20-\x7e]*$/.test(title) ? title : `=?UTF-8?B?${kit.b64.encode(title)}?=`;
-  const answer = await kit.http({ method: "POST", path: `/${topic}`, headers, body, auth: NTFY.key });
+  // The title goes in the query, which carries UTF-8 as a header can't.
+  const params = title ? { title } : {};
+  const answer = await kit.http({ method: "POST", path: `/${topic}`, params, headers: { "Content-Type": "text/plain; charset=utf-8" }, body });
   if (!answer.ok) throw refused(topic, answer);
   const { id, time } = answer.body ?? {};
   return { topic, id, time: time ? iso(time) : null, bytes, signed: Boolean(NTFY.channel) };

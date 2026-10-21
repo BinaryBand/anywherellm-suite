@@ -11,7 +11,7 @@ import fs from "node:fs";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { call, giveKey, idOf, library, outcome, page, pageState, postVault, reset, runRecord, seal, skillDir, storage, vaultState } from "./harness.mts";
 import * as vault from "#shared/vault";
 
@@ -258,69 +258,65 @@ test("the sshsig-channel snippet signs to a peer and checks a peer's messages, a
   assert.match(await result({ op: "sign", to: "peer", text: "Hi" }), /KEY-MISSING: reply unsigned/);
 });
 
-// A stand-in ntfy: topics behind a bearer token, one write-only, answering a poll as NDJSON and
-// rejecting a since of days, as the real one does.
+// A stand-in ntfy, one for each test: topics behind a bearer token, one write-only, answering a poll
+// as NDJSON and rejecting a since of days, as the real one does.
 const NTFY_TOKEN = "tk_ntfy_1234";
 type Message = { id: string; time: number; event: string; topic: string; message: string; title?: string };
-const topics: Record<string, Message[]> = {};
-const posted: { topic: string; title?: string; body: string }[] = [];
-let seq = 0;
-const message = (topic: string, text: string, title?: string): Message => ({ id: `m${++seq}`, time: 1760000000 + seq, event: "message", topic, message: text, ...(title ? { title } : {}) });
-const ntfy = http.createServer((req, res) => {
-  const url = new URL(req.url!, "http://x");
-  const topic = url.pathname.split("/")[1];
-  const json = (status: number, body: unknown) => (res.writeHead(status, { "content-type": "application/json" }), res.end(JSON.stringify(body)));
-  let body = "";
-  req.setEncoding("utf8");
-  req.on("data", (c) => (body += c));
-  req.on("end", () => {
-    if (req.headers.authorization !== `Bearer ${NTFY_TOKEN}`) return json(401, { code: 40101, http: 401, error: "unauthorized" });
-    if (req.method === "POST") {
-      posted.push({ topic, title: req.headers.title as string | undefined, body });
-      return json(200, message(topic, body, req.headers.title as string | undefined));
-    }
-    if (topic === "write-only") return json(403, { code: 40301, http: 403, error: "forbidden" });
-    if (!/^(\d+[smh]|all)$/.test(url.searchParams.get("since") ?? "") || url.searchParams.get("poll") !== "1") return json(400, { code: 40008, http: 400, error: "invalid since parameter" });
-    res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8" });
-    res.end((topics[topic] ?? []).map((m) => `${JSON.stringify(m)}\n`).join(""));
+
+/** A stand-in ntfy, closed after `t`, and the ntfy-channel snippet saved as ntfy.channel with
+ *  `settings` in a toolkit on it, its token given on the Vault: what was posted to it, and `arrives`,
+ *  a message a peer posts to a topic. */
+async function savedNtfy(t: TestContext, settings: Record<string, unknown>) {
+  const topics = new Map<string, Message[]>();
+  const posted: { topic: string; title: string | null; body: string }[] = [];
+  let seq = 0;
+  const message = (topic: string, text: string, title?: string | null): Message => ({ id: `m${++seq}`, time: 1760000000 + seq, event: "message", topic, message: text, ...(title ? { title } : {}) });
+  const server = http.createServer((req, res) => {
+    const url = new URL(req.url!, "http://x");
+    const topic = url.pathname.split("/")[1];
+    const json = (status: number, body: unknown) => (res.writeHead(status, { "content-type": "application/json" }), res.end(JSON.stringify(body)));
+    let body = "";
+    req.setEncoding("utf8");
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      if (req.headers.authorization !== `Bearer ${NTFY_TOKEN}`) return json(401, { code: 40101, http: 401, error: "unauthorized" });
+      if (req.method === "POST") {
+        const title = url.searchParams.get("title");
+        posted.push({ topic, title, body });
+        return json(200, message(topic, body, title));
+      }
+      if (topic === "write-only") return json(403, { code: 40301, http: 403, error: "forbidden" });
+      if (!/^(\d+[smh]|all)$/.test(url.searchParams.get("since") ?? "") || url.searchParams.get("poll") !== "1") return json(400, { code: 40008, http: 400, error: "invalid since parameter" });
+      res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8" });
+      res.end((topics.get(topic) ?? []).map((m) => `${JSON.stringify(m)}\n`).join(""));
+    });
   });
-});
-let NTFY_BASE = "";
-test.before(async () => {
-  await new Promise<void>((resolve) => ntfy.listen(0, "127.0.0.1", resolve));
-  NTFY_BASE = `http://127.0.0.1:${(ntfy.address() as AddressInfo).port}`;
-});
-test.after(() => ntfy.close());
-
-/** A message in `topic`, as a peer posted it. */
-function arrives(topic: string, text: string, title?: string): Message {
-  const m = message(topic, text, title);
-  (topics[topic] ??= []).push(m);
-  return m;
-}
-const sha = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
-
-/** The ntfy-channel snippet saved as ntfy.channel with `settings`, in a toolkit on the stand-in, its
- *  token given on the Vault; the stand-in emptied. */
-async function savedNtfy(settings: Record<string, unknown>): Promise<void> {
-  for (const k of Object.keys(topics)) delete topics[k];
-  posted.length = 0;
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => server.close());
   await giveKey("ntfy", "127.0.0.1", NTFY_TOKEN);
   const inputs = { op: { type: "string", required: true }, topic: { type: "string" }, since: { type: "string" }, text: { type: "string" }, title: { type: "string" } };
-  const toolkit = { title: "ntfy", base_urls: [NTFY_BASE], secrets: [{ label: "ntfy", as: "bearer" }] };
+  const toolkit = { title: "ntfy", base_urls: [`http://127.0.0.1:${(server.address() as AddressInfo).port}`], secrets: [{ label: "ntfy", as: "bearer" }] };
   const fn = { name: "channel", description: "Reads the inbox, sends to the outbox.", inputs, source: adapted("ntfy-channel", "NTFY", settings) };
   assert.match(await call({ action: "save", service: "ntfy", toolkit, function: fn }), /Saved ntfy\.channel/);
+  const arrives = (topic: string, text: string, title?: string): Message => {
+    const m = message(topic, text, title);
+    topics.set(topic, [...(topics.get(topic) ?? []), m]);
+    return m;
+  };
+  return { posted, arrives };
 }
 
-test("the ntfy-channel snippet, plain: posts to its topics only, under the limit, and reads its inbox without taking anything off it", async () => {
-  await savedNtfy({ key: "ntfy", inbox: ["inbox", "write-only"], outbox: { peer: null }, max_bytes: 100, since: "2h", max_messages: 2, channel: null, framing: null });
-  const send = (input: Record<string, unknown>) => outcome("ntfy.channel", { op: "send", ...input });
-  const read = (input: Record<string, unknown> = {}) => outcome("ntfy.channel", { op: "read", ...input });
+/** How ntfy.channel's `op` with `input` ended. */
+const ntfy = (op: string, input: Record<string, unknown> = {}) => outcome("ntfy.channel", { op, ...input });
+const sha = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
 
-  const { time, ...sent } = await send({ topic: "peer", text: "Hello", title: "Hi ☀" });
-  assert.deepEqual(sent, { topic: "peer", id: `m${seq}`, bytes: 5, signed: false });
-  assert.equal(time, new Date((1760000000 + seq) * 1000).toISOString());
-  assert.deepEqual(posted, [{ topic: "peer", title: `=?UTF-8?B?${Buffer.from("Hi ☀").toString("base64")}?=`, body: "Hello" }], "with the token, the title in RFC 2047's form");
+test("the ntfy-channel snippet, plain: posts to its topics only, under the limit, and reads its inbox without taking anything off it", async (t) => {
+  const { posted, arrives } = await savedNtfy(t, { inbox: ["inbox", "write-only"], outbox: { peer: null }, max_bytes: 100, since: "2h", max_messages: 2, channel: null, framing: null });
+  const send = (input: Record<string, unknown>) => ntfy("send", input);
+  const read = (input: Record<string, unknown> = {}) => ntfy("read", input);
+
+  assert.deepEqual(await send({ topic: "peer", text: "Hello", title: "Hi ☀" }), { topic: "peer", id: "m1", time: new Date(1760000001 * 1000).toISOString(), bytes: 5, signed: false });
+  assert.deepEqual(posted, [{ topic: "peer", title: "Hi ☀", body: "Hello" }], "with the token, the title as it was");
   assert.match(await send({ topic: "inbox", text: "Hi" }), /send posts to peer, not "inbox"/);
   assert.match(await send({ topic: "peer", text: "x".repeat(101) }), /101 bytes, over the 100-byte limit: nothing was sent/);
   assert.match(await send({ topic: "peer", text: "é".repeat(51) }), /102 bytes, over the 100-byte limit/, "counted as UTF-8");
@@ -341,13 +337,13 @@ test("the ntfy-channel snippet, plain: posts to its topics only, under the limit
   assert.match(await read({ since: "7d" }), /ntfy answered 400 \(40008 invalid since parameter\): since is a duration/);
 });
 
-test("the ntfy-channel snippet through a signing channel: signs and frames what it sends, checks the frame and the signature of what it reads, and never posts unsigned", { skip: !hasKeygen && "no ssh-keygen" }, async () => {
+test("the ntfy-channel snippet through a signing channel: signs and frames what it sends, checks the frame and the signature of what it reads, and never posts unsigned", { skip: !hasKeygen && "no ssh-keygen" }, async (t) => {
   const mine = await makeKey("muse", "test-ns");
   const peer = crypto.randomBytes(32);
   await savedChannel({ key: "muse", namespace: "test-ns", me: "me", public: mine, max_age_days: 3, peers: { peer: { key: lineOf(peer), confirmed: true } } });
-  await savedNtfy({ key: "ntfy", inbox: ["inbox"], outbox: { "peer-topic": "peer" }, max_bytes: 4000, since: "2h", max_messages: 50, channel: "chan.channel", framing: { line: "Payload-SHA256" } });
-  const send = (input: Record<string, unknown>) => outcome("ntfy.channel", { op: "send", ...input });
-  const read = async () => (await outcome("ntfy.channel", { op: "read" })).messages.map((m: Record<string, string>) => [m.framing, m.verify, m.payload]);
+  const { posted, arrives } = await savedNtfy(t, { inbox: ["inbox"], outbox: { "peer-topic": "peer" }, max_bytes: 4000, since: "2h", max_messages: 50, channel: "chan.channel", framing: { line: "Payload-SHA256" } });
+  const send = (input: Record<string, unknown>) => ntfy("send", input);
+  const read = async () => (await ntfy("read")).messages.map((m: Record<string, string>) => [m.framing, m.verify, m.payload]);
 
   const sent = await send({ topic: "peer-topic", text: "Reply text", title: "Re" });
   assert.equal(sent.signed, true);
@@ -358,6 +354,14 @@ test("the ntfy-channel snippet through a signing channel: signs and frames what 
   assert.equal(frame, `Payload-SHA256: ${sha(text)}`);
   assert.ok(keygenVerifies(mine, "test-ns", text, `-----BEGIN SSH SIGNATURE-----${sig}`), "the peer's ssh-keygen takes it");
   assert.equal(sent.bytes, Buffer.byteLength(posted[0].body));
+  const quote = "Quoting:\n-----BEGIN SSH SIGNATURE-----\nAAAA\n-----END SSH SIGNATURE-----";
+  await send({ topic: "peer-topic", text: quote });
+  const [quotedFrame, ...quotedRest] = posted[1].body.split("\n");
+  const quoted = quotedRest.join("\n");
+  const at = quoted.lastIndexOf("-----BEGIN SSH SIGNATURE-----");
+  assert.ok(quoted.startsWith(`${quote}\n\nSigned: me to peer at `), "a quoted signature is left as written");
+  assert.equal(quotedFrame, `Payload-SHA256: ${sha(quoted.slice(0, at))}`, "the hash covers the text up to the last signature");
+  assert.ok(keygenVerifies(mine, "test-ns", quoted.slice(0, at), quoted.slice(at)), "the peer's ssh-keygen takes it");
 
   // As a peer frames it: the hash of the text before its signature, which follows with no blank line.
   const now = new Date().toISOString().slice(0, 19);
@@ -367,22 +371,26 @@ test("the ntfy-channel snippet through a signing channel: signs and frames what 
   arrives("inbox", `Payload-SHA256: ${sha(body)}\n${signed.replace("From the peer.", "From someone.")}`);
   arrives("inbox", signed);
   arrives("inbox", "Just text.");
+  const quoting = `Quoting:\n-----BEGIN SSH SIGNATURE-----\nAAAA\n-----END SSH SIGNATURE-----\n\nSigned: peer to me at ${now}Z\n`;
+  const signedQuote = `${quoting}${keygenSign(peer, "test-ns", quoting)}`;
+  arrives("inbox", `Payload-SHA256: ${sha(quoting)}\n${signedQuote}`);
   assert.deepEqual(await read(), [
     ["ok", "result=VALID signer=peer key-confirmed=yes stamp=ok", signed],
     ["mismatch", "result=INVALID reason=bad-signature", signed.replace("From the peer.", "From someone.")],
     ["missing", "result=VALID signer=peer key-confirmed=yes stamp=ok", signed],
     ["missing", "result=UNSIGNED", "Just text."],
+    ["ok", "result=VALID signer=peer key-confirmed=yes stamp=ok", signedQuote],
   ]);
 
   assert.match(await send({ topic: "peer-topic", text: "x".repeat(3700) }), /over the 4000-byte limit: nothing was sent/, "the limit counts the signature and the frame");
   postVault({ ev: "signing-delete", label: "muse" });
   await call({ action: "library" });
   assert.match(await send({ topic: "peer-topic", text: "Hi" }), /chan\.channel failed: .*KEY-MISSING/);
-  assert.equal(posted.length, 1, "nothing goes unsigned");
+  assert.equal(posted.length, 2, "nothing goes unsigned");
 
   await page("toolkit-lock", "ntfy");
   await page("toolkit-unlock", "chan");
   assert.match(await send({ topic: "peer-topic", text: "Hi" }), /ntfy is locked, and a locked toolkit's functions run only locked toolkits' functions: chan isn't locked/);
-  assert.match(await outcome("ntfy.channel", { op: "read" }), /chan isn't locked/, "nor read reports what an unlocked channel says");
-  assert.equal(posted.length, 1);
+  assert.match(await ntfy("read"), /chan isn't locked/, "nor read reports what an unlocked channel says");
+  assert.equal(posted.length, 2);
 });
