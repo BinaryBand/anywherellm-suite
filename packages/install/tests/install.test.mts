@@ -139,7 +139,8 @@ test("with no skill that has pages, no key is asked for or checked", async () =>
 
 // The record of this machine, which the library reads to refuse a target that is this machine.
 import crypto from "node:crypto";
-import { fingerprintOf, recordOf, thisHostPath } from "../src/thishost.mts";
+import { thisHostFile } from "#shared/thishost";
+import { fingerprintOf, recordOf } from "../src/thishost.mts";
 
 const KEY_BLOB = Buffer.from("test host key").toString("base64");
 const KEY_PRINT = `SHA256:${crypto.createHash("sha256").update(Buffer.from(KEY_BLOB, "base64")).digest("base64").replace(/=+$/, "")}`;
@@ -159,7 +160,7 @@ test("a fingerprint is ssh-keygen's: SHA256 of the key, base64 without padding",
 test("install records the host's keys and addresses, again on every run, and says when nothing changed", async () => {
   ctx.host = host();
   await install(ctx, opts());
-  const file = thisHostPath(storage);
+  const file = thisHostFile(storage);
   assert.deepEqual(JSON.parse(fs.readFileSync(file, "utf8")), { fingerprints: [KEY_PRINT], addresses: ["100.89.16.22", "127.0.0.1", "192.168.0.29", "fe80::1"], hostname: "gir" });
   assert.equal(fs.statSync(file).mode & 0o777, 0o644);
   assert.match(printed.join("\n"), /recorded this machine \(1 SSH host key, 4 addresses\)/);
@@ -178,7 +179,7 @@ test("a host with no readable keys is recorded with none, and install still succ
   assert.match(printed.join("\n"), /no SSH host key in/);
   ctx.host = { ...ctx.host, sshDir: path.join(tmp, "no-such-dir") };
   await install(ctx, opts());
-  assert.deepEqual(JSON.parse(fs.readFileSync(thisHostPath(storage), "utf8")).fingerprints, []);
+  assert.deepEqual(JSON.parse(fs.readFileSync(thisHostFile(storage), "utf8")).fingerprints, []);
 });
 
 test("health reports the record missing, drifted, empty, and ok once install has written it", async () => {
@@ -186,7 +187,7 @@ test("health reports the record missing, drifted, empty, and ok once install has
   await install(ctx, opts({ pageKey: "brx-good" }));
   printed.length = 0;
   assert.equal(await health(ctx, opts()), true, printed.join("\n"));
-  fs.rmSync(thisHostPath(storage));
+  fs.rmSync(thisHostFile(storage));
   printed.length = 0;
   assert.equal(await health(ctx, opts()), false);
   assert.match(printed.join("\n"), /FAIL the record of this machine.*missing.*Run install on this machine: it writes it again/);
@@ -214,7 +215,7 @@ test("health reports the record missing, drifted, empty, and ok once install has
 
 test("a link at the record's path is refused, not written through, and install carries on", async () => {
   ctx.host = host();
-  const file = thisHostPath(storage);
+  const file = thisHostFile(storage);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const elsewhere = path.join(tmp, "elsewhere.json");
   fs.writeFileSync(elsewhere, "keep me");

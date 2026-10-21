@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test, { afterEach, beforeEach } from "node:test";
+import { readKept } from "../install/src/pagelinks.mts";
 import { OPEN_PAGES, hiddenFile, linksFile, linksHidden, noteLink, readLinks } from "./page-links.mts";
 
 let storage: string;
@@ -63,23 +64,25 @@ test("a damaged file is replaced, and what it held is not trusted", async () => 
 });
 
 test("a rotation is stamped beside the link, for that page only, and a plain note never stamps", async () => {
+  // Read as the installer's `pages` reads the stamps.
+  const stamps = () => readKept(storage)?.rotated ?? null;
   await noteLink("vault", "/vault-lean/aaa.html");
-  assert.equal(readLinks().rotated, undefined);
+  assert.equal(stamps(), null);
   await noteLink("vault", "/vault-lean/aaa.html", true);
-  const first = readLinks().rotated?.vault;
-  assert.match(first ?? "", /^\d{4}-\d\d-\d\dT[\d:.]+Z$/, "stamped even when the link is the same: the token was replaced and is the same by chance only");
-  assert.equal(readLinks().rotated?.library, undefined);
+  const first = stamps()?.vault;
+  assert.ok(Number.isFinite(first), "stamped even when the link is the same: the token was replaced and is the same by chance only");
+  assert.equal(stamps()?.library, undefined);
   await noteLink("library", "/library-lean/bbb.html", true);
-  assert.deepEqual(Object.keys(readLinks().rotated ?? {}).sort(), ["library", "vault"]);
+  assert.deepEqual(Object.keys(stamps() ?? {}).sort(), ["library", "vault"]);
   await noteLink("vault", "/vault-lean/ccc.html");
-  assert.equal(readLinks().rotated?.vault, first, "a plain note keeps the stamp as it was");
+  assert.equal(stamps()?.vault, first, "a plain note keeps the stamp as it was");
   assert.equal(readLinks().vault, "/vault-lean/ccc.html");
 });
 
-test("only strings are read back, stamps included", () => {
+test("only the paths are read back, as strings", () => {
   fs.mkdirSync(path.dirname(linksFile()), { recursive: true });
   fs.writeFileSync(linksFile(), JSON.stringify({ library: "/library-lean/x.html", vault: 5, rotated: { library: "2026-10-21T00:00:00Z", vault: 3, other: "x" }, extra: 1 }));
-  assert.deepEqual(readLinks(), { library: "/library-lean/x.html", rotated: { library: "2026-10-21T00:00:00Z" } });
+  assert.deepEqual(readLinks(), { library: "/library-lean/x.html" });
   fs.writeFileSync(linksFile(), JSON.stringify({ rotated: "yes", vault: "/vault-lean/y.html" }));
   assert.deepEqual(readLinks(), { vault: "/vault-lean/y.html" });
 });

@@ -7,15 +7,12 @@
 // only reads the file, and refuses every target when it is missing or holds no key, so install
 // writes it again each time it runs, and health says when it is missing or the host has changed.
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { SUITE_DIR } from "#shared/anythingllm";
 import { writeAtomicIfChanged } from "#shared/atomic";
-import { Told } from "#shared/errors";
-import type { ThisHost } from "#shared/thishost";
-import type { Check } from "./addons.mts";
+import { type ThisHost, bare, recorded, sshFingerprint, thisHostFile } from "#shared/thishost";
+import { type Check, refuseLinks } from "./addons.mts";
 
 /** The machine as install sees it: where its SSH host keys are, its interfaces and its name (a test
  *  says another). */
@@ -33,7 +30,7 @@ export function fingerprintOf(line: string): string | null {
   const blob = line.trim().split(/\s+/)[1];
   if (!blob || !/^[A-Za-z0-9+/]+={0,2}$/.test(blob)) return null;
   const key = Buffer.from(blob, "base64");
-  return key.length ? `SHA256:${crypto.createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}` : null;
+  return key.length ? sshFingerprint(key) : null;
 }
 
 /** What this host is: its host keys' fingerprints (none when /etc/ssh has none or can't be read) and
@@ -50,36 +47,16 @@ export function recordOf(host: HostView): ThisHost {
       return [];
     }
   });
-  const addresses = Object.values(host.interfaces).flatMap((list) => (list ?? []).map((a) => a.address.split("%", 1)[0]));
+  const addresses = Object.values(host.interfaces).flatMap((list) => (list ?? []).map((a) => bare(a.address)));
   return { fingerprints: [...new Set(fingerprints)].sort(), addresses: [...new Set(addresses)].sort(), hostname: host.hostname };
 }
-
-/** Refuses a path a link leads somewhere else from: the record is the host's own file, and a
- *  symbolic or hard link there would send what is written, or read, to another. */
-function noLinks(file: string): void {
-  const folder = path.dirname(file);
-  try {
-    if (fs.lstatSync(folder).isSymbolicLink()) throw new Told(`${folder} is a link; the record of this machine isn't written through it`);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  try {
-    const s = fs.lstatSync(file);
-    if (s.isSymbolicLink() || s.nlink > 1 || !s.isFile()) throw new Told(`${file} is a link or not a plain file; the record of this machine isn't written there: remove it and run install again`);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-}
-
-/** The file that records the host in `storage`. */
-export const thisHostPath = (storage: string): string => path.join(storage, SUITE_DIR, "this-host.json");
 
 /** Records this machine in the storage; what it did. It never fails an install: a refusal or an
  *  error is said, and health then reports the file missing. */
 export function putThisHost(storage: string, host: HostView = realHost()): string {
-  const file = thisHostPath(storage);
+  const file = thisHostFile(storage);
   try {
-    noLinks(file);
+    refuseLinks(file, "the record of this machine");
     const record = recordOf(host);
     const wrote = writeAtomicIfChanged(file, `${JSON.stringify(record, null, 2)}\n`, 0o644);
     const note = record.fingerprints.length ? "" : ` (no SSH host key in ${host.sshDir}: the library will refuse every SSH target until this machine has one)`;
@@ -89,19 +66,15 @@ export function putThisHost(storage: string, host: HostView = realHost()): strin
   }
 }
 
-/** Whether the record of this machine is there and says what the machine is now. */
+/** Whether the record of this machine is there, is one as the library reads it (#shared/thishost
+ *  recorded), and says what the machine is now. */
 export function thisHostCheck(storage: string, host: HostView = realHost()): Check {
   const name = "the record of this machine (for SSH targets)";
-  const file = thisHostPath(storage);
-  let held: Partial<ThisHost>;
-  try {
-    held = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (e) {
-    return [name, false, `${(e as NodeJS.ErrnoException).code === "ENOENT" ? "missing" : "can't be read"} (${file}): the library refuses every SSH target without it. Run install on this machine: it writes it again`];
-  }
+  const held = recorded(storage);
+  if ("why" in held) return [name, false, `${held.why}: the library refuses every SSH target without it. Run install on this machine: it writes it again`];
   const now = recordOf(host);
-  const same = (a: unknown, b: string[]) => Array.isArray(a) && a.length === b.length && [...a].sort().every((x, i) => x === b[i]);
-  const drift = [...(same(held.fingerprints, now.fingerprints) ? [] : ["its SSH host keys"]), ...(same(held.addresses, now.addresses) ? [] : ["its addresses"])];
+  const same = (a: string[], b: string[]) => a.length === b.length && [...a].sort().every((x, i) => x === b[i]);
+  const drift = [...(same(held.host.fingerprints, now.fingerprints) ? [] : ["its SSH host keys"]), ...(same(held.host.addresses, now.addresses) ? [] : ["its addresses"])];
   if (drift.length) return [name, false, `differs from what this machine has now: ${drift.join(" and ")}. Run install on this machine: it writes the record again`];
   if (!now.fingerprints.length) return [name, false, `this machine has no SSH host key in ${host.sshDir}, so the library refuses every SSH target: install sshd's keys, then run install`];
   return [name, true, ""];

@@ -202,9 +202,9 @@ test("the first call after the links switch goes on replaces the Vault's names, 
     assert.ok(fs.existsSync(path.join(publicDir, "vault-lean", `${after.token}.html`)), "and the new one is written");
     await called({ action: "guide" }, { workspace: null });
     assert.equal(vaultNames().token, after.token, "once");
-    const { readLinks } = await import("#shared/page-links");
-    assert.equal(readLinks(storage).vault, `/vault-lean/${after.token}.html`);
-    assert.ok(readLinks(storage).rotated?.vault, "stamped as rotated");
+    const { readKept } = await import("../../../install/src/pagelinks.mts");
+    assert.equal(readKept(storage)?.vault, `/vault-lean/${after.token}.html`);
+    assert.ok(readKept(storage)?.rotated?.vault, "stamped as rotated");
   } finally {
     hideLinks(false);
   }

@@ -89,6 +89,9 @@ export function privateName(host: string): boolean {
 /** A URL's host as the fence checks it: an IPv6 address without its brackets. */
 export const bareHost = (url: URL): string => url.hostname.replace(/^\[|\]$/g, "");
 
+/** `url`'s port, its scheme's when it names none. */
+export const portOf = (url: URL): number => Number(url.port) || (url.protocol === "https:" ? 443 : 80);
+
 /** Whether a secret may go to `url` by its scheme: https, or plain http to what the user lets
  *  through (FENCE_ALLOW's hosts, allowed.json's origins). */
 export const secureFor = (url: URL): boolean => url.protocol === "https:" || (url.protocol === "http:" && allows(url.origin));
@@ -232,33 +235,45 @@ export function addressesRefused(host: string, addresses: string[]): string | nu
   return inside ? `${host} resolves to ${inside}, which isn't a public address` : null;
 }
 
-type Lookup = (host: string) => Promise<{ address: string }[]>;
+/** Every address `host` has, or null when it can't be looked up. */
+export type Lookup = (host: string) => Promise<string[] | null>;
+
+/** Every address `host` has, an address being its own; null when it can't be looked up, or not
+ *  within `timeoutMs` when that is given. A resolver that throws rejects. */
+export function lookupAll(host: string, timeoutMs?: number): Promise<string[] | null> {
+  if (net.isIP(host)) return Promise.resolve([host]);
+  return new Promise((resolve) => {
+    const timer = timeoutMs ? setTimeout(() => resolve(null), timeoutMs) : undefined;
+    dns.lookup(host, { all: true, verbatim: true }, (err, all) => {
+      clearTimeout(timer);
+      resolve(err || !all.length ? null : all.map((a) => a.address));
+    });
+  });
+}
+
 const NONE: ReadonlySet<string> = new Set();
 
 /** A fence: `refused(url)` answers why a request to `url` is refused, or null. Lookups are kept for
  *  DNS_TTL_MS; the hosts `allow(origin)` answers for the request's origin are let through, asked only
  *  for a host refused by itself, so a public one costs nothing more (by default, allowedFor). */
 export function makeFence({
-  lookup = (host) => dns.promises.lookup(host, { all: true, verbatim: true }),
+  lookup = (host) => lookupAll(host),
   now = Date.now,
   allow = allowedFor,
 }: { lookup?: Lookup; now?: () => number; allow?: (origin: string) => ReadonlySet<string> } = {}) {
-  const known = new Map<string, { addresses: Promise<string[]>; until: number }>();
-  function addresses(host: string): Promise<string[]> {
+  const known = new Map<string, { addresses: Promise<string[] | null>; until: number }>();
+  function addresses(host: string): Promise<string[] | null> {
     const kept = known.get(host);
     if (kept && kept.until > now()) return kept.addresses;
-    const pending = lookup(host).then((found) => found.map((a) => a.address));
+    const pending = lookup(host);
     const entry = { addresses: pending, until: now() + DNS_TTL_MS };
     known.set(host, entry);
-    pending.catch(() => known.get(host) === entry && known.delete(host));
+    void pending.then((found) => found === null && known.get(host) === entry && known.delete(host));
     return pending;
   }
   async function byAddress(host: string): Promise<string | null> {
-    try {
-      return addressesRefused(host, await addresses(host));
-    } catch {
-      return null; // the request's own lookup fails the same way and says so
-    }
+    const found = await addresses(host);
+    return found && addressesRefused(host, found); // none: the request's own lookup fails the same way and says so
   }
   return async function refused(url: string): Promise<string | null> {
     let parsed: URL;

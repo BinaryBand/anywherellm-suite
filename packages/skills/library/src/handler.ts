@@ -12,7 +12,7 @@
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
 import * as addresses from "#shared/addresses";
-import { baseUrlOf as baseOf, serial, workspaceOf } from "#shared/anythingllm";
+import { baseUrlOf as baseOf, noteBase, serial, workspaceOf } from "#shared/anythingllm";
 import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
@@ -387,7 +387,7 @@ export const runtime = {
     const act = ACTIONS[action];
     if (!act) return `The library's action is ${Object.keys(ACTIONS).join(", ")}, not "${clean(args.action)}".`;
     try {
-      targets.noteBase(baseOf(this));
+      noteBase(baseOf(this));
       await fromPage(this);
       await askDevices(action === "library");
       return await act(args, this);

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { linksFile, readLinks } from "#shared/page-links";
+import { readKept } from "../../../install/src/pagelinks.mts";
 import { call, hideLinks, library, pageState, post, publicDir, reset, storage } from "./harness.mts";
 
 test.beforeEach(reset);
@@ -156,11 +157,11 @@ test("every call settles the names, one that shows no page too, for a chat and f
     assert.notEqual(vaultNames().token, vaultWas.token, "the Vault was replaced by the same call");
     assert.equal(vaultNames().hidden, true);
     assert.ok(!fs.existsSync(path.join(publicDir, "vault-lean", `${vaultWas.token}.html`)), "the old Vault page is gone");
-    const links = readLinks();
+    const links = readKept(storage)!;
     assert.equal(links.library, `/library-lean/${now.token}.html`);
     assert.equal(links.vault, `/vault-lean/${vaultNames().token}.html`);
-    assert.match(String(links.rotated?.library), /^\d{4}-\d\d-\d\dT/, "this page's rotation is recorded");
-    assert.match(String(links.rotated?.vault), /^\d{4}-\d\d-\d\dT/, "and the other's, on its own");
+    assert.ok(Number.isFinite(links.rotated?.library), "this page's rotation is recorded");
+    assert.ok(Number.isFinite(links.rotated?.vault), "and the other's, on its own");
     const kept = names().token;
     await via({ action: "guide" });
     assert.equal(names().token, kept, "once");

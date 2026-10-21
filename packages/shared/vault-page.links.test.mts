@@ -12,6 +12,7 @@ import path from "node:path";
 import test, { afterEach, beforeEach } from "node:test";
 import { SUITE_DIR, pageKeyFile } from "./anythingllm.mts";
 import { writeAtomic } from "./atomic.mts";
+import { readKept } from "../install/src/pagelinks.mts";
 import { hiddenFile, linksFile, readLinks } from "./page-links.mts";
 
 // vault-page.mts imports its page as text, which only the skills' build (esbuild) understands: the
@@ -56,6 +57,8 @@ afterEach(() => {
 const namesFile = () => path.join(storage, "vault-lean", "vault-page.json");
 const names = () => JSON.parse(fs.readFileSync(namesFile(), "utf8")) as { token: string; secret: string; hidden?: true };
 const inPublic = (name: string) => path.join(publicDir, "vault-lean", name);
+/** When each page's link was last replaced, as the installer's `pages` reads it. */
+const stamps = () => readKept(storage)?.rotated ?? null;
 const hide = (on: boolean) => {
   if (on) {
     fs.mkdirSync(path.dirname(hiddenFile()), { recursive: true });
@@ -104,8 +107,8 @@ test("the first show after the switch goes on replaces the old form's names once
   assert.equal(fs.readFileSync(inPublic(`${now.token}-keys.json`), "utf8"), JSON.stringify({ keys: [] }), "this section's state is written under the new name");
   assert.ok(fs.existsSync(inPublic(`${now.token}.html`)));
   assert.equal(readLinks().vault, `/vault-lean/${now.token}.html`);
-  assert.match(readLinks().rotated?.vault ?? "", /^\d{4}-\d\d-\d\dT[\d:.]+Z$/, "the rotation is stamped beside the link");
-  assert.equal(readLinks().rotated?.library, undefined, "and only for the page that was replaced");
+  assert.ok(Number.isFinite(stamps()?.vault), "the rotation is stamped beside the link");
+  assert.equal(stamps()?.library, undefined, "and only for the page that was replaced");
   assert.equal(fs.statSync(linksFile()).mode & 0o777, 0o600);
 });
 
@@ -149,7 +152,7 @@ test("switch on, off, on: the links went out while it was off, so the second on 
   assert.equal(off.token, first.token, "off doesn't rotate");
   assert.equal(off.hidden, undefined, "off drops the mark: the link is given out again");
   assert.equal(readLinks().vault, `/vault-lean/${first.token}.html`);
-  const stamped = readLinks().rotated?.vault;
+  const stamped = stamps()?.vault;
   assert.ok(stamped, "the first rotation is stamped, and an off show doesn't change the stamp");
   hide(true);
   await new Promise((r) => setTimeout(r, 5));
@@ -158,7 +161,7 @@ test("switch on, off, on: the links went out while it was off, so the second on 
   assert.notEqual(second.token, first.token);
   assert.equal(second.hidden, true);
   assert.equal(readLinks().vault, `/vault-lean/${second.token}.html`);
-  assert.notEqual(readLinks().rotated?.vault, stamped, "the second rotation is stamped again");
+  assert.notEqual(stamps()?.vault, stamped, "the second rotation is stamped again");
 });
 
 test("with the switch off the old names stay, unmarked, and the link is noted", async () => {
@@ -222,7 +225,7 @@ test("the page's own rotate keeps the mark of the switch and moves the link", as
   assert.notEqual(after.token, before.token);
   assert.equal(after.hidden, true);
   assert.equal(readLinks().vault, `/vault-lean/${after.token}.html`);
-  assert.ok(readLinks().rotated?.vault, "the page's own rotate is stamped too");
+  assert.ok(stamps()?.vault, "the page's own rotate is stamped too");
   assert.equal(fs.existsSync(inPublic(`${before.token}.html`)), false);
   assert.equal(fs.existsSync(inPublic(`${after.token}.html`)), true);
   hide(false);
@@ -242,7 +245,7 @@ test("settle replaces the names without a page shown: the page is written under 
   assert.equal(fs.existsSync(inPublic("oldtoken-logins.json")), false);
   assert.ok(fs.existsSync(inPublic(`${now.token}.html`)), "the page is there for the link the user is given");
   assert.equal(readLinks().vault, `/vault-lean/${now.token}.html`);
-  assert.ok(readLinks().rotated?.vault);
+  assert.ok(stamps()?.vault);
   await vaultPage.settle("logins", async () => {});
   assert.equal(names().token, now.token, "once");
 });

@@ -104,11 +104,13 @@ export async function giveKey(label: string, site: string, value: string): Promi
   return asked;
 }
 
-/** Forgets the library, the vault and the page between tests, and the switch that keeps the pages'
- *  links from the agent and the file the links are kept in (the pages' key stays). */
+/** Forgets the library, the vault and the page between tests, the switch that keeps the pages'
+ *  links from the agent and the file the links are kept in (the pages' key stays), and AnythingLLM's
+ *  address as a call gave it, as a new process would. */
 export function reset(): void {
   for (const dir of [library, path.join(storage, "vault-lean"), path.join(storage, "documents"), publicDir]) fs.rmSync(dir, { recursive: true, force: true });
   for (const file of [hiddenFile(storage), linksFile(storage)]) fs.rmSync(file, { force: true });
+  delete (globalThis as unknown as Record<symbol, unknown>)[Symbol.for("anywherellm-suite.anythingllm.base")];
 }
 
 /** Turns the switch that keeps the Library page's and the Vault's links from the agent on or off, as

@@ -16,6 +16,7 @@
 // A test that stands a machine up on 127.0.0.1 names it in THISHOST_EXCEPT (a Set on globalThis), and
 // a test can give the record in THISHOST_RECORD; nothing shipped sets either.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -36,18 +37,22 @@ export interface ThisHost {
   hostname: string;
 }
 
-/** Where the installer records this host. */
-export const thisHostFile = (): string => path.join(storageDir(), SUITE_DIR, "this-host.json");
+/** Where the installer records this host, in AnythingLLM's storage `storage`. */
+export const thisHostFile = (storage: string = storageDir()): string => path.join(storage, SUITE_DIR, "this-host.json");
+
+/** `SHA256:…` of an SSH public key's blob, as ssh-keygen -l prints it. */
+export const sshFingerprint = (blob: Buffer): string => `SHA256:${crypto.createHash("sha256").update(blob).digest("base64").replace(/=+$/, "")}`;
 
 const strings = (v: unknown): string[] | null => (Array.isArray(v) && v.every((s) => typeof s === "string") ? (v as string[]) : null);
 
-/** The recorded host, or why there is none: no file, one that can't be read, or one that isn't a record. */
-function recorded(): { host: ThisHost } | { why: string } {
+/** The recorded host, or why there is none: no file, one that can't be read, or one that isn't a
+ *  record. The library reads it from its own storage; health from the one it checks. */
+export function recorded(storage?: string): { host: ThisHost } | { why: string } {
   const g = globalThis as unknown as Record<symbol, ThisHost | undefined>;
   if (g[THISHOST_RECORD]) return { host: g[THISHOST_RECORD] };
   let file: string;
   try {
-    file = thisHostFile();
+    file = thisHostFile(storage);
   } catch (e) {
     return { why: (e as Error).message };
   }
@@ -55,7 +60,7 @@ function recorded(): { host: ThisHost } | { why: string } {
   try {
     text = fs.readFileSync(file, "utf8");
   } catch (e) {
-    return { why: (e as NodeJS.ErrnoException).code === "ENOENT" ? `${file} isn't there` : `${file} can't be read` };
+    return { why: (e as NodeJS.ErrnoException).code === "ENOENT" ? `${file} is missing` : `${file} can't be read` };
   }
   let value: Record<string, unknown>;
   try {
@@ -112,7 +117,15 @@ for (const [address, bits] of [
 for (const [address, bits] of [["::", 128], ["::1", 128], ["fe80::", 10]] as const) ALWAYS.addSubnet(address, bits, "ipv6");
 
 /** An address without its IPv6 zone ("fe80::1%eth0"). */
-const bare = (ip: string): string => ip.split("%", 1)[0];
+export const bare = (ip: string): string => ip.split("%", 1)[0];
+
+/** Whether `ip` is this machine wherever it is said: a loopback, link-local or unspecified address
+ *  (an IPv4 one mapped into IPv6 too), which on any machine means that machine itself. */
+export function alwaysOwn(ip: string): boolean {
+  const a = bare(ip);
+  const kind = net.isIP(a);
+  return kind !== 0 && ALWAYS.check(a, kind === 6 ? "ipv6" : "ipv4");
+}
 
 /** The 16 bytes of an IPv6 address (dotted IPv4 tail allowed), or null when it isn't one. */
 function bytes6(ip: string): number[] | null {
@@ -171,10 +184,7 @@ export function isThisHost(ip: string): boolean {
   const except = (globalThis as unknown as Record<symbol, Set<string> | undefined>)[THISHOST_EXCEPT];
   if (except?.has(address)) return false;
   const mine = ownAddresses();
-  const own = (a: string): boolean => {
-    const family = net.isIP(a) === 6 ? "ipv6" : "ipv4";
-    return ALWAYS.check(a, family) || mine.check(a, family);
-  };
+  const own = (a: string): boolean => alwaysOwn(a) || mine.check(a, net.isIP(a) === 6 ? "ipv6" : "ipv4");
   return own(address) || embedded(address).some((v4) => !except?.has(v4) && own(v4));
 }
 

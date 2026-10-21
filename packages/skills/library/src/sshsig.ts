@@ -4,6 +4,7 @@
 // with the data, so a signature checks only in its own namespace: that is a key's domain.
 
 import crypto from "node:crypto";
+import { sshFingerprint } from "#shared/thishost";
 
 const BEGIN = "-----BEGIN SSH SIGNATURE-----";
 const END = "-----END SSH SIGNATURE-----";
@@ -62,7 +63,7 @@ function blobOf(line: string): Buffer | null {
 }
 
 /** A public key as `ssh-keygen -l` names it. */
-export const fingerprint = (pub: Buffer): string => `SHA256:${crypto.createHash("sha256").update(wire(pub)).digest("base64").replace(/=+$/, "")}`;
+export const fingerprint = (pub: Buffer): string => sshFingerprint(wire(pub));
 
 /** A seed as base64, checked: 32 bytes; null when it isn't one. */
 export function seedOf(text: string): Buffer | null {

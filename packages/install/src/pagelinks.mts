@@ -7,11 +7,11 @@
 // links file exists so that nobody needs to.
 
 import fs from "node:fs";
-import path from "node:path";
 import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hiddenFile, linksFile, type PageKind } from "#shared/page-links";
-import type { Check } from "./addons.mts";
+import { eventsDir } from "#shared/pages";
+import { type Check, refuseLinks, writable } from "./addons.mts";
 
 const PAGE_PATH = /^\/[\w.-]+\/[\w.-]+\.html$/;
 
@@ -24,24 +24,13 @@ export interface Kept extends Partial<Record<PageKind, string>> {
   rotated: Partial<Record<PageKind, number>> | null;
 }
 
-/** What a file operation on the storage says when the storage isn't the user's to use. */
-function owner<T>(file: string, what: string, operation: () => T): T {
-  try {
-    return operation();
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code !== "EACCES" && code !== "EPERM") throw e;
-    throw new Told(`can't ${what} ${file}: run it as the storage's owner`);
-  }
-}
-
 /** The links the skills kept, or null when there is no links file yet. A file that is unreadable or
  *  not what the skills write is a refusal that says how it is made again. */
 export function readKept(storage: string): Kept | null {
   const file = linksFile(storage);
   let text: string;
   try {
-    text = owner(file, "read", () => fs.readFileSync(file, "utf8"));
+    text = writable(file, () => fs.readFileSync(file, "utf8"), "read");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw e;
@@ -75,38 +64,21 @@ export function readKept(storage: string): Kept | null {
   return links;
 }
 
-/** Refuses a switch path a link leads somewhere else from: what is written there, or removed, would
- *  be another file's. */
-function plainFile(file: string): void {
-  const folder = path.dirname(file);
-  try {
-    if (fs.lstatSync(folder).isSymbolicLink()) throw new Told(`${folder} is a link; the switch isn't kept through it`);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-  try {
-    const s = fs.lstatSync(file);
-    if (s.isSymbolicLink() || s.nlink > 1 || !s.isFile()) throw new Told(`${file} is a link or not a plain file; remove it by hand`);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
-  }
-}
-
 /** Makes the switch unless it is there (then its time stays); whether it did. */
 export function hide(storage: string, now: Date = new Date()): boolean {
   const file = hiddenFile(storage);
-  plainFile(file);
+  refuseLinks(file, "the switch");
   if (fs.existsSync(file)) return false;
-  owner(file, "write", () => writeAtomic(file, `${now.toISOString()}\n`, 0o644));
+  writable(file, () => writeAtomic(file, `${now.toISOString()}\n`, 0o644));
   return true;
 }
 
 /** Removes the switch; whether there was one. */
 export function show(storage: string): boolean {
   const file = hiddenFile(storage);
-  plainFile(file);
+  refuseLinks(file, "the switch");
   if (!fs.existsSync(file)) return false;
-  owner(file, "remove", () => fs.rmSync(file));
+  writable(file, () => fs.rmSync(file), "remove");
   return true;
 }
 
@@ -125,7 +97,7 @@ export function waitingEvents(storage: string): Waiting {
   const waiting: Waiting = { keys: 0, logins: 0, library: 0, total: 0 };
   let names: string[] = [];
   try {
-    names = fs.readdirSync(path.join(storage, "documents", "custom-documents"));
+    names = fs.readdirSync(eventsDir(storage));
   } catch {
     return waiting;
   }
@@ -139,13 +111,10 @@ export function waitingEvents(storage: string): Waiting {
   return waiting;
 }
 
-/** Whether the links are kept from the agent (the switch is there). */
-export const hidden = (storage: string): boolean => fs.existsSync(hiddenFile(storage));
-
-/** When the switch was made, to the second; null when there is none. */
-export function hiddenSince(storage: string): string | null {
+/** When the switch was made; null when there is none (the links are given to the agent). */
+export function hiddenSince(storage: string): Date | null {
   try {
-    return fs.statSync(hiddenFile(storage)).mtime.toISOString().replace(/\.\d+Z$/, "Z");
+    return fs.statSync(hiddenFile(storage)).mtime;
   } catch {
     return null;
   }
@@ -156,7 +125,7 @@ export function hiddenSince(storage: string): string | null {
 export function linksCheck(storage: string): Check {
   const name = "the pages' links";
   const since = hiddenSince(storage);
-  const way = since ? `switch on since ${since}: kept from the agent` : "switch off: given to the agent too (pages --hide keeps them from it)";
+  const way = since ? `switch on since ${since.toISOString().replace(/\.\d+Z$/, "Z")}: kept from the agent` : "switch off: given to the agent too (pages --hide keeps them from it)";
   try {
     readKept(storage);
     return [name, true, way];

@@ -36,7 +36,7 @@ test("the fence refuses a host that resolves to a private address, and keeps loo
   let lookups = 0;
   let clock = 0;
   const table: Record<string, string[]> = { "public.example": ["93.184.215.14"], "sneaky.example": ["93.184.215.14", "192.168.1.1"] };
-  const refused = makeFence({ lookup: async (host) => (lookups++, (table[host] || []).map((address) => ({ address }))), now: () => clock });
+  const refused = makeFence({ lookup: async (host) => (lookups++, table[host] || []), now: () => clock });
   assert.equal(await refused("https://public.example/a"), null);
   assert.match((await refused("https://sneaky.example/"))!, /resolves to 192\.168\.1\.1/);
   assert.match((await refused("http://127.0.0.1:3001/api"))!, /isn't a public address/);
@@ -53,14 +53,14 @@ test("the fence refuses a host that resolves to a private address, and keeps loo
 });
 
 test("a name that doesn't resolve is left to the request's own lookup, which fails it", async () => {
-  const refused = makeFence({ lookup: async () => Promise.reject(new Error("ENOTFOUND")) });
+  const refused = makeFence({ lookup: async () => null });
   assert.equal(await refused("https://nowhere.example/"), null);
 });
 
 test("hosts the user lets through in FENCE_ALLOW pass the fence", async () => {
   assert.deepEqual(allowedHosts({ FENCE_ALLOW: " NAS.lan, 127.0.0.1 ,," }), ["nas.lan", "127.0.0.1"]);
   assert.deepEqual(allowedHosts({}), []);
-  const refused = makeFence({ allow: () => new Set(["nas.lan", "127.0.0.1"]), lookup: async () => [{ address: "192.168.1.5" }] });
+  const refused = makeFence({ allow: () => new Set(["nas.lan", "127.0.0.1"]), lookup: async () => ["192.168.1.5"] });
   assert.equal(await refused("http://NAS.lan:5000/"), null);
   assert.equal(await refused("http://127.0.0.1:8080/"), null);
   assert.match((await refused("http://127.0.0.2/"))!, /isn't a public address/);
@@ -77,7 +77,7 @@ test("origins the user let through on the Vault page pass too, on their own port
   write({ origins: [{ origin: "http://Muse-VM:8463", added: "2026-10-20T00:00:00Z" }, { origin: "not an origin" }] }, 1000);
   assert.deepEqual(alwaysAllowed(), ["http://muse-vm:8463"]);
   assert.deepEqual(allowedHosts({}), [], "FENCE_ALLOW's hosts are its own");
-  const refused = makeFence({ lookup: async () => [{ address: "100.101.102.103" }] });
+  const refused = makeFence({ lookup: async () => ["100.101.102.103"] });
   assert.equal(await refused("http://muse-vm:8463/v1/health"), null, "the browser's fence reads it for each request");
   assert.match((await refused("http://muse-vm:3001/"))!, /on this machine or its network/, "another port on the same host is still refused");
   assert.match((await refused("https://muse-vm:8463/"))!, /on this machine or its network/, "another scheme is still refused");
@@ -111,7 +111,7 @@ test("the skills' own pages and AnythingLLM's upload for them are never reached,
   const never = ["/vault-lean/abc.html", "/library-lean/abc.json", "/browser-lean/x", "/apps-lean/t.html", "/api/browser-extension/upload-content", "/API/Browser-Extension/upload-content", "//vault-lean//abc.html", "/%76ault-lean/abc.html", "/library-lean%2Fabc.html", "/vault-lean"];
   for (const p of never) assert.match(pathRefused(new URL(`https://ai.example.com${p}`)) ?? "", /never reaches: the user acts on them/, p);
   for (const p of ["/", "/api/v1/workspaces", "/vault-leaner/x", "/docs/library-lean/x", "/api/browser-extensions"]) assert.equal(pathRefused(new URL(`https://ai.example.com${p}`)), null, p);
-  const refused = makeFence({ allow: () => new Set(["127.0.0.1"]), lookup: async () => [{ address: "93.184.216.34" }] });
+  const refused = makeFence({ allow: () => new Set(["127.0.0.1"]), lookup: async () => ["93.184.216.34"] });
   assert.match((await refused("http://127.0.0.1:3001/library-lean/t.html"))!, /never reaches/, "even let through");
   assert.match((await refused("https://ai.example.com/api/browser-extension/upload-content"))!, /never reaches/, "even public");
   assert.equal(await refused("https://ai.example.com/"), null);

@@ -92,7 +92,7 @@ test("the record fails closed: missing, empty, garbage or not a record is not us
     assert.match(u.ok ? "" : u.reason, /run the installer on the host/);
   };
   assert.equal(thisHostRecorded(), false);
-  bad(/isn't there/);
+  bad(/is missing/);
   write(JSON.stringify(record({ fingerprints: [] })));
   assert.equal(thisHostRecorded(), true);
   bad(/no SSH host key/);

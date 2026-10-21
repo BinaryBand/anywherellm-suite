@@ -3,11 +3,10 @@
 // links are the root-relative paths the skills keep in <storage>/anywherellm-suite/page-links.json
 // (shared/page-links.mts); with ANYTHINGLLM_URL set they print as full addresses.
 
-import fs from "node:fs";
 import { hiddenFile } from "#shared/page-links";
 import { Told } from "#shared/errors";
 import { storageFor, type Ctx } from "./install.mts";
-import { hidden, hide, readKept, show, waitingEvents, type Kept } from "./pagelinks.mts";
+import { hiddenSince, hide, readKept, show, waitingEvents, type Kept } from "./pagelinks.mts";
 
 export interface PagesOptions {
   storage?: string;
@@ -72,9 +71,10 @@ export function pages(ctx: Ctx, opts: PagesOptions = {}): number {
   ctx.print(`Library page: ${at(links.library) ?? "none (the library skill isn't installed, or hasn't shown it yet)"}`);
   ctx.print(`Vault:        ${at(links.vault) ?? "none (no skill has shown it yet)"}`);
   if (!base) ctx.print("(root-relative: set ANYTHINGLLM_URL to AnythingLLM's address to print full ones)");
-  if (hidden(storage)) {
+  const since = hiddenSince(storage);
+  if (since) {
     ctx.print("The agent isn't given these links.");
-    for (const line of staleLines(links, fs.statSync(hiddenFile(storage)).mtimeMs)) ctx.print(line);
+    for (const line of staleLines(links, since.getTime())) ctx.print(line);
   } else {
     ctx.print("The agent is given these links too (pages --hide keeps them from it).");
   }

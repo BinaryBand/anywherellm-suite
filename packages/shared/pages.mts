@@ -108,8 +108,8 @@ export function pageKey(): string {
   return key;
 }
 
-/** Where AnythingLLM's collector writes what a page posts. */
-export const eventsDir = (): string => path.join(storageDir(), "documents", "custom-documents");
+/** Where AnythingLLM's collector writes what a page posts, in the storage `storage`. */
+export const eventsDir = (storage: string = storageDir()): string => path.join(storage, "documents", "custom-documents");
 
 /** The events waiting for `title`, oldest first, each claimed (renamed, so no other process takes it
  *  too) and deleted: what each page posted, as it posted it (parsed JSON), or null for one that

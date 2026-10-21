@@ -83,6 +83,13 @@ export const workspaceOf = (self: Invoked | undefined): string | null => self?.s
 export const baseUrlOf = (self: { runtimeArgs?: Record<string, string | undefined> } | undefined): string | null =>
   String(self?.runtimeArgs?.ANYTHINGLLM_URL ?? "").trim().replace(/\/+$/, "") || null;
 
+/** AnythingLLM's address as a skill's call last gave it (baseUrlOf), for what runs between calls (a
+ *  page's events, a target's first use); null until one did. Kept for the calls of this process,
+ *  whichever skill made them: a call without one leaves it as it was. */
+const lastKnown = () => perProcess("anythingllm.base", () => ({ base: null as string | null }));
+export const noteBase = (base: string | null): void => void (base && (lastKnown().base = base));
+export const lastBase = (): string | null => lastKnown().base;
+
 /** The time a scheduled job has left, in the process AnythingLLM forks for each job's run
  *  (jobs/run-scheduled-job.js, which ends it at SCHEDULED_JOB_TIMEOUT_MS, 5 minutes by default), so
  *  the process's age is the job's; null in any other process. */

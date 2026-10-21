@@ -847,7 +847,7 @@ test("without a good record of this machine no target is saved or used", async (
   assert.equal(result(await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } })).stdout, "hi\n", "with the record it is used");
   const writeRecord = (text: string) => (fs.mkdirSync(path.dirname(recordFile()), { recursive: true }), fs.writeFileSync(recordFile(), text));
   const cases: [string, () => void, RegExp][] = [
-    ["no file", () => fs.rmSync(recordFile(), { force: true }), /this machine isn't recorded.*isn't there.*run the installer on the host/],
+    ["no file", () => fs.rmSync(recordFile(), { force: true }), /this machine isn't recorded.*is missing.*run the installer on the host/],
     ["a file that isn't JSON", () => writeRecord("not json"), /this machine isn't recorded.*isn't JSON/],
     ["a file that isn't a record", () => writeRecord('{"fingerprints":"x"}'), /this machine isn't recorded.*isn't a record of this machine/],
     ["no host key in it", () => writeRecord(JSON.stringify({ fingerprints: [], addresses: [], hostname: "h" })), /holds no SSH host key.*run the installer on the host/],

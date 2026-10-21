@@ -35,18 +35,37 @@ export const INNER_STORAGE = "/app/server/storage";
 type Obj = Record<string, unknown>;
 export type Check = [what: string, ok: boolean, detail: string];
 
-const skillDir = (storage: string, skill: Skill): string => path.join(storage, "plugins", "agent-skills", skill.hubId);
+/** Where AnythingLLM keeps the skill in `storage`. */
+export const skillDir = (storage: string, skill: Skill): string => path.join(storage, "plugins", "agent-skills", skill.hubId);
 
-/** Runs a file operation, saying what to do when the storage isn't the user's to write. */
-function writable<T>(file: string, operation: () => T): T {
+/** Runs a file operation that `verb`s `file`, saying what to do when the storage isn't the user's to use. */
+export function writable<T>(file: string, operation: () => T, verb = "write"): T {
   try {
     return operation();
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
     if (code !== "EACCES" && code !== "EPERM") throw e;
     throw new Told(
-      `can't write ${file}: the storage belongs to another user, likely the container's. Run install as that user, or for rootless podman inside \`podman unshare\`, or start the container with --userns=keep-id`,
+      `can't ${verb} ${file}: the storage belongs to another user, likely the container's: run it as the storage's owner (for rootless podman, inside \`podman unshare\`), or start the container with --userns=keep-id`,
     );
+  }
+}
+
+/** Refuses a path a link leads somewhere else from: `what` (a file of the owner's on the host) isn't
+ *  kept through a symbolic link, at a hard link or in a folder that is a link, since what is written
+ *  there, or removed, would be another file's. */
+export function refuseLinks(file: string, what: string): void {
+  const folder = path.dirname(file);
+  try {
+    if (fs.lstatSync(folder).isSymbolicLink()) throw new Told(`${folder} is a link; ${what} isn't kept through it`);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
+  }
+  try {
+    const s = fs.lstatSync(file);
+    if (s.isSymbolicLink() || s.nlink > 1 || !s.isFile()) throw new Told(`${file} is a link or not a plain file; ${what} isn't kept there: remove it by hand`);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
 }
 

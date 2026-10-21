@@ -13,35 +13,18 @@
 // port. What can't be told (a name that can't be looked up; neither the record nor AnythingLLM's
 // address) is refused, and the page says why.
 
-import dns from "node:dns";
 import net from "node:net";
-import { perProcess, storageDir } from "./anythingllm.mts";
+import { lastBase, noteBase, perProcess, storageDir } from "./anythingllm.mts";
 import { readJson, updateJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
-import { allowedFile, bareHost, originOf, privateAddress, privateName, recentlyRefused } from "./fence.mts";
+import { type Lookup, allowedFile, bareHost, lookupAll, originOf, portOf, privateAddress, privateName, recentlyRefused } from "./fence.mts";
 import { OWN_PORTS, canonicalHost, isThisHost, thisHostRecorded } from "./thishost.mts";
 import * as vaultPage from "./vault-page.mts";
 
 type Allowed = { origins?: { origin?: unknown; added?: unknown }[] };
 
-/** Every address `host` has, or null when it can't be looked up. */
-export type Lookup = (host: string) => Promise<string[] | null>;
-const lookupAll: Lookup = (host) =>
-  net.isIP(host)
-    ? Promise.resolve([host])
-    : dns.promises.lookup(host, { all: true, verbatim: true }).then(
-        (found) => (found.length ? found.map((a) => a.address) : null),
-        () => null,
-      );
-
-/** AnythingLLM's address as a skill's call last gave it (its ANYTHINGLLM_URL setting), for the
- *  events applied between calls; null until one did. Kept for the calls of this process. */
-const known = () => perProcess("addresses.base", () => ({ base: null as string | null }));
-
 /** Why the last event the section posted was refused, for the page to say once (by `n`). */
 const told = () => perProcess("addresses.told", () => ({ result: null as { n: number; error: string } | null }));
-
-const portOf = (url: URL): number => Number(url.port) || (url.protocol === "https:" ? 443 : 80);
 
 /** Whether `ip` is a loopback address (127.0.0.0/8, ::1; an IPv4-mapped one as its IPv4). */
 const loopback = (ip: string): boolean => {
@@ -51,7 +34,7 @@ const loopback = (ip: string): boolean => {
 
 /** Why `origin` isn't let through, or null: AnythingLLM's address `base` and `lookup` say where its
  *  own services are. */
-export async function refusalOf(origin: string, base: string | null, lookup: Lookup = lookupAll): Promise<string | null> {
+export async function refusalOf(origin: string, base: string | null, lookup: Lookup = (host) => lookupAll(host)): Promise<string | null> {
   const url = new URL(origin);
   const host = bareHost(url);
   const port = portOf(url);
@@ -84,9 +67,9 @@ function originChecked(raw: unknown): string {
 }
 
 /** Lets `raw`'s origin through (allowed.json), unless refusalOf says why not; answers the origin. */
-export async function allow(raw: unknown, lookup: Lookup = lookupAll): Promise<string> {
+export async function allow(raw: unknown, lookup: Lookup = (host) => lookupAll(host)): Promise<string> {
   const origin = originChecked(raw);
-  const why = await refusalOf(origin, known().base, lookup);
+  const why = await refusalOf(origin, lastBase(), lookup);
   if (why) throw new Told(`${origin} isn't let through: ${why}`);
   await updateJson<Allowed, void>(allowedFile(storageDir()), () => ({}), (a) => {
     const origins = Array.isArray(a.origins) ? a.origins : (a.origins = []);
@@ -154,14 +137,14 @@ async function drain(): Promise<void> {
 /** Applies what the section posted, for a call, in its turn with its watch's; `base` is AnythingLLM's
  *  address as the call has it (null: not set). */
 export function caughtUp(base: string | null): Promise<void> {
-  if (base) known().base = base;
+  noteBase(base);
   return vaultPage.inTurnFor("addresses", drain);
 }
 
 /** Writes the section beside the Vault a skill just showed, and applies its events as they come for a
  *  while, as the skill's own section's are. */
 export function show(base: string | null): void {
-  if (base) known().base = base;
+  noteBase(base);
   refresh();
   vaultPage.watchFor("addresses", drain);
 }

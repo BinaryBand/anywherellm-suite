@@ -16,7 +16,7 @@ import { SUITE_DIR, storageDir } from "./anythingllm.mts";
 import { readJson, updateJson } from "./atomic.mts";
 
 export type PageKind = "library" | "vault";
-export type Links = Partial<Record<PageKind, string>> & { rotated?: Partial<Record<PageKind, string>> };
+export type Links = Partial<Record<PageKind, string>>;
 
 /** The switch: its presence means the links are kept from the agent. */
 export const hiddenFile = (storage: string = storageDir()): string => path.join(storage, SUITE_DIR, "page-links-hidden");
@@ -31,18 +31,13 @@ export const linksHidden = (storage: string = storageDir()): boolean => fs.exist
 export const OPEN_PAGES = "in AnywhereLLM Lite, or with `anywherellm-suite pages` on the AnythingLLM host";
 
 /** The links kept now; none for a page not shown yet. A file that can't be read or parsed is none:
- *  the links are derived from the pages and written again at the next show. Only strings are kept. */
+ *  the links are derived from the pages and written again at the next show. Only strings are kept;
+ *  the rotation stamps are for whoever shows the links (the installer's `pages` reads them). */
 export function readLinks(storage: string = storageDir()): Links {
   try {
     const found = readJson<Record<string, unknown>>(linksFile(storage), () => ({}));
     const links: Links = {};
     for (const kind of ["library", "vault"] as const) if (typeof found[kind] === "string") links[kind] = found[kind] as string;
-    const stamps = found.rotated;
-    if (stamps && typeof stamps === "object") {
-      const rotated: Partial<Record<PageKind, string>> = {};
-      for (const kind of ["library", "vault"] as const) if (typeof (stamps as Record<string, unknown>)[kind] === "string") rotated[kind] = (stamps as Record<string, string>)[kind];
-      if (Object.keys(rotated).length) links.rotated = rotated;
-    }
     return links;
   } catch {
     return {};

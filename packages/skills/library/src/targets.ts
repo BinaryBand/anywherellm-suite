@@ -14,17 +14,16 @@
 
 import { isUtf8 } from "node:buffer";
 import crypto from "node:crypto";
-import dns from "node:dns";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { Client, utils, type ClientChannel, type SFTPWrapper } from "ssh2";
-import { perProcess, storageDir } from "#shared/anythingllm";
-import { NetError, hostRefused } from "#shared/fence";
+import { lastBase, perProcess, storageDir } from "#shared/anythingllm";
+import { NetError, bareHost, hostRefused, lookupAll, portOf } from "#shared/fence";
 import { connect, send } from "#shared/net";
 import { removePublic, writePublic } from "#shared/pages";
-import { OWN_PORTS, thisHostAddresses, thisHostKeyRefusal, thisHostRefusal, thisHostUsable } from "#shared/thishost";
+import { OWN_PORTS, alwaysOwn, bare, sshFingerprint, thisHostAddresses, thisHostKeyRefusal, thisHostRefusal, thisHostUsable } from "#shared/thishost";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
 import { countUse } from "./secrets";
@@ -119,9 +118,6 @@ export function nameOf(raw: unknown): string {
 /** The saved targets, without their keys. */
 export const targets = (): Target[] => vault.entries().filter((e): e is Entry => e.kind === "ssh").map(shown);
 
-/** The SHA-256 fingerprint of a host key, as ssh-keygen -l writes it. */
-const fingerprintOf = (key: Buffer): string => `SHA256:${crypto.createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
-
 /** A target as the user gives it on the page; `key` is a pasted private key, opened from its seal,
  *  or empty to keep the one saved (or, for a new target, make one). */
 export interface Given {
@@ -140,12 +136,8 @@ export interface Given {
  *  goes to). */
 async function thisMachine(host: string): Promise<string | null> {
   if (net.isIP(host)) return thisHostRefusal(host);
-  const found = await new Promise<dns.LookupAddress[]>((resolve) => {
-    const timer = setTimeout(() => resolve([]), 3000);
-    dns.lookup(host, { all: true, verbatim: true }, (err, addresses) => (clearTimeout(timer), resolve(err ? [] : addresses)));
-  });
-  for (const a of found) {
-    const why = thisHostRefusal(a.address);
+  for (const a of (await lookupAll(host, 3000)) ?? []) {
+    const why = thisHostRefusal(a);
     if (why) return `${host} resolves to ${why}`;
   }
   return null;
@@ -207,11 +199,6 @@ export const remove = (label: string): Promise<boolean> =>
     return v.entries.length < before;
   });
 
-/** AnythingLLM's own address as the last call knew it (ANYTHINGLLM_URL), which a target is asked to
- *  fetch a page from; null when it isn't known. Kept for the calls of this process. */
-const known = () => perProcess("library-lean.ssh-base", () => ({ base: null as string | null }));
-export const noteBase = (base: string | null): void => void (known().base = base);
-
 /** An address a fixed command can carry safely: scheme, host (or [IPv6]) and port, nothing else. */
 const ADDRESS = /^https?:\/\/(\[[0-9a-f:]+\]|[a-z0-9.-]+)(:\d{1,5})?$/i;
 
@@ -227,14 +214,6 @@ const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
 
 const MAX_PROBES = 40;
 
-/** The address of an interface that a machine could reach this one by: not the machine's own loopback,
- *  link-local or unspecified one, which on the machine means itself. */
-function outside(address: string): boolean {
-  const a = address.split("%", 1)[0];
-  if (net.isIP(a) === 4) return !/^(127\.|0\.|169\.254\.)/.test(a);
-  return net.isIP(a) === 6 && !/^(::1?|fe[89ab][0-9a-f]:)/i.test(a);
-}
-
 /** What a machine is asked to fetch `rel` from: AnythingLLM's own address as it is given (ANYTHINGLLM_URL),
  *  and each of this host's recorded addresses on OWN_PORTS (the host, reached from another machine
  *  on the network, shows one of them). Each is checked against ADDRESS, so a fixed command can
@@ -243,8 +222,10 @@ function probes(base: string | null, rel: string): string[] {
   const urls = new Set<string>();
   if (base && ADDRESS.test(base)) urls.add(`${base}/${rel}`);
   for (const raw of thisHostAddresses()) {
-    const a = raw.split("%", 1)[0];
-    if (!outside(a)) continue;
+    // Only an address a machine could reach this one by: not a loopback, link-local or unspecified
+    // one, which on the machine means itself.
+    const a = bare(raw);
+    if (!net.isIP(a) || alwaysOwn(a)) continue;
     for (const port of OWN_PORTS) {
       const origin = `${port === 443 ? "https" : "http"}://${net.isIP(a) === 6 ? `[${a}]` : a}:${port}`;
       if (ADDRESS.test(origin)) urls.add(`${origin}/${rel}`);
@@ -284,7 +265,7 @@ async function reaches(client: Client, base: string | null, until: number, signa
 /** `host:port` of an address a machine fetched a page from. */
 const hostPort = (url: string): string => {
   const u = new URL(url);
-  return `${u.hostname}:${u.port || (u.protocol === "https:" ? 443 : 80)}`;
+  return `${u.hostname}:${portOf(u)}`;
 };
 
 /** Why the machine is this one's own, or what it can see of its storage; null when neither shows. A
@@ -311,7 +292,7 @@ async function ownsStorage(client: Client, until: number, signal?: AbortSignal):
 /** AnythingLLM without a password, from its own unauthenticated answer; false when it can't tell. */
 async function openToAll(base: string): Promise<boolean> {
   try {
-    const host = new URL(base).hostname.replace(/^\[|\]$/g, "");
+    const host = bareHost(new URL(base));
     const answer = await send({ url: `${base}/api/setup-complete`, allow: [host], timeout: 5000, maxBytes: 64 * 1024 });
     const body = JSON.parse(answer.body.toString("utf8"));
     const r = body?.results ?? body;
@@ -375,7 +356,7 @@ export async function check(label: string, base: string | null = null): Promise<
       async (client) => {
         await say(label, "signed in");
         signedIn = true;
-        seen = await looked(client, base ?? known().base, until);
+        seen = await looked(client, base ?? lastBase(), until);
       },
       true,
     );
@@ -438,7 +419,7 @@ async function open(e: Readonly<Entry>, until: number, signal?: AbortSignal): Pr
       resolve(client);
     });
     client.once("error", failed);
-    client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => ((seen = fingerprintOf(key)), (ownKey = thisHostKeyRefusal(seen)), !ownKey && seen === e.fingerprint) });
+    client.connect({ sock, username: e.login, privateKey: e.key, readyTimeout: timeout, hostVerifier: (key: Buffer) => ((seen = sshFingerprint(key)), (ownKey = thisHostKeyRefusal(seen)), !ownKey && seen === e.fingerprint) });
   });
 }
 
@@ -485,8 +466,8 @@ async function withTarget<T>(label: string, { job, signal }: Use, until: number,
     const client = await open(e, until, signal);
     try {
       // The first use since it was saved looks at what it reaches too, when AnythingLLM's address is known.
-      if (!checking && !e.probed && known().base) {
-        const seen = await looked(client, known().base, until, signal);
+      if (!checking && !e.probed && lastBase()) {
+        const seen = await looked(client, lastBase(), until, signal);
         await keep(label, seen);
         if (seen.barred) throw new LibraryError(`the target "${label}" isn't used: ${seen.barred}`);
       }
