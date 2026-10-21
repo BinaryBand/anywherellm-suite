@@ -13,7 +13,8 @@ import test, { afterEach, beforeEach } from "node:test";
 import { SUITE_DIR, pageKeyFile } from "./anythingllm.mts";
 import { writeAtomic } from "./atomic.mts";
 import { readKept } from "../install/src/pagelinks.mts";
-import { hiddenFile, linksFile, readLinks } from "./page-links.mts";
+import { linksFile, readLinks } from "./page-links.mts";
+import { postEvent, setLinksHidden } from "./test-helpers.mts";
 
 // vault-page.mts imports its page as text, which only the skills' build (esbuild) understands: the
 // test bundles it the same way and loads that.
@@ -59,12 +60,7 @@ const names = () => JSON.parse(fs.readFileSync(namesFile(), "utf8")) as { token:
 const inPublic = (name: string) => path.join(publicDir, "vault-lean", name);
 /** When each page's link was last replaced, as the installer's `pages` reads it. */
 const stamps = () => readKept(storage)?.rotated ?? null;
-const hide = (on: boolean) => {
-  if (on) {
-    fs.mkdirSync(path.dirname(hiddenFile()), { recursive: true });
-    fs.writeFileSync(hiddenFile(), "2026-10-21T00:00:00Z\n");
-  } else fs.rmSync(hiddenFile(), { force: true });
-};
+const hide = (on: boolean) => setLinksHidden(storage, on);
 
 /** A Vault as the version before the switch left it: {token, secret} and its public files. */
 function seedOld() {
@@ -73,17 +69,8 @@ function seedOld() {
   for (const f of ["oldtoken.html", "oldtoken-keys.json", "oldtoken-logins.json"]) fs.writeFileSync(inPublic(f), `old ${f}`);
 }
 
-let posts = 0;
-/** What the Vault's keys section posts, as AnythingLLM's collector writes it. */
-function post(event: Record<string, unknown>) {
-  const dir = path.join(storage, "documents", "custom-documents");
-  fs.mkdirSync(dir, { recursive: true });
-  const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-vault-lean-keys-${id}.json`);
-  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, ...event }) }));
-  const at = new Date(Date.now() + ++posts * 10);
-  fs.utimesSync(file, at, at);
-}
+/** What the Vault's keys section posts (#shared/test-helpers postEvent). */
+const post = (event: Record<string, unknown>) => postEvent(storage, "vault-lean-keys", { vault_lean_event: 1, ...event });
 
 /** A section's drain that keeps the events it was given. */
 const collector = () => {

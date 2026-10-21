@@ -11,7 +11,7 @@ import { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
-import { hiddenFile } from "#shared/page-links";
+import { postEvent, setLinksHidden } from "#shared/test-helpers";
 
 const require = createRequire(import.meta.url);
 export const testsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -99,7 +99,6 @@ export function seal(text: string, pub = tabConfig().pub): string {
   return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
 }
 
-let posts = 0;
 
 /** The Vault's names and its logins section, as the tab pages link to it and the Vault reads it. */
 export function vaultNames(): { token: string; secret: string } {
@@ -112,34 +111,14 @@ export const vaultLogins = (): { id: string; site: string; user: string; kind: s
 export const vaultAddresses = (): { origins: { origin: string }[]; refused: { origin: string }[]; result: { error: string } | null } =>
   JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultNames().token}-addresses.json`), "utf8"));
 
-/** What the Vault posts in its logins section (or `section`), written as AnythingLLM's collector writes it. */
-export function postVault(event: Record<string, unknown>, section: "logins" | "addresses" = "logins"): void {
-  const dir = path.join(storage, "documents", "custom-documents");
-  fs.mkdirSync(dir, { recursive: true });
-  const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-vault-lean-${section}-${id}.json`);
-  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, secret: vaultNames().secret, ...event }) }));
-  const at = new Date(Date.now() + ++posts * 10);
-  fs.utimesSync(file, at, at);
-}
+/** What the Vault posts in its logins section (or `section`) (#shared/test-helpers postEvent). */
+export const postVault = (event: Record<string, unknown>, section: "logins" | "addresses" = "logins"): void =>
+  postEvent(storage, `vault-lean-${section}`, { vault_lean_event: 1, secret: vaultNames().secret, ...event });
 
-/** What a tab's page posts, written as AnythingLLM's collector writes it, each after the one before. */
-export function post(event: Record<string, unknown>, { workspace = "home", tab = "1" } = {}): void {
-  const dir = path.join(storage, "documents", "custom-documents");
-  fs.mkdirSync(dir, { recursive: true });
-  const cfg = tabConfig(workspace, tab);
-  const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-browser-lean-event-${id}.json`);
-  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ browser_lean_event: 1, workspace, tab, secret: cfg.secret, ...event }) }));
-  const at = new Date(Date.now() + ++posts * 10);
-  fs.utimesSync(file, at, at);
-}
+/** What a tab's page posts (#shared/test-helpers postEvent), with the tab's secret. */
+export const post = (event: Record<string, unknown>, { workspace = "home", tab = "1" } = {}): void =>
+  postEvent(storage, "browser-lean-event", { browser_lean_event: 1, workspace, tab, secret: tabConfig(workspace, tab).secret, ...event });
 
 /** Keeps the Library and Vault links from the agent (the switch #shared/page-links reads) or gives them
  *  back; a test that turns it on turns it off in a `finally`. */
-export function hideLinks(on: boolean): void {
-  const file = hiddenFile(storage);
-  if (!on) return void fs.rmSync(file, { force: true });
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, "test\n");
-}
+export const hideLinks = (on: boolean): void => setLinksHidden(storage, on);

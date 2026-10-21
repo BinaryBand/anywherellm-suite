@@ -11,6 +11,7 @@ import { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
+import { postEvent } from "#shared/test-helpers";
 import { staticFiles } from "../../../build.mjs";
 
 const require = createRequire(import.meta.url);
@@ -49,16 +50,9 @@ export const inWorkspace = (slug: string, runtimeArgs: Record<string, string> = 
 export const call = (slug: string, params: Record<string, unknown>, runtimeArgs: Record<string, string> = {}): Promise<string> =>
   handler().call(inWorkspace(slug, runtimeArgs), params);
 
-let posted = 0;
-/** An event document as AnythingLLM's raw-text upload writes it: `event` as the page posts it, or
- *  `raw` as the text. Each lands after the one before, as the page posts them one at a time. */
-export function post(event: Record<string, unknown>, raw: string | null = null): void {
-  fs.mkdirSync(eventsDir, { recursive: true });
-  const file = path.join(eventsDir, `raw-apps-lean-event-${String(++posted).padStart(3, "0")}.json`);
-  fs.writeFileSync(file, JSON.stringify({ title: "apps-lean-event.txt", pageContent: raw ?? JSON.stringify({ apps_lean_event: 1, ...event }) }));
-  const t = new Date(Date.now() - 60_000 + posted);
-  fs.utimesSync(file, t, t);
-}
+/** An event document as AnythingLLM's raw-text upload writes it (#shared/test-helpers postEvent):
+ *  `event` as the page posts it, or `raw` as the text. */
+export const post = (event: Record<string, unknown>, raw: string | null = null): void => postEvent(storage, "apps-lean-event", { apps_lean_event: 1, ...event }, raw ?? undefined);
 
 /** What a page posts for `app`: its event with the app's secret, as the page has it. */
 export const from = (workspace: string, app: string, event: Record<string, unknown>): void =>

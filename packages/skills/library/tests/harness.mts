@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
 import { hiddenFile, linksFile } from "#shared/page-links";
+import { postEvent, setLinksHidden } from "#shared/test-helpers";
 import { vendoredVersions } from "../../../build.mjs";
 
 const require = createRequire(import.meta.url);
@@ -113,38 +114,18 @@ export function reset(): void {
   delete (globalThis as unknown as Record<symbol, unknown>)[Symbol.for("anywherellm-suite.anythingllm.base")];
 }
 
-/** Turns the switch that keeps the Library page's and the Vault's links from the agent on or off, as
- *  `anywherellm-suite pages --hide` and `--show` do on the host. */
-export function hideLinks(on: boolean): void {
-  if (on) writeAtomic(hiddenFile(storage), "2026-10-21T00:00:00.000Z\n");
-  else fs.rmSync(hiddenFile(storage), { force: true });
-}
+/** Turns the switch that keeps the Library page's and the Vault's links from the agent on or off. */
+export const hideLinks = (on: boolean): void => setLinksHidden(storage, on);
 
-let posts = 0;
+/** What the page posts (#shared/test-helpers postEvent), with the page's secret unless the event
+ *  names another. */
+export const post = (event: Record<string, unknown>): void =>
+  postEvent(storage, "library-lean-event", { library_lean_event: 1, ...("secret" in event ? {} : { secret: pageConfig().secret }), ...event });
 
-/** What the page posts, written as AnythingLLM's collector writes it, with the page's secret unless
- *  the event names another; each after the one before, as the page posts them one at a time. */
-export function post(event: Record<string, unknown>): void {
-  const dir = path.join(storage, "documents", "custom-documents");
-  fs.mkdirSync(dir, { recursive: true });
-  const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-library-lean-event-${id}.json`);
-  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ library_lean_event: 1, ...("secret" in event ? {} : { secret: pageConfig().secret }), ...event }) }));
-  const at = new Date(Date.now() + ++posts * 10);
-  fs.utimesSync(file, at, at);
-}
-
-/** What the Vault posts in its keys section (or `section`), written as AnythingLLM's collector writes
- *  it, with the Vault's secret unless the event names another; each after the one before. */
-export function postVault(event: Record<string, unknown>, section: "keys" | "addresses" = "keys"): void {
-  const dir = path.join(storage, "documents", "custom-documents");
-  fs.mkdirSync(dir, { recursive: true });
-  const id = crypto.randomUUID();
-  const file = path.join(dir, `raw-vault-lean-${section}-${id}.json`);
-  fs.writeFileSync(file, JSON.stringify({ id, pageContent: JSON.stringify({ vault_lean_event: 1, secret: vaultConfig().secret, ...event }) }));
-  const at = new Date(Date.now() + ++posts * 10);
-  fs.utimesSync(file, at, at);
-}
+/** What the Vault posts in its keys section (or `section`), with the Vault's secret unless the event
+ *  names another. */
+export const postVault = (event: Record<string, unknown>, section: "keys" | "addresses" = "keys"): void =>
+  postEvent(storage, `vault-lean-${section}`, { vault_lean_event: 1, secret: vaultConfig().secret, ...event });
 
 /** The Vault's settings: its token and secret, and the key and public key it was written with. */
 export function vaultConfig(): { token: string; secret: string; key: string; pub: string; version: number } {
@@ -166,10 +147,18 @@ export function pageConfig(): { token: string; secret: string; key: string; pub:
 /** What the page shows, as it reads it. */
 export const pageState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "library-lean", `${pageConfig().token}.json`), "utf8"));
 
-/** `text` sealed as the Vault seals it, with the vault's public key. */
-export function seal(text: string): string {
-  const key = crypto.createPublicKey({ key: Buffer.from(vaultConfig().pub, "base64"), format: "der", type: "spki" });
-  return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
+/** `text` sealed as the pages seal it, with the vault's public key (`pub`, as a page has it: the
+ *  Vault's by default): RSA-OAEP up to 190 bytes, and above that with a new AES-GCM key, itself
+ *  sealed with RSA ("h1.<sealed key>.<iv>.<sealed>"). */
+export function seal(text: string, pub: string = vaultConfig().pub): string {
+  const key = crypto.createPublicKey({ key: Buffer.from(pub, "base64"), format: "der", type: "spki" });
+  const rsa = (bytes: Buffer) => crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, bytes).toString("base64");
+  if (Buffer.byteLength(text) <= 190) return rsa(Buffer.from(text));
+  const aes = crypto.randomBytes(32);
+  const iv = crypto.randomBytes(12);
+  const gcm = crypto.createCipheriv("aes-256-gcm", aes, iv);
+  const sealed = Buffer.concat([gcm.update(text), gcm.final(), gcm.getAuthTag()]);
+  return ["h1", rsa(aes), iv.toString("base64"), sealed.toString("base64")].join(".");
 }
 
 type SaveSignIn = (site: string, label: string, oauth: unknown, clientId: string) => Promise<void>;

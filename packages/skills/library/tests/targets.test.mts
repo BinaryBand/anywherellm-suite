@@ -16,7 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import ssh2 from "ssh2";
-import { THIS_HOST_FINGERPRINT, call as called, library, pageConfig, pageState, post, publicDir, reset, storage, until } from "./harness.mts";
+import { THIS_HOST_FINGERPRINT, call as called, library, pageConfig, pageState, post, publicDir, reset, seal as sealWith, storage, until } from "./harness.mts";
 
 const { Server, utils } = ssh2;
 
@@ -43,18 +43,8 @@ const call = (args: Record<string, unknown>, slug: string | null = "work") => ca
 const SIGN_IN_MS = 25_000;
 const LOOK_MS = 30_000;
 
-/** `text` sealed as the page seals it, with the vault's public key: RSA-OAEP up to 190 bytes, and
- *  above that with a new AES-GCM key, itself sealed with RSA ("h1.<sealed key>.<iv>.<sealed>"). */
-function seal(text: string): string {
-  const key = crypto.createPublicKey({ key: Buffer.from(pageConfig().pub, "base64"), format: "der", type: "spki" });
-  const rsa = (bytes: Buffer) => crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, bytes).toString("base64");
-  if (Buffer.byteLength(text) <= 190) return rsa(Buffer.from(text));
-  const aes = crypto.randomBytes(32);
-  const iv = crypto.randomBytes(12);
-  const gcm = crypto.createCipheriv("aes-256-gcm", aes, iv);
-  const sealed = Buffer.concat([gcm.update(text), gcm.final(), gcm.getAuthTag()]);
-  return ["h1", rsa(aes), iv.toString("base64"), sealed.toString("base64")].join(".");
-}
+/** `text` sealed as the Library page seals it (harness seal), with the key the page has. */
+const seal = (text: string): string => sealWith(text, pageConfig().pub);
 
 const hostKey = utils.generateKeyPairSync("ed25519");
 const otherHostKey = utils.generateKeyPairSync("ed25519");
