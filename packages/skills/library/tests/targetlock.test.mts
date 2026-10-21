@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
-import { call, idOf, library, pageState, post, reset, runRecord, until } from "./harness.mts";
+import { call, idOf, library, page, pageState, post, reset, runRecord, until } from "./harness.mts";
 
 const FINGERPRINT = `SHA256:${"A".repeat(43)}`;
 const saveTarget = (fields: Record<string, unknown> = {}) => post({ ev: "target-save", label: "box", host: "box.internal", port: "22", login: "sandbox", fingerprint: FINGERPRINT, private: true, sealed: "", ...fields });
@@ -23,10 +23,6 @@ async function toolkit(service: string, target: string): Promise<void> {
 }
 async function answer(service: string): Promise<string> {
   return runRecord(idOf(await call({ action: "run", name: `${service}.go` }))).result;
-}
-async function page(ev: string, service: string): Promise<void> {
-  post({ ev, service });
-  await call({ action: "library" });
 }
 async function registered(n: number): Promise<void> {
   await call({ action: "library" });

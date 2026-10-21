@@ -122,6 +122,13 @@ export const hideLinks = (on: boolean): void => setLinksHidden(storage, on);
 export const post = (event: Record<string, unknown>): void =>
   postEvent(storage, "library-lean-event", { library_lean_event: 1, ...("secret" in event ? {} : { secret: pageConfig().secret }), ...event });
 
+/** Posts `ev` for the toolkit `service` from the Library page (with `secret`, else the page's), and
+ *  lets the skill apply it. */
+export async function page(ev: string, service: string, secret?: string): Promise<void> {
+  post({ ev, service, ...(secret ? { secret } : {}) });
+  await call({ action: "library" });
+}
+
 /** What the Vault posts in its keys section (or `section`), with the Vault's secret unless the event
  *  names another. */
 export const postVault = (event: Record<string, unknown>, section: "keys" | "addresses" = "keys"): void =>

@@ -4,17 +4,10 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { call, idOf, pageState, post, reset, runRecord } from "./harness.mts";
+import { call, idOf, page, pageState, post, reset, runRecord } from "./harness.mts";
 
 const LOCKED = /the user locked the toolkit chan on the Library page: it can't be changed or removed/;
 const fn = (name: string, source: string) => ({ name, description: `${name}.`, source });
-
-/** Posts `ev` for the toolkit `service` from the Library page (with `secret`, else the page's), and
- *  lets the skill apply it. */
-async function page(ev: string, service: string, secret?: string): Promise<void> {
-  post({ ev, service, ...(secret ? { secret } : {}) });
-  await call({ action: "library" });
-}
 
 test.beforeEach(async () => {
   reset();
