@@ -1,7 +1,9 @@
 // The built file, run as a person would run it: `node dist/anywherellm-suite.cjs install ...`.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -13,16 +15,38 @@ const tmp = tempDir("bundle");
 const env = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, HOME: tmp, USERPROFILE: tmp, APPDATA: tmp }; // SystemRoot: Node on Windows needs it
 const cli = (...args: string[]) => spawnSync(process.execPath, [bundle, ...args], { env, encoding: "utf8" });
 
-test("install puts the skill it is asked for into the storage, and health finds it", () => {
-  const storage = path.join(tmp, "storage");
-  fs.mkdirSync(path.join(storage, "plugins"), { recursive: true });
-  const done = cli("install", "--storage", storage, "--skills", "notebook");
-  assert.equal(done.status, 0, done.stdout + done.stderr);
-  assert.ok(fs.existsSync(path.join(storage, "plugins", "agent-skills", "notebook-lean", "handler.js")));
-  const checked = cli("health", "--storage", storage);
-  assert.equal(checked.status, 0, checked.stdout + checked.stderr);
-  assert.match(checked.stdout, /ok +the notebook skill/);
-});
+/** The command run without blocking this process, so the stand-in AnythingLLM below can answer it. */
+function cliAsync(extra: Record<string, string>, ...args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, [bundle, ...args], { env: { ...env, ...extra } });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (c) => (stdout += c));
+    child.stderr.on("data", (c) => (stderr += c));
+    child.on("close", (status) => resolve({ status, stdout, stderr }));
+  });
+}
+
+for (const [name, pages] of [["apps", true], ["browser", true], ["library", true], ["notebook", false]] as const) {
+  test(`the ${name} skill installs alone into a fresh storage, and health finds it`, async (t) => {
+    // A stand-in AnythingLLM that takes the pages' key, as its browser extension's check does.
+    const anythingllm = http.createServer((req, res) => ((res.statusCode = req.url === "/api/browser-extension/check" ? 200 : 404), res.end("{}")));
+    await new Promise<void>((resolve) => anythingllm.listen(0, "127.0.0.1", resolve));
+    t.after(() => anythingllm.close());
+    const extra = { ANYTHINGLLM_URL: `http://127.0.0.1:${(anythingllm.address() as AddressInfo).port}` };
+    const storage = path.join(tmp, `alone-${name}`);
+    fs.mkdirSync(path.join(storage, "plugins"), { recursive: true });
+    const done = await cliAsync(extra, "install", "--storage", storage, "--skills", name, ...(pages ? ["--page-key", "brx-test"] : []));
+    assert.equal(done.status, 0, done.stdout + done.stderr);
+    assert.deepEqual(fs.readdirSync(path.join(storage, "plugins", "agent-skills")), [`${name}-lean`], "that skill alone");
+    assert.ok(fs.existsSync(path.join(storage, "plugins", "agent-skills", `${name}-lean`, "handler.js")));
+    if (name === "library") assert.ok(fs.existsSync(path.join(storage, "anywherellm-suite", "this-host.json")), "the record of this machine, for kit.ssh");
+    const checked = await cliAsync(extra, "health", "--storage", storage);
+    assert.equal(checked.status, 0, checked.stdout + checked.stderr);
+    assert.match(checked.stdout, new RegExp(`ok +the ${name} skill`));
+    if (pages) assert.match(checked.stdout, /ok +the pages' key/);
+  });
+}
 
 test("a command it doesn't know prints the usage and exits 2; health with no storage to be found exits 1", () => {
   const unknown = cli("serve");
