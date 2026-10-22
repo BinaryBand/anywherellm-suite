@@ -87,6 +87,11 @@
 --meshA:transparent;--meshB:transparent;--meshC:transparent}
 /* end of house tokens */
 :root{--sans:'Instrument Sans','Noto Sans','Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
+/* density: the canvas's desktop boards size by the input, not the width. Touch sizes (44px controls,
+   48px icon buttons, 56px rows) everywhere but where the only pointer is a mouse or trackpad. */
+:root{--ctl:44px;--tap:48px;--row:56px}
+@media (pointer:fine) and (hover:hover) and (not (any-pointer:coarse)){:root{--ctl:36px;--tap:36px;--row:40px}}
+/* end of density */
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--sans);-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
@@ -97,7 +102,7 @@ input,textarea{font:inherit;color:var(--ink)}
 header{position:sticky;top:0;z-index:2;display:flex;flex-direction:column;gap:16px;padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,calc((100% - 608px) / 2)) 12px;background:var(--bg)}
 h1{min-height:48px;display:flex;align-items:center;margin:0;padding:0 8px;font-size:19px;font-weight:600}
 nav{display:flex;padding:3px;border-radius:16px;background:var(--hover)}
-nav button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:15px;line-height:1.2;text-align:center;color:var(--ink)}
+nav button{flex:1;min-height:var(--ctl);padding:0 4px;border-radius:13px;font-size:15px;line-height:1.2;text-align:center;color:var(--ink)}
 nav button[aria-selected="true"]{background:var(--panel);box-shadow:inset 0 0 0 1.5px var(--edge);font-weight:600}
 main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px}
 section{display:flex;flex-direction:column;gap:16px}
@@ -117,7 +122,7 @@ a{color:var(--accentfg)}
 .acts{display:flex;gap:12px}
 .acts>.btn{flex:1}
 .acts>.btn:only-child,.body>.btn,.stack>.btn{flex:none;align-self:flex-start;padding:0 18px}
-summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;gap:10px}
+summary{list-style:none;cursor:pointer;min-height:var(--ctl);display:flex;align-items:center;gap:10px}
 summary::-webkit-details-marker{display:none}
 .chev{flex:none;color:var(--muted);transition:transform .2s}
 details[open]>summary .chev{transform:rotate(180deg)}
@@ -147,14 +152,15 @@ form.card{padding:20px;gap:12px}
 .fld{width:100%;min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--edge);background:var(--bg);color:var(--ink);font-size:16px}
 .fld.mono{font-family:var(--mono)}
 textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
-.check{min-height:44px;display:flex;align-items:flex-start;gap:12px;padding:4px 0;font-size:14px;color:var(--ink);cursor:pointer}
+.check{min-height:var(--ctl);display:flex;align-items:flex-start;gap:12px;padding:4px 0;font-size:14px;color:var(--ink);cursor:pointer}
 .check input{flex:none;width:20px;height:20px;margin:0;accent-color:var(--accent)}
-.btn{min-height:44px;padding:4px 12px;line-height:1.2;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;text-align:center}
+.btn{min-height:var(--ctl);padding:4px 12px;line-height:1.2;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;text-align:center}
 .btn.pri{border-radius:999px;border-color:var(--accent);background:var(--accent);color:var(--onaccent);box-shadow:var(--glow)}
 .btn.del{color:var(--badfg)}
 .btn.try{color:var(--accentfg)}
 .foot{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
-.quiet{min-height:44px;padding:0 8px;color:var(--badfg);font-size:15px;font-weight:500}
+.quiet{min-height:var(--ctl);padding:0 8px;border-radius:12px;color:var(--badfg);font-size:15px;font-weight:500}
+@media (hover:hover){.quiet:hover{background:var(--hover)}}
 #toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);font-size:14px;line-height:1.45;text-align:center;box-shadow:var(--float)}
 </style>
 </head>

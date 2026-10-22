@@ -34,7 +34,7 @@ import template from "./vault.html";
 export type Section = "logins" | "keys" | "addresses";
 
 /** The page's version: a skill writes the page unless the one there is newer. */
-const VERSION = 9;
+const VERSION = 10;
 /** How long a section's events are watched for after the page was last shown for it. */
 const WATCH_MS = 30 * 60 * 1000;
 const MARKER = "vault_lean_event";

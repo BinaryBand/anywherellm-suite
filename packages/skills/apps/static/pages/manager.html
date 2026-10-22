@@ -92,6 +92,11 @@
 --meshA:transparent;--meshB:transparent;--meshC:transparent}
 /* end of house tokens */
 :root{--sans:'Instrument Sans','Noto Sans','Segoe UI',system-ui,-apple-system,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
+/* density: the canvas's desktop boards size by the input, not the width. Touch sizes (44px controls,
+   48px icon buttons, 56px rows) everywhere but where the only pointer is a mouse or trackpad. */
+:root{--ctl:44px;--tap:48px;--row:56px}
+@media (pointer:fine) and (hover:hover) and (not (any-pointer:coarse)){:root{--ctl:36px;--tap:36px;--row:40px}}
+/* end of density */
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--sans);-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
@@ -104,18 +109,18 @@ input:focus-visible,.row.link:focus-visible{outline-offset:-3px}
 .top .name{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
 .top h1{margin:0;font-size:19px;font-weight:600;overflow-wrap:anywhere}
 .top small{font:12px var(--mono);color:var(--muted)}
-.rb{flex:none;width:48px;height:48px;border-radius:50%;background:var(--panel);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px var(--edge),var(--float)}
+.rb{flex:none;width:var(--tap);height:var(--tap);border-radius:50%;background:var(--panel);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px var(--edge),var(--float)}
 .rb.back{border:1px solid var(--tileedge);box-shadow:var(--chipshadow)}
 main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px}
 .lead,.cap{margin:0;padding:0 8px;font-size:13px;line-height:1.45;color:var(--muted)}
 .seg{display:flex;padding:3px;border-radius:16px;background:var(--hover)}
-.seg button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:15px;line-height:1.2;text-align:center}
+.seg button{flex:1;min-height:var(--ctl);padding:0 4px;border-radius:13px;font-size:15px;line-height:1.2;text-align:center}
 .seg [aria-selected="true"]{background:var(--panel);box-shadow:inset 0 0 0 1.5px var(--edge);font-weight:600}
 section{display:flex;flex-direction:column;gap:16px}
 .lab{padding:0 20px;margin-bottom:-8px;font-size:12px;font-weight:500;letter-spacing:.48px;text-transform:uppercase;color:var(--muted)}
 .card{background:var(--panel);border:1px solid var(--tileedge);border-radius:24px;padding:0 20px;display:flex;flex-direction:column;box-shadow:var(--tileshadow)}
 .card>*+*{border-top:1px solid var(--line2)}
-.row{min-height:68px;display:flex;align-items:center;gap:12px;padding:10px 0}
+.row{min-height:var(--row);display:flex;align-items:center;gap:12px;padding:10px 0}
 .link{width:100%;text-align:left}
 .link>svg{flex:none;color:var(--muted)}
 .chip{flex:none;width:40px;height:40px;border-radius:12px;background:var(--accentbg);color:var(--accentfg);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:17px}
@@ -124,8 +129,8 @@ section{display:flex;flex-direction:column;gap:16px}
 .who small{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .who small.mono,.mono{font-family:var(--mono);font-size:12px}
 #one .who small{white-space:normal}
-.act{flex:none;min-height:44px;padding:0 14px;border-radius:99px;color:var(--accentfg);font-size:15px;font-weight:500}
-.btn{min-height:44px;padding:0 18px;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;text-align:center}
+.act{flex:none;min-height:var(--ctl);padding:0 14px;border-radius:99px;color:var(--accentfg);font-size:15px;font-weight:500}
+.btn{min-height:var(--ctl);padding:0 18px;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;display:inline-flex;align-items:center;justify-content:center;text-align:center}
 .pri{border-radius:999px;background:var(--accent);border-color:var(--accent);color:var(--onaccent);box-shadow:var(--glow)}
 .bad{color:var(--badfg)}
 .pair{display:flex;gap:12px}.pair>*{flex:1;padding:0 12px}
@@ -154,9 +159,10 @@ section{display:flex;flex-direction:column;gap:16px}
 @keyframes rise{from{transform:translateY(100%)}}
 @keyframes fade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.sheet,.scrim{animation:none}}
+@media (hover:hover){.rb:hover,.act:hover,.foot .btn:hover{background:var(--hover)}}
 #toast{position:fixed;left:16px;right:16px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;min-height:56px;padding:0 8px 0 20px;border-radius:16px;background:var(--ink);color:var(--bg);box-shadow:var(--float);font-size:15px;display:flex;align-items:center;gap:12px}
 #toast span{flex:1;min-width:0;padding:8px 0}
-#toast button{flex:none;min-height:44px;padding:0 14px;border-radius:99px;color:var(--bg);font-weight:700}
+#toast button{flex:none;min-height:var(--ctl);padding:0 14px;border-radius:99px;color:var(--bg);font-weight:700}
 </style>
 </head>
 <body>
