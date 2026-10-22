@@ -29,4 +29,9 @@ for (const page of PAGES) {
     assert.equal(tokens(html), first, "the same token block as vault.html");
     assert.doesNotMatch(html, /prefers-color-scheme/, "no dark colours of its own: light-dark() in the tokens");
   });
+
+  test(`${page.split("/").pop()}: its words take the curly apostrophe (can’t, page’s), as the canvas has them`, () => {
+    const words = read(page).replace(/\/\*[\s\S]*?\*\/|<!--[\s\S]*?-->|\/\/[^\n]*/g, ""); // comments are code's, not the page's
+    assert.deepEqual(words.match(/[A-Za-z]'[A-Za-z]+/g) ?? [], []);
+  });
 }

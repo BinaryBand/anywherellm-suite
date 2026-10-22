@@ -165,7 +165,7 @@ section{display:flex;flex-direction:column;gap:16px}
   <div class="name"><h1 id="title">Apps</h1><small id="sub" hidden></small></div>
 </header>
 <main>
-  <p class="lead" id="lead">Every workspace's apps. Open one to see its page, its changes and its earlier versions, to rename it or to move it to the trash.</p>
+  <p class="lead" id="lead">Every workspace’s apps. Open one to see its page, its changes and its earlier versions, to rename it or to move it to the trash. What the agent makes shows here as it makes it.</p>
   <nav class="seg" role="tablist" aria-label="Show" id="tabs">
     <button role="tab" data-tab="apps" aria-selected="true">Apps</button>
     <button role="tab" data-tab="trash" aria-selected="false">Trash</button>
@@ -173,7 +173,7 @@ section{display:flex;flex-direction:column;gap:16px}
   <section id="apps"></section>
   <section id="trash" hidden></section>
   <section id="one" hidden></section>
-  <div class="foot" id="foot"><p class="cap">Anyone with this page's link can see what it shows and act on it.</p></div>
+  <div class="foot" id="foot"><p class="cap">Anyone with this page’s link can see what it shows and act on it.</p></div>
 </main>
 <div id="toast" role="status" hidden><span></span><button type="button" hidden>Undo</button></div>
 <script>
@@ -209,11 +209,11 @@ section{display:flex;flex-direction:column;gap:16px}
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
         body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: cfg.title, docSource: "apps-lean manager" } }),
       });
-      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
+      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages’ key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
       setTimeout(load, 1500);
       return true;
     } catch (e) {
-      toast("Can't reach AnythingLLM");
+      toast("Can’t reach AnythingLLM");
       return false;
     }
   }
@@ -255,8 +255,25 @@ section{display:flex;flex-direction:column;gap:16px}
   }
 
   // ---- What the state says, as people read it.
-  const WHO = { page: "on its page", agent: "by the agent", job: "by a scheduled job" };
-  const when = (t) => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); };
+  const WHO = { page: "on the page", agent: "by the agent", job: "by a scheduled job" };
+  // Times as the boards say them: "2 min ago" this past hour, "09:12" earlier today, then "yesterday",
+  // "Monday" in the week before, "18 Oct" before that; `long` adds the time to the last three
+  // ("Monday 06:00"). A version's time is said in full: "20 Oct, 14:02".
+  const hm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const dayOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const date = (d) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+  const when = (t, long = false) => {
+    const d = new Date(t);
+    if (isNaN(d)) return "";
+    const mins = Math.floor((Date.now() - d) / 60000);
+    if (mins < 60) return mins < 1 ? "just now" : `${mins} min ago`;
+    const days = Math.round((dayOf(new Date()) - dayOf(d)) / 86400000);
+    if (days < 1) return hm(d);
+    if (days === 1) return long ? `yesterday ${hm(d)}` : "yesterday";
+    if (days < 7) return d.toLocaleDateString("en-GB", { weekday: "long" }) + (long ? ` ${hm(d)}` : "");
+    return date(d) + (long ? `, ${hm(d)}` : "");
+  };
+  const at = (t) => { const d = new Date(t); return isNaN(d) ? "" : `${date(d)}, ${hm(d)}`; };
   const changeText = (c) => `${c.ev}${c.text ? `: ${c.text}` : ""}`;
   const daysLeft = (until) => Math.max(0, Math.ceil((Date.parse(until) - Date.now()) / 86400000));
   // The theme this page has now (a client may switch it while it's open), at the moment the link is followed.
@@ -298,7 +315,7 @@ section{display:flex;flex-direction:column;gap:16px}
       lab.dataset.ws = w.workspace;
       return [lab, el("div", { className: "card" }, ...w.apps.map((a) => {
         const row = el("button", { className: "row link", type: "button", onclick: () => openApp(`${w.workspace}/${a.name}`) },
-          el("span", { className: "chip", textContent: (a.title.trim()[0] || "?").toUpperCase() }),
+          el("span", { className: "chip", ariaHidden: "true", textContent: (a.title.trim()[0] || "?").toUpperCase() }),
           el("span", { className: "who" }, el("b", { textContent: a.title }), el("small", { textContent: [a.summary, when(a.changed)].filter(Boolean).join(" · ") })), icon(CHEVRON, 14));
         row.dataset.key = `${w.workspace}/${a.name}`;
         return row;
@@ -312,11 +329,11 @@ section{display:flex;flex-direction:column;gap:16px}
     const rows = now.trash.map((x) => {
       const left = daysLeft(x.until);
       return el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: x.title }), el("small", { textContent: `${x.workspace} · ${left} day${left === 1 ? "" : "s"} left` })),
-        el("button", { className: "act", type: "button", textContent: "Restore", onclick: () => post("restore", { id: x.id, title: x.title }) && toast("Restoring " + x.title) }));
+        el("button", { className: "act", type: "button", textContent: "Restore", ariaLabel: `Restore ${x.title}`, onclick: () => post("restore", { id: x.id, title: x.title }) && toast("Restoring " + x.title) }));
     });
-    $("trash").replaceChildren(el("p", { className: "lead", textContent: `Apps moved to the trash, each from its own workspace. Each stays ${now.trashDays} days, then it's gone.` }),
+    $("trash").replaceChildren(el("p", { className: "lead", textContent: `Apps moved to the trash, each in its own workspace. Each stays ${now.trashDays} days, then it’s gone.` }),
       el("div", { className: "card" }, ...(rows.length ? rows : [el("p", { className: "empty", textContent: "The trash is empty." })])),
-      el("p", { className: "cap", textContent: `The trash holds ${now.trashMax}. When it's full, a delete is refused until one goes, rather than drop one early.` }));
+      el("p", { className: "cap", textContent: `The trash holds ${now.trashMax}. When it’s full, a delete is refused until one goes, rather than drop one early.` }));
   }
 
   /** A take back waits this long before it's posted, so Undo can cancel it with nothing sent. */
@@ -337,7 +354,7 @@ section{display:flex;flex-direction:column;gap:16px}
     rename.onclick = () => {
       const input = el("input", { className: "fld", type: "text", value: app.title, maxLength: 80, autocomplete: "off" });
       ask({ title: `Rename ${app.title}`, yes: "Rename", danger: false,
-        body: el("div", {}, el("label", {}, "Title", input), el("p", { className: "cap", style: "padding:12px 0 0", textContent: `Its name, ${app.name}, stays: the agent and its scheduled jobs call it by that.` })),
+        body: el("div", {}, el("label", {}, "Title", input), el("p", { className: "cap", style: "padding:12px 0 0" }, "Its name, ", el("span", { className: "mono", textContent: app.name }), ", stays: the agent and its scheduled jobs call it by that.")),
         value: () => { const v = input.value.trim(); if (!v) return toast("Give it a title"), false; return v; } },
         (title) => title !== app.title && post("rename", { ...base, title }), rename);
     };
@@ -346,13 +363,13 @@ section{display:flex;flex-direction:column;gap:16px}
       app.page ? null : el("p", { className: "cap", style: "padding:0", textContent: "It has no page yet: the agent makes one when it builds the app." }),
       el("div", { className: "pair" }, open, rename));
     const changes = app.changes.map((c, i) => el("div", { className: "row" },
-      el("div", { className: "who" }, el("b", { textContent: changeText(c) }), el("small", { textContent: `${when(c.t)} · ${WHO[c.by] ?? c.by}` })),
-      i === 0 ? el("button", { className: "act", type: "button", textContent: "Take back", onclick: () => takeBack(one, c) }) : null));
-    const versions = app.versions.map((v) => el("div", { className: "row" },
-      el("div", { className: "who" }, el("b", { className: "mono", style: "font-size:14px", textContent: v.file }), el("small", { textContent: `as it was before ${when(v.t)}` })),
-      el("button", { className: "act", type: "button", textContent: "Put back", onclick: () => post("put-back", { ...base, file: v.file, at: v.t }) && toast(`Putting back ${v.file}`) })));
+      el("div", { className: "who" }, el("b", { textContent: changeText(c) }), el("small", { textContent: `${when(c.t, true)} · ${WHO[c.by] ?? c.by}` })),
+      i === 0 ? el("button", { className: "act", type: "button", textContent: "Take back", ariaLabel: `Take back: ${changeText(c)}`, onclick: () => takeBack(one, c) }) : null));
+    const versions = app.versions.map((v, made = at(v.t)) => el("div", { className: "row" },
+      el("div", { className: "who" }, el("b", { className: "mono", style: "font-size:14px", textContent: v.file }), el("small", { textContent: made })),
+      el("button", { className: "act", type: "button", textContent: "Put back", ariaLabel: `Put back ${v.file} from ${made}`, onclick: () => post("put-back", { ...base, file: v.file, at: v.t }) && toast(`Putting back ${v.file}`) })));
     const trash = el("button", { className: "btn bad", type: "button", style: "align-self:flex-start", textContent: "Move to trash" });
-    trash.onclick = () => ask({ title: `Move ${app.title} to the trash?`, line: `It stays there ${now.trashDays} days, and Restore brings it back until then. Its page stops working, and the agent and its scheduled jobs can't use it meanwhile.`, yes: "Move to trash" },
+    trash.onclick = () => ask({ title: `Move ${app.title} to the trash?`, line: `It stays there ${now.trashDays} days, and Restore brings it back until then. Its page stops working, and the agent and its scheduled jobs can’t use it meanwhile.`, yes: "Move to trash" },
       async () => { if (await post("trash", base)) back(); }, trash);
     $("one").replaceChildren(top,
       el("div", { className: "lab", textContent: "Recent changes" }),
@@ -400,23 +417,31 @@ section{display:flex;flex-direction:column;gap:16px}
 
   // ---- The state, every few seconds; not drawn again under a question or a field being typed in.
   // What the skill did with the last event shows once, as a toast.
-  let last = null, toldAt = null, first = true;
+  let last = null, drawnAt = null, toldAt = null, first = true;
   const busy = () => !!asking || document.activeElement?.tagName === "INPUT";
   async function load() {
     try {
       const res = await fetch(`${cfg.token}.json`, { cache: "no-cache" });
-      if (!res.ok) {
+      if (res.status === 404) {
+        clearInterval(poll); // the link is gone for good: said once
         head(null);
         $("tabs").hidden = $("lead").hidden = $("foot").hidden = $("trash").hidden = true;
         $("apps").hidden = false;
-        return $("apps").replaceChildren(el("div", { className: "card solo gone" }, el("b", { style: "font-size:17px;font-weight:600", textContent: "This link was replaced" }),
-          el("p", { className: "sum", textContent: "Open the page again from where you got it: the agent, AnywhereLLM Lite, or `anywherellm-suite pages`." })));
+        const gone = el("div", { className: "card solo gone", role: "status" }, el("b", { style: "font-size:17px;font-weight:600", textContent: "This link was replaced" }),
+          el("p", { className: "sum" }, "Open the page again from where you got it: the agent, AnywhereLLM Lite, or ", el("span", { className: "mono", textContent: "anywherellm-suite pages" }), "."));
+        return $("apps").replaceChildren(gone);
       }
+      if (!res.ok) throw new Error(res.status);
       const text = await res.text();
-      if (text === last || busy()) return;
+      const minute = Math.floor(Date.now() / 60000); // "2 min ago" moves on with no change
+      if ((text === last && minute === drawnAt) || busy()) return;
       last = text;
+      drawnAt = minute;
       now = JSON.parse(text);
-      if (now.result && toldAt !== null && now.result.n !== toldAt) toast(now.result.error ?? now.result.title.replace(/^./, (ch) => ch.toUpperCase()));
+      if (now.result && toldAt !== null && now.result.n !== toldAt) {
+        const { ev, title, error } = now.result;
+        toast(error || title.replace(/^./, (ch) => ch.toUpperCase()));
+      }
       toldAt = now.result ? now.result.n : 0;
       draw();
       if (first) {
@@ -425,12 +450,12 @@ section{display:flex;flex-direction:column;gap:16px}
         if (ws && !opened) [...document.querySelectorAll("[data-ws]")].find((l) => l.dataset.ws === ws)?.scrollIntoView({ block: "start" });
       }
     } catch (e) {
-      toast("Can't reach AnythingLLM");
+      toast("Can’t reach AnythingLLM");
     }
   }
   head(null);
+  const poll = setInterval(load, 5000);
   load();
-  setInterval(load, 5000);
 })();
 </script>
 </body>

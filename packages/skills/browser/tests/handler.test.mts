@@ -71,7 +71,7 @@ test("a login with none saved is asked for on the tab's page, sealed, typed in, 
   const asked = await call({ action: "login", user_ref: "e1", pass_ref: "e2", submit_ref: "e3" });
   assert.match(asked, /^The user is asked on the tab's page: login\.example needs the user to sign in, and no login is saved for it\. Tell them to tap the card below/);
   assert.match(asked, /Never ask for it in the chat/);
-  assert.deepEqual(tabState().need, { kind: "login", host: "login.example", text: "No login is saved for login.example.", label: null, hasUser: true, confirm: false, until: tabState().need.until });
+  assert.deepEqual(tabState().need, { kind: "login", host: "login.example", text: "No login is saved for this site.", label: null, hasUser: true, confirm: false, until: tabState().need.until });
 
   post({ ev: "need-answer", user: "ada@example.com", sealed: seal("pw-s3cret-1"), save: true });
   const after = await call({ action: "read" });
@@ -258,7 +258,7 @@ test("a login the site seems to refuse is said on the tab's page and asked again
   assert.match(await call({ action: "read" }), /e3 clicked, but the page still asks for a password: the site may have refused it\. The user is asked again on the tab's page/);
   const { need } = tabState("strict");
   assert.equal(need.kind, "login", "asked again");
-  assert.equal(need.text, "strict.example still asks for a password: it may not have been accepted. Check it and enter it again", "and told why, on the request itself");
+  assert.equal(need.text, "strict.example still asks for a password: it may not have been accepted. Check it and enter it again.", "and told why, on the request itself");
   assert.ok(need.until >= first);
   site("https://strict.example/about", { title: "About", text: "About us" });
   await call({ action: "open", url: "https://strict.example/about" }); // on its site, no password asked: where an agreed login is kept
@@ -302,7 +302,7 @@ test("a new account's password is asked for with confirm_ref and typed into both
   assert.match(await call({ action: "login", user_ref: "e1", pass_ref: "e2", confirm_ref: "e5", submit_ref: "e4" }), /e5 isn't a password field; confirm_ref is a new account's "Confirm password"/);
   assert.match(await call({ action: "login", user_ref: "e1", pass_ref: "e2", confirm_ref: "e3", submit_ref: "e4" }), /^The user is asked on the tab's page: signup\.example needs a password for the new account, which the user chooses\./);
   assert.equal(tabState("signup").need.confirm, true);
-  assert.equal(tabState("signup").need.text, "For a new account on signup.example.");
+  assert.equal(tabState("signup").need.text, "signup.example needs a password for the new account, which you choose.");
   const page = lastPage();
   post({ ev: "need-answer", user: "dana@example.com", sealed: seal("pw-new-1", tabConfig("signup").pub), save: true }, { workspace: "signup" });
   assert.match(await call({ action: "read" }), /it was typed into the page and e4 clicked/);
@@ -324,7 +324,7 @@ test("a login typed into a form that still needs something else (a CAPTCHA) isn'
   assert.match(after, /but e3 wasn't clicked: the page still needs e4 "Type the digits shown" first/);
   assert.doesNotMatch(after, /may have refused/);
   assert.equal(lastPage().url(), "https://captcha.example/", "not sent");
-  assert.equal(tabState("captcha").msg.text, 'Your login is in; the page still needs "Type the digits shown" before it can be sent: take the tab over to fill it');
+  assert.equal(tabState("captcha").msg.text, 'Your login is in. The page still needs "Type the digits shown".');
 });
 
 test("a field behind a dialog isn't typed into or clicked: the dialog and its buttons are named, and login doesn't ask", async () => {
@@ -352,7 +352,7 @@ test("a submit the page keeps disabled isn't clicked, and both the agent and the
   const after = await call({ action: "read" });
   assert.match(after, /but e3 wasn't clicked: the page keeps it disabled, so it wants something else first\. .*"verify you are human"/);
   assert.ok(!lastPage().clicks.includes("e3"), "not sent");
-  assert.equal(tabState("gate").msg.text, "Your login is in; the page still needs something else before it can be sent: take the tab over to finish it");
+  assert.equal(tabState("gate").msg.text, "Your login is in. The page still needs something else.");
 });
 
 test("a date field is set whole, as YYYY-MM-DD, and another format is refused", async () => {

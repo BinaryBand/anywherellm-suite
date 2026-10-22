@@ -173,7 +173,7 @@ input::placeholder{color:var(--muted);opacity:1}
 </head>
 <body>
 <header class="top">
-  <button class="rb" id="close" aria-label="Close"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+  <button class="rb" id="close" aria-label="Close the Vault"><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
   <h1>Vault</h1>
 </header>
 <main>
@@ -186,7 +186,7 @@ input::placeholder{color:var(--muted);opacity:1}
   <section id="keys" hidden><div class="grp" id="apikeys"></div><div class="grp" id="signing"></div></section>
   <section id="logins" hidden></section>
   <section id="addresses" hidden></section>
-  <div class="foot" id="foot"><p class="cap">Anyone with this page's link can see what it shows and act on it.</p></div>
+  <div class="foot" id="foot"><p class="cap">Anyone with this page’s link can see what it shows and act on it.</p></div>
 </main>
 <div id="toast" role="status" hidden></div>
 <script>
@@ -211,12 +211,12 @@ input::placeholder{color:var(--muted);opacity:1}
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
         body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: "vault-lean-" + section, docSource: "vault-lean page" } }),
       });
-      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
+      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages’ key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
       toast("Sent");
       setTimeout(load, 1500);
       return true;
     } catch (e) {
-      toast("Can't reach AnythingLLM");
+      toast("Can’t reach AnythingLLM");
       return false;
     }
   }
@@ -226,7 +226,7 @@ input::placeholder{color:var(--muted);opacity:1}
   const b64 = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes)));
   let pubKey = null;
   async function seal(text) {
-    if (!crypto.subtle) throw new Error("Open this page over https to give a key: over plain http, the browser can't seal it");
+    if (!crypto.subtle) throw new Error("Open this page over https to give a key: over plain http, the browser can’t seal it");
     const bytes = new TextEncoder().encode(text);
     pubKey ||= await crypto.subtle.importKey("spki", Uint8Array.from(atob(cfg.pub), (c) => c.charCodeAt(0)), { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
     if (bytes.length <= 190) return b64(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pubKey, bytes));
@@ -352,13 +352,13 @@ input::placeholder{color:var(--muted);opacity:1}
       return el("div", { className: "card need" }, f);
     });
     const saved = ks.secrets.map((k) => {
-      const { del } = remove([`Delete the key ${k.label}?`, `The agent can't call ${k.site} with it after.`], `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
+      const { del } = remove([`Delete the key ${k.label}?`, `The agent can’t call ${k.site} with it after.`], `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
       return row(k.label, k.site, del);
     });
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
       if (!v.value || !v.label || !v.site) return toast("Fill in every field"), false;
       const taken = named(ks, v.label);
-      if (taken?.kind === "signing") return toast("That name is a signing key's: use another"), false;
+      if (taken?.kind === "signing") return toast("That name is a signing key’s: use another"), false;
       const went = await post("keys", "key-save", { label: v.label, site: v.site, sealed: await seal(v.value) });
       if (went) (adding = false), drawKeys(ks);
       return went;
@@ -381,7 +381,7 @@ input::placeholder{color:var(--muted);opacity:1}
   function drawSigning(ks) {
     const list = ks.signing ?? [];
     const items = list.map((g) => {
-      const { del } = remove([`Delete the signing key ${g.label}?`, `Nothing signs as it after, and it can't be made again: its peers would need a new public key.`], `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
+      const { del } = remove([`Delete the signing key ${g.label}?`, `Nothing signs as it after, and it can’t be made again: its peers would need a new public key.`], `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
       // The open row shows the fingerprint, and the public key itself only where it can't be copied:
       // the clipboard needs https, and a refusal shows it too.
       const canCopy = !!(window.isSecureContext && navigator.clipboard);
@@ -390,7 +390,7 @@ input::placeholder{color:var(--muted);opacity:1}
       const copy = g.public && canCopy && el("button", { className: "btn", type: "button", textContent: "Copy public key", onclick: async () => {
         try { await navigator.clipboard.writeText(g.public); toast("Copied"); } catch (e) {
           for (const x of pub) x.hidden = false;
-          toast("Can't copy here: select the public key and copy it");
+          toast("Can’t copy here: select the public key and copy it");
         }
       } });
       const jobs = el("button", { className: "btn", type: "button", textContent: g.unattended ? "Stop it signing in scheduled jobs" : "Let it sign in scheduled jobs", onclick: () => post("keys", "signing-unattended", { label: g.label, on: !g.unattended }) });
@@ -418,32 +418,48 @@ input::placeholder{color:var(--muted);opacity:1}
   function drawLogins(ls) {
     const rows = ls.logins.map((l) => {
       const passkey = l.kind === "passkey";
-      const asked = passkey ? ["Delete this passkey?", `The agent can't sign in to ${l.site} with it after. Remove it in the site's own settings too.`] : ["Delete this login?", `The agent can't sign in to ${l.site} with it after.`];
+      const asked = passkey ? ["Delete this passkey?", `The agent can’t sign in to ${l.site} with it after. Remove it in the site’s own settings too.`] : ["Delete this login?", `The agent can’t sign in to ${l.site} with it after.`];
       const { del } = remove(asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`, () => post("logins", "login-delete", { id: l.id }));
       return row(l.site, [l.user, passkey ? "Passkey" : "Password"].filter(Boolean).join(" · "), del);
     });
-    $("logins").replaceChildren(el("div", { className: "card" }, ...rows, ...(rows.length ? [] : [el("p", { className: "empty", textContent: "No logins yet. The browser offers to save one when you sign in on its tab's page." })])),
+    $("logins").replaceChildren(lab("Logins"), el("div", { className: "card" }, ...rows, ...(rows.length ? [] : [el("p", { className: "empty", textContent: "No logins yet. The browser offers to save one when you sign in on its tab’s page." })])),
       el("p", { className: "cap", textContent: "To change a password, sign in again on the tab." }));
   }
 
   // ---- Allowed addresses: either skill's, the origins on the user's network the skills may reach.
   let toldAt = null;
+  // Dates in the page's own English, whatever the device's locale: "Mon 20 Oct" (its year too when
+  // not this one), and a moment as "today, 10:12", "yesterday, 18:40" or "Mon 20 Oct, 10:12".
+  const day = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) + (d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`);
+  };
+  const moment = (iso) => {
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    // a refusal is kept a day (fence.mts), so it was today or yesterday
+    return `${d.toDateString() === new Date().toDateString() ? "today" : "yesterday"}, ${d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  };
   /** An address's row: the origin is set in mono. */
   const addr = (node) => (node.classList.add("addr"), node);
   function drawAddresses(as) {
     if (as.result && toldAt !== null && as.result.n !== toldAt) toast(as.result.error);
     toldAt = as.result ? as.result.n : 0;
     const allowed = as.origins.map((a) => {
-      const { del } = remove(["Remove this address?", `The skills can't reach ${a.origin} after.`], `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
-      return addr(row(a.origin, a.added ? `Added ${new Date(a.added).toLocaleDateString()}` : "", del));
+      const { del } = remove(["Remove this address?", `The skills can’t reach ${a.origin} after.`], `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
+      return addr(row(a.origin, a.added ? `Added ${day(a.added)}` : "", del));
     });
-    const refused = as.refused.map((r) => addr(row(r.origin, `Refused ${new Date(r.at).toLocaleString()}`, el("button", { className: "btn", type: "button", textContent: "Allow", onclick: () => post("addresses", "address-allow", { origin: r.origin }) }))));
+    const refused = as.refused.map((r) => {
+      const allow = el("button", { className: "btn", type: "button", textContent: "Allow", ariaLabel: `Allow ${r.origin}`, onclick: () => post("addresses", "address-allow", { origin: r.origin }) });
+      return addr(row(r.origin, `Refused ${moment(r.at)}`, allow));
+    });
     const addForm = form([["origin", "An address, like http://muse-vm:8463", "text", true]], "Allow", (v) => (v.origin ? post("addresses", "address-allow", { origin: v.origin }) : (toast("Write the address first"), false)));
     $("addresses").replaceChildren(lab("Allowed addresses", allowed.length),
       el("div", { className: "card" }, ...allowed, ...(allowed.length ? [] : [el("p", { className: "empty", textContent: "None yet. The skills reach the public web only." })]), addForm),
       lab("Recently refused"),
       el("div", { className: "card" }, ...refused, ...(refused.length ? [] : [el("p", { className: "empty", textContent: "Nothing refused in the last day." })])),
-      el("p", { className: "cap", textContent: "Machines on your own network the skills may reach. Give a machine's name or network address, not localhost." }));
+      el("p", { className: "cap", textContent: "Machines on your own network the skills may reach. Give a machine’s name or network address, not localhost." }));
   }
 
   // ---- The sections there are, each its own state file; a tab for each. A section the user is in
@@ -461,28 +477,29 @@ input::placeholder{color:var(--muted);opacity:1}
     try {
       const found = await Promise.all(Object.keys(drawn).map(async (section) => {
         const res = await fetch(`${cfg.token}-${section}.json`, { cache: "no-cache" });
-        if (!res.ok) return false;
+        if (res.status === 404) return false;
+        if (!res.ok) throw new Error(res.status);
         const text = await res.text();
         if (text !== last[section] && !busy(section)) (last[section] = text), drawn[section](JSON.parse(text));
         shown.add(section);
         return true;
       }));
-      if (!found.some(Boolean)) return toast("This link was replaced: open the page again from where you got it (the agent, AnywhereLLM Lite, or `anywherellm-suite pages`)");
+      if (!found.some(Boolean)) return clearInterval(poll), toast("This link was replaced. Open the page again from where you got it: the agent, AnywhereLLM Lite, or anywherellm-suite pages."); // gone for good: said once
       const tabs = [...document.querySelectorAll("nav button")];
       for (const b of tabs) b.hidden = !shown.has(b.dataset.tab);
       document.querySelector("nav").hidden = tabs.filter((b) => !b.hidden).length < 2; // one tab says nothing
       $("rotatebox").hidden = !shown.size;
       if (!tabs.some((b) => !b.hidden && b.getAttribute("aria-selected") === "true")) select(tabs.find((b) => !b.hidden));
     } catch (e) {
-      toast("Can't reach AnythingLLM");
+      toast("Can’t reach AnythingLLM");
     }
   }
 
   // ---- A new link, asked first.
   const rotate = remove(["Make a new link?", "This one stops working, everywhere it was shared."], "Make a new link", () => post([...shown][0], "rotate"), { text: "New link", className: "btn", yes: "Make it" });
   $("foot").append(el("div", { id: "rotatebox", hidden: true }, rotate.del));
+  const poll = setInterval(load, 5000);
   load();
-  setInterval(load, 5000);
 })();
 </script>
 </body>

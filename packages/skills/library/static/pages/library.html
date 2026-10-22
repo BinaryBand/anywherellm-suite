@@ -172,7 +172,7 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
   <section id="targets" hidden></section>
   <section id="toolkits"></section>
   <section id="runs" hidden></section>
-  <div class="foot"><p class="cap">What you type for a target's key is sealed on this device; the agent never sees it. Anyone with this page's link can see what it shows and act on it.</p>
+  <div class="foot"><p class="cap">What you type for a target’s key is sealed on this device; the agent never sees it. Anyone with this page’s link can see what it shows and act on it.</p>
     <button class="quiet" id="rotate">New link</button></div>
 </main>
 <div id="toast" role="status" hidden></div>
@@ -198,12 +198,12 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
         body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: cfg.title, docSource: "library-lean page" } }),
       });
-      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
+      if (!res.ok) return toast(res.status === 403 ? "AnythingLLM refused the pages’ key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + res.status), false;
       toast("Sent");
       setTimeout(load, 1500);
       return true;
     } catch (e) {
-      toast("Can't reach AnythingLLM");
+      toast("Can’t reach AnythingLLM");
       return false;
     }
   }
@@ -257,7 +257,7 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
   const targetForm = (need) =>
     form(
       el("div", { className: "ttl" }, el("strong", { textContent: need ? `The agent asks for a target: ${need.label}` : "Add a target" }),
-        el("p", { className: "cap", textContent: "A machine the agent's functions run commands on over SSH. Read the fingerprint on the machine itself: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" })),
+        el("p", { className: "cap", textContent: "A machine the agent’s functions run commands on over SSH. Read the fingerprint on the machine itself: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" })),
       [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…", "text", true],
         ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
         ["private", "On my network: a private address. The machine must not be this one, and must not be able to reach this AnythingLLM: its pages carry the page secret", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
@@ -277,7 +277,7 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
   const copyable = (text) => {
     const pre = el("pre", { textContent: text });
     const copy = () => navigator.clipboard.writeText(text).then(() => toast("Copied"), () => getSelection().selectAllChildren(pre));
-    return el("div", { className: "stack" }, pre, el("button", { className: "btn", type: "button", textContent: "Copy", onclick: copy }));
+    return el("div", { className: "stack" }, pre, el("button", { className: "btn", type: "button", textContent: "Copy", ariaLabel: "Copy the line", onclick: copy }));
   };
 
   const remove = (text, ev, fields, asked = `${text}?`) => el("button", { className: "btn del", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
@@ -291,11 +291,11 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
         el("p", { className: "info", textContent: `${m.login}@${m.host}:${m.port}; ${m.fingerprint}${m.private ? "; on my network" : ""}${m.unattended ? "; may run unattended" : ""}` }),
         m.barred ? el("p", { className: "bad", textContent: `Not used: ${m.barred}.` }) : null,
         ...m.notes.map((n) => el("p", { className: "cap", textContent: n })),
-        m.held ? el("p", { className: "cap", textContent: `Kept for locked toolkits (${m.held}): an unlocked toolkit can't use it.` }) : null,
+        m.held ? el("p", { className: "cap", textContent: `Kept for locked toolkits (${m.held}): an unlocked toolkit can’t use it.` }) : null,
         m.public ? el("div", { className: "stack" }, el("p", { className: "cap", textContent: `Add this line to ~${m.login}/.ssh/authorized_keys on the machine (restrict keeps it to commands and files):` }), copyable(`restrict ${m.public}`)) : null,
         el("div", { className: "acts" },
           el("button", { className: "btn try", type: "button", textContent: "Try signing in", onclick: () => post("target-check", { label: m.label }) }),
-          remove("Delete", "target-delete", { label: m.label }))));
+          Object.assign(remove("Delete", "target-delete", { label: m.label }), { ariaLabel: `Delete the target ${m.label}` }))));
     }
     machines.append(targetForm(null));
   }
@@ -314,7 +314,7 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
         el("div", { className: "fns" }, ...t.functions.map((f) => el("details", {},
           el("summary", {}, el("span", {}, el("b", { textContent: f.name }), `: ${f.description} (v${f.version})`), chev()),
           el("div", { className: "body" }, el("pre", { textContent: f.source }), t.locked ? null : remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))))),
-        el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can't change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can't change a locked toolkit. Locking also pins its targets (machine, account and host key): they stay as they are for it, and unlocked toolkits can't use them." }),
+        el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can’t change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can’t change a locked toolkit. Locking also pins its targets (machine, account and host key): they stay as they are for it, and unlocked toolkits can’t use them." }),
         el("div", { className: "acts" }, lock, t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service }))));
     }
 
@@ -364,7 +364,7 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
   async function load() {
     try {
       const res = await fetch(cfg.token + ".json", { cache: "no-cache" });
-      if (res.status === 404) return toast("This link was replaced: open the page again from where you got it (the agent, AnywhereLLM Lite, or `anywherellm-suite pages`)");
+      if (res.status === 404) return clearInterval(poll), toast("This link was replaced. Open the page again from where you got it: the agent, AnywhereLLM Lite, or anywherellm-suite pages."); // gone for good: said once
       const s = JSON.parse(await res.text());
       $("vault").hidden = !s.vault;
       if (s.vault) $("vaultlink").href = s.vault;
@@ -374,7 +374,7 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
         if (key !== shown[name] && !(name === "targets" && busy())) (shown[name] = key), drawn[name](s);
       }
     } catch (e) {
-      toast("Can't reach AnythingLLM");
+      toast("Can’t reach AnythingLLM");
     }
   }
 
@@ -385,8 +385,8 @@ textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
     };
   }
   $("rotate").onclick = () => confirm("Make a new link? This one stops working.") && post("rotate");
+  const poll = setInterval(load, 5000);
   load();
-  setInterval(load, 5000);
 })();
 </script>
 </body>

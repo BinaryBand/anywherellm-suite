@@ -197,8 +197,8 @@ async function apply(e: Record<string, unknown>, at: Tab): Promise<boolean> {
   const hidden = "it stays hidden from you. Read the page to see whether it worked";
   if (isUnsent(left)) {
     // Not sent, so nothing was refused: the form needs something else first (a CAPTCHA, say).
-    const [needs, verb] = left.disabled ? ["something else", "finish"] : [left.missing.map((m) => (m.label ? `"${m.label}"` : "another field")).join(", "), "fill"];
-    say(at.entry, at.key, `${login ? "Your login is" : "The code is"} in; the page still needs ${needs} before it can be sent: take the tab over to ${verb} it`);
+    const needs = left.disabled ? "something else" : left.missing.map((m) => (m.label ? `"${m.label}"` : "another field")).join(", ");
+    say(at.entry, at.key, `${login ? "Your login is" : "The code is"} in. The page still needs ${needs}.`);
   }
   const asking = need.submitRef && !isUnsent(left) ? await stillAsks(at, need) : null;
   if (!asking) return note(at.entry, at.key, `${sent}; ${hidden}`), true;
@@ -209,7 +209,7 @@ async function apply(e: Record<string, unknown>, at: Tab): Promise<boolean> {
   const told = `${need.host} still asks for ${it}: it may not have been accepted.`;
   const refused = `${sent}, but the page still asks for ${it}: the site may have refused it.`;
   if (asking === "same") {
-    at.entry.needs.set(at.key, { ...need, text: `${told} Check it and enter it again`, until: Date.now() + NEED_MS });
+    at.entry.needs.set(at.key, { ...need, text: `${told} Check it and enter it again.`, until: Date.now() + NEED_MS });
     note(at.entry, at.key, `${refused} The user is asked again on the tab's page; wait for them, then read the page`);
   } else {
     say(at.entry, at.key, `${told} Take the tab over to try again, or ask the agent to.`);

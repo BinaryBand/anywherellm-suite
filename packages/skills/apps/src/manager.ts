@@ -153,6 +153,9 @@ export function keepWatching(): void {
  *  the trash: `name` null), or the manager's link. */
 type Applied = { workspace: string; name: string | null; said: string } | { rotate: true };
 
+/** What a refusal says wasn't done, ahead of why ("Not restored: …"), for the page. */
+const NOT_DONE: Record<string, string> = { rename: "Not renamed", "take-back": "Not taken back", "put-back": "Not put back", trash: "Not moved to the trash", restore: "Not restored" };
+
 /** Applies one event the manager posted, whose secret was checked. */
 async function apply(e: Record<string, unknown>): Promise<Applied | null> {
   const workspace = text(e.workspace, 128);
@@ -219,7 +222,7 @@ async function drain(): Promise<void> {
       // The events are taken already: one that breaks (not a refusal) is logged, and the rest go on.
       const told = err instanceof Told;
       if (!told) console.error(`apps-lean couldn't apply an apps manager event (${ev}): ${(err as Error).message}`);
-      result = { ev, title: text(e.title ?? e.app, 120), error: told ? firstLine(err).slice(0, 400) : "couldn't do that (see the log)" };
+      result = { ev, title: text(e.title ?? e.app, 120), error: `${NOT_DONE[ev] ?? "Not done"}: ${told ? firstLine(err).slice(0, 400) : "couldn't do that (see the log)"}` };
     }
   }
   for (const { workspace, name } of touched.values()) await refreshPage(workspace, name);

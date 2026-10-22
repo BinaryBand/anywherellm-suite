@@ -162,8 +162,8 @@ async function signIn(self: HandlerContext, at: Tab, args: Args): Promise<string
   // A new account's password is the user's to choose, whatever is saved for the site.
   const saved = confirmRef ? null : logins.forHost(host);
   const [text, told] = confirmRef
-    ? [`For a new account on ${host}.`, `${host} needs a password for the new account, which the user chooses`]
-    : [`No login is saved for ${host}.`, `${host} needs the user to sign in, and no login is saved for it`];
+    ? [`${host} needs a password for the new account, which you choose.`, `${host} needs a password for the new account, which the user chooses`]
+    : ["No login is saved for this site.", `${host} needs the user to sign in, and no login is saved for it`];
   if (!saved) return askOnPage(self, at, { kind: "login", host, userRef, secretRef: passRef, confirmRef, submitRef, text }, told);
   self.introspect?.(`Signing in to ${host} with the saved login`);
   const left = await typeIn(at, host, { userRef, user: saved.user, secretRef: passRef, secret: saved.pass }, submitRef);

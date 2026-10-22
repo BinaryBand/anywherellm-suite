@@ -193,9 +193,9 @@ input:focus-visible,#take:focus-visible{outline-offset:-3px}
           headers: { "Content-Type": "application/json", Authorization: "Bearer " + cfg.key },
           body: JSON.stringify({ textContent: JSON.stringify(event), metadata: { title: cfg.title, docSource: "browser-lean page" } }),
         });
-        if (!r.ok) toast(r.status === 403 ? "AnythingLLM refused the pages' key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + r.status);
+        if (!r.ok) toast(r.status === 403 ? "AnythingLLM refused the pages’ key: make a new one in its Settings > Browser Extension, then run anywherellm-suite install --page-key with it" : "AnythingLLM answered " + r.status);
       } catch (e) {
-        toast("Can't reach AnythingLLM");
+        toast("Can’t reach AnythingLLM");
       }
       soon(); // the step's picture comes within a second: look for it now
     });
@@ -396,8 +396,8 @@ input:focus-visible,#take:focus-visible{outline-offset:-3px}
   let ticker = 0;
   function tick() {
     if (!asking()) return paint();
-    const s = remaining();
-    $("needleft").textContent = "The agent is waiting · " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") + " left";
+    const s = remaining(), m = Math.round(s / 60);
+    $("needleft").textContent = "The agent is waiting · " + (s < 60 ? "Less than a minute" : m === 1 ? "About a minute" : "About " + m + " minutes") + " left";
   }
   /** Builds the form for the request now asked; returns its first field. */
   function needForm() {
@@ -442,7 +442,7 @@ input:focus-visible,#take:focus-visible{outline-offset:-3px}
       ...(user ? [field("Username or email", user)] : []),
       field(says.secret, secret),
       ...(user ? [el("div", { className: "tgl" }, el("span", { textContent: "Save this login for next time" }), sw)] : []),
-      el("p", { className: "cap", textContent: login ? "Sealed on this device before it's sent, and typed into the page for the agent, which never sees it." : "Typed into the page for the agent, which never sees it." }),
+      el("p", { className: "cap", textContent: login ? "Sealed on this device before it’s sent, and typed into the page for the agent, which never sees it." : "Typed into the page for the agent, which never sees it." }),
       el("div", { className: "wait" }, live, el("span", { id: "needleft" })),
       el("div", { className: "row" }, no, go), take));
     return user || secret;
