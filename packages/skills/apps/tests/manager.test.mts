@@ -156,5 +156,6 @@ test("every event the page posts is one the skill applies, and every field it re
   const s = state();
   const app = s.workspaces[0].apps[0];
   const shapes: Record<string, object> = { now: s, w: s.workspaces[0], a: app, app, x: s.trash[0], c: app.changes[0], v: app.versions[0] };
-  for (const [, name, field] of html.matchAll(/\b(now|w|a|app|x|c|v)\.(\w+)/g)) assert.ok(Object.hasOwn(shapes[name], field), `${name}.${field}`);
+  const script = html.slice(html.lastIndexOf("<script"));
+  for (const [, name, field] of script.matchAll(/\b(now|w|a|app|x|c|v)\.(\w+)/g)) assert.ok(Object.hasOwn(shapes[name], field), `${name}.${field}`);
 });

@@ -103,5 +103,6 @@ test("the page posts only what the section applies, and reads only what it write
   const state = addresses.state();
   assert.deepEqual(state.refused.map((r) => r.origin), ["http://nas.lan"], "an origin let through since isn't offered");
   const items = { as: state, a: state.origins[0], r: state.refused[0] };
-  for (const [name, item] of Object.entries(items)) for (const [, field] of vault.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);
+  const script = vault.slice(vault.lastIndexOf("<script")); // the page's code; its styles have selectors like a.hu-tile
+  for (const [name, item] of Object.entries(items)) for (const [, field] of script.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);
 });

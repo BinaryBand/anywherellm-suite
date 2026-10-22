@@ -1,7 +1,7 @@
-// The pages' colours: every page carries the same house token block (the design canvas's lite.css),
-// which follows the device's light or dark and high contrast, and ?theme forces light or dark. A
-// page that drifted from the others, or set dark colours of its own, would show it only in one theme.
-// Sizes follow the canvas's desktop boards: one density block, touch sizes unless the pointer is fine.
+// The pages' look is House UI, as the design canvas draws them: every page carries the same House UI
+// block (its tokens with the indigo scheme only, then its root, density and focus rules), which follows
+// the device's light or dark and contrast, and ?theme forces one. A page that drifted from the others,
+// set colours of its own or used a token House UI doesn't have would show it only in one theme.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -10,43 +10,35 @@ import test from "node:test";
 
 const PAGES = ["./vault.html", "../skills/apps/static/pages/manager.html", "../skills/browser/static/pages/tab.html", "../skills/library/static/pages/library.html"];
 const read = (page: string): string => fs.readFileSync(fileURLToPath(new URL(page, import.meta.url)), "utf8");
-// A marked block of a page's CSS: from "/* <name>:" to "/* end of <name> */".
-const block = (name: string) => (html: string): string => new RegExp(`/\\* ${name}:[\\s\\S]*?/\\* end of ${name} \\*/`).exec(html)?.[0] ?? "";
-const tokens = block("house tokens");
-const density = block("density");
-const vault = read(PAGES[0]);
-const first = tokens(vault);
-const firstDensity = density(vault);
+const house = (html: string): string => /\/\* house ui:[\s\S]*?\/\* end of house ui \*\//.exec(html)?.[0] ?? "";
+const first = house(read(PAGES[0]));
+const defined = new Set(first.match(/--[a-z0-9-]+(?=:)/g));
+// The page's own styles and markup: everything but the House UI block.
+const own = (html: string): string => html.replace(house(html), "");
+const styleOf = (html: string): string => html.slice(html.indexOf("/* end of house ui */"), html.indexOf("</style>"));
 
-test("the house token block: light and dark in one list each, forced by data-theme, with high contrast", () => {
-  assert.match(first, /--bg:light-dark\(/);
-  assert.match(first, /:root\[data-theme="light"\]\{color-scheme:light\}/);
-  assert.match(first, /:root\[data-theme="dark"\]\{color-scheme:dark\}/);
-  const device = /@media \(prefers-contrast: more\)\{:root:not\(\[data-contrast="off"\]\)\{([^}]*)\}\}/.exec(first)?.[1];
-  const chosen = /:root\[data-contrast="more"\]\{([^}]*)\}/.exec(first)?.[1];
-  assert.ok(device, "high contrast follows the device");
-  assert.equal(chosen, device, "data-contrast=more is the same high contrast");
-});
-
-test("the density block: pointer sizes only where a mouse or trackpad is the only pointer", () => {
-  assert.match(firstDensity, /\(pointer:fine\) and \(hover:hover\) and \(not \(any-pointer:coarse\)\)\{:root\{--ctl:/);
+test("the House UI block: indigo, light and dark with their higher-contrast themes, density by the pointer", () => {
+  assert.match(first, /--ground: var\(--indigo-ground\)/);
+  assert.doesNotMatch(first, /--(blue|teal|green|amber|coral|rose|violet|graphite)-/, "the indigo scheme only");
+  for (const theme of ["light", "dark", "light-hc", "dark-hc"]) assert.match(first, new RegExp(`\\[data-theme="${theme}"\\] \\{`), theme);
+  assert.match(first, /@media \(prefers-contrast: more\)/);
+  assert.match(first, /\[data-theme="dark"\]\[data-contrast="more"\] \{/);
+  assert.match(first, /@media \(pointer: fine\) and \(hover: hover\) and \(not \(any-pointer: coarse\)\) \{\s*\.hu-root:not\(\[data-density="touch"\]\) \{\s*--control-h:/);
 });
 
 for (const page of PAGES) {
-  test(`${page.split("/").pop()}: ?theme sets the theme, and its colours are the house tokens, as every page's`, () => {
+  test(`${page.split("/").pop()}: ?theme sets the theme, and its look is the House UI block, as every page’s`, () => {
     const html = read(page);
     assert.match(html, /document\.documentElement\.dataset\.theme = theme/, "the page reads ?theme");
-    assert.equal(tokens(html), first, "the same token block as vault.html");
-    assert.doesNotMatch(html, /prefers-color-scheme/, "no dark colours of its own: light-dark() in the tokens");
-  });
-
-  test(`${page.split("/").pop()}: its controls take the density block’s sizes, and hover only tints where there is hover`, () => {
-    const html = read(page);
-    assert.equal(density(html), firstDensity, "the same density block as vault.html");
-    const own = html.slice(html.indexOf("/* end of density */"), html.indexOf("</style>"));
-    assert.ok(own.startsWith("/* end of density */") && own.length > 20, "the page's own styles follow the density block");
-    assert.doesNotMatch(own, /min-height:44px/, "controls sized from --ctl, not the fixed touch size");
-    assert.doesNotMatch(own.replace(/@media \(hover:hover\)\{[^{}]*\{[^}]*\}\}/g, ""), /:hover/, "every :hover inside @media (hover:hover)");
+    assert.match(html, /<body class="hu-root"/);
+    assert.equal(house(html), first, "the same House UI block as vault.html");
+    // The tab's screenshot, its thumbnail and the field laid over it stand for the remote page, whose white they keep.
+    const styles = styleOf(html).replace(/(#shot|\.over,\.over:focus-visible|\.thumb img)\{[^}]*\}/g, "");
+    assert.doesNotMatch(styles, /prefers-color-scheme|#[0-9a-f]{3,8}\b|oklch\(|rgba?\(/i, "no colours of its own");
+    const used = [...own(html).matchAll(/var\((--[a-z0-9-]+)/g)].map((m) => m[1]);
+    assert.deepEqual([...new Set(used.filter((t) => !defined.has(t)))], [], "only House UI’s tokens");
+    assert.doesNotMatch(own(html), /min-height:44px/, "controls sized from --control-h, not the fixed touch size");
+    assert.doesNotMatch(own(html).replace(/@media \(hover:hover\)\{[^{}]*\{[^}]*\}\}/g, ""), /:hover/, "every :hover inside @media (hover:hover)");
   });
 
   test(`${page.split("/").pop()}: its words take the curly apostrophe (can’t, page’s), as the canvas has them`, () => {
