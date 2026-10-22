@@ -9,8 +9,8 @@
 <style>
 /* The apps manager (src/manager.ts): every workspace's apps on one page, and the trash. What's done
    here is posted under the manager's title and applied by the apps skill. The look is the Vault's
-   (AnywhereLLM Lite's); ?theme=light or dark keeps it to one, and #ws=<workspace> opens on that
-   workspace's apps. */
+   (AnywhereLLM Lite's), its list the canvas's Apps sheet; ?theme keeps it to one theme, and
+   #ws=<workspace> opens on that workspace's apps. */
 /* house ui: House UI 3.1 (claude.ai/artifact/9igEPZB5mRR1SnT8LwGJkc) as the design canvas has it: its
    tokens.css with the indigo scheme only, then bundle.css's root, density and focus rules. Regenerate
    from the canvas's house-tokens.css and house-bundle.css; never edit one page's copy. */
@@ -768,30 +768,37 @@ html { font-size: 100%; }
   .hu-root .hu-button:active, .hu-root a.hu-tile:active, .hu-root button.hu-tile:active, .hu-root .hu-chip:active { transform: none; }
 }
 /* end of house ui */
-body{margin:0;-webkit-tap-highlight-color:transparent}
+body{margin:0;min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input{font:inherit;color:var(--ink)}
 a{color:inherit;text-decoration:none}
-.fld:focus-visible,.row.link:focus-visible{outline-offset:calc(-1 * var(--size-focus))}
+.fld:focus-visible{outline-offset:calc(-1 * var(--size-focus))}
 [hidden]{display:none!important}
 .top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px));background:var(--ground)}
 .top .name{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
 .top h1{margin:0;font:600 1.25rem/1.3 var(--font-display);overflow-wrap:anywhere}
-.top small{font-family:var(--font-mono);font-size:0.8125rem;color:var(--muted)}
+.top small{font-size:0.8125rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top small.mono{font-size:0.8125rem;color:var(--muted)}
+.pill{flex:none;min-height:var(--control-h);padding:0 14px;border-radius:var(--radius-pill);border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);display:flex;align-items:center;gap:6px;font-size:1rem;font-weight:600;white-space:nowrap}
 .rb{flex:none;width:max(var(--control-h),var(--target));height:max(var(--control-h),var(--target));border-radius:50%;background:var(--tile);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px var(--line-strong),var(--shadow-raised)}
 .rb.back{border:1px solid var(--tile-edge);box-shadow:var(--shadow-tile)}
-main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:var(--space-4)}
+main{flex:1 0 auto;box-sizing:border-box;width:100%;max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:var(--space-4)}
 .lead,.cap{margin:0;padding:0 8px;font-size:0.8125rem;line-height:1.4;color:var(--ink)}
-.seg{display:flex;padding:3px;border-radius:var(--radius-md);background:var(--sunken)}
-.seg button{flex:1;min-width:var(--control-h);min-height:var(--control-h);padding:0 4px;border-radius:var(--radius-sm);font-size:1rem;line-height:1.25;text-align:center}
-.seg [aria-selected="true"]{background:var(--tile);box-shadow:inset 0 0 0 1.5px var(--line-strong);font-weight:600}
+.chips{display:flex;gap:6px;margin:0 -16px -12px;padding:4px 16px 16px;overflow-x:auto;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chips button{flex:none;min-height:var(--control-h);padding:0 14px;border-radius:var(--radius-pill);border:1px solid var(--tile-edge);background:var(--tile);color:var(--ink);box-shadow:var(--shadow-tile);display:flex;align-items:center;gap:6px;font-size:1rem;font-weight:600;white-space:nowrap}
+.chips [aria-pressed="true"]{padding-left:12px;background:var(--accent-soft);color:var(--accent);box-shadow:none}
+.grid{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.tile{position:relative;min-width:0;background:var(--tile);border:1px solid var(--tile-edge);border-radius:var(--radius-lg);box-shadow:var(--shadow-tile)}
+.tile .open{width:100%;display:flex;flex-direction:column;gap:10px;padding:14px 16px;border-radius:var(--radius-lg);text-align:left}
+.tile .open:focus-visible{outline-offset:calc(-1 * var(--size-focus))}
+.tile .who b{line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .more{position:absolute;top:4px;right:4px;width:max(var(--control-h),var(--target));height:max(var(--control-h),var(--target));border-radius:var(--radius-pill);display:flex;align-items:center;justify-content:center}
 section{display:flex;flex-direction:column;gap:var(--space-4)}
 .lab{padding:0 20px;margin-bottom:-8px;font-size:0.8125rem;font-weight:500;line-height:1.4;color:var(--ink)}
 .card{background:var(--tile);border:1px solid var(--tile-edge);border-radius:var(--radius-lg);padding:0 20px;display:flex;flex-direction:column;box-shadow:var(--shadow-tile)}
 .card>*+*{border-top:1px solid var(--line)}
 .row{min-height:calc(var(--row-h) + var(--space-3));display:flex;align-items:center;gap:12px;padding:10px 0}
-.link{width:100%;text-align:left}
-.link>svg{flex:none;color:var(--muted)}
 .chip{flex:none;width:40px;height:40px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:1rem;font-weight:600;line-height:1}
 .who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .who b{font-size:1rem;font-weight:400;overflow-wrap:anywhere}
@@ -803,20 +810,34 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
 .act{flex:none;min-height:var(--control-h);padding:0 14px;border-radius:var(--radius-pill);color:var(--accent);font-size:1rem;font-weight:600}
 .btn{position:relative;min-height:var(--control-h);padding:0 var(--space-4);border-radius:var(--radius-md);border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font:600 1rem/1.25 var(--font-sans);display:inline-flex;align-items:center;justify-content:center;gap:var(--space-2);text-align:center}
 .btn.pri{min-height:var(--primary-h);padding:0 var(--space-6);border-radius:var(--radius-pill);background:var(--accent);border-color:transparent;color:var(--on-accent);box-shadow:var(--shadow-glow)}
-.btn.bad,.foot .btn{border-color:var(--danger);color:var(--danger)}
+.btn.bad,.bar .btn{border-color:var(--danger);color:var(--danger)}
 .pair{display:flex;gap:12px}.pair>*{flex:1}
 .card.solo{padding:16px;gap:14px}
 .card.gone{padding:20px;gap:8px}
 .card.solo>*+*{border-top:0}
 .sum{margin:0;font-size:1rem;line-height:1.5;color:var(--ink)}
 .empty{margin:0;padding:20px 0;font-size:1rem;color:var(--muted)}
-.foot{display:flex;flex-direction:column;gap:var(--space-4);align-items:flex-start}
+.bar{position:sticky;bottom:0;z-index:1;background:var(--ground);border-top:1px solid var(--line)}
+.bar>div{max-width:640px;margin:0 auto;padding:10px max(16px,env(safe-area-inset-right,0px)) calc(20px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;align-items:center;gap:12px}
+.bar .cap{flex:1;min-width:0;padding:0}
+.bar .btn{flex:none}
 .scrim{position:fixed;inset:0;z-index:3;background:var(--scrim);animation:fade var(--duration-panel) var(--ease-out)}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:4;max-width:640px;margin:0 auto;display:flex;flex-direction:column;background:var(--tile);border:1px solid var(--tile-edge);border-bottom:0;border-radius:var(--radius-xl) var(--radius-xl) 0 0;box-shadow:var(--shadow-sheet);animation:rise var(--duration-panel) var(--ease-out)}
 .grip{align-self:center;flex:none;width:40px;height:4px;margin-top:10px;border-radius:var(--radius-pill);background:var(--line)}
 .q{display:flex;flex-direction:column;gap:20px;padding:14px 24px calc(28px + env(safe-area-inset-bottom,0px))}
 .q h2{margin:0 0 6px;font:600 1.25rem/1.3 var(--font-display)}
 .q h2+p{margin:0;font-size:1rem;line-height:1.5;color:var(--ink)}
+.acts{display:flex;flex-direction:column;gap:16px;padding:12px 20px calc(24px + env(safe-area-inset-bottom,0px))}
+.acts .hd{display:flex;align-items:center;gap:12px}
+.acts .hd .name{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+.acts h2{margin:0;font:600 1.25rem/1.3 var(--font-display);overflow-wrap:anywhere}
+.acts .hd small{font-family:var(--font-mono);font-size:0.8125rem;color:var(--muted)}
+.chip.big{width:48px;height:48px;border-radius:var(--radius-md);font-size:1.25rem}
+.last{border-radius:var(--radius-md);background:var(--sunken);padding:4px 8px 4px 16px;display:flex;align-items:center;gap:12px}
+.last .who{padding:10px 0}
+.last .who small:first-child{font-weight:500}
+.stack{display:flex;flex-direction:column;gap:8px}
+.stack .cap{text-align:center}
 .q label{display:flex;flex-direction:column;gap:6px;font-size:0.8125rem;font-weight:500;line-height:1.4;color:var(--ink)}
 .fld{width:100%;min-height:calc(var(--control-h) + var(--space-2));padding:0 16px;border-radius:var(--radius-md);border:1px solid var(--line-strong);background:var(--tile);color:var(--ink);font-size:1rem;font-weight:400}
 .two{display:flex;gap:12px}
@@ -828,7 +849,7 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
 @keyframes rise{from{transform:translateY(100%)}}
 @keyframes fade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.sheet,.scrim{animation:none}}
-@media (hover:hover){.rb:hover,.act:hover,.foot .btn:hover{background:var(--sunken)}}
+@media (hover:hover){.rb:hover,.act:hover,.pill:hover,.more:hover,.bar .btn:hover{background:var(--sunken)}}
 #toast{--focus:var(--ground);position:fixed;left:16px;right:16px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;min-height:56px;padding:0 8px 0 20px;border-radius:var(--radius-md);background:var(--ink);color:var(--ground);box-shadow:var(--shadow-raised);font-size:1rem;display:flex;align-items:center;gap:12px}
 #toast span{flex:1;min-width:0;padding:8px 0}
 #toast button{flex:none;min-height:var(--control-h);padding:0 14px;border-radius:var(--radius-pill);color:var(--ground);font-weight:700}
@@ -839,18 +860,15 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
 <header class="top">
   <button class="rb" id="close" aria-label="Close"></button>
   <div class="name"><h1 id="title">Apps</h1><small id="sub" hidden></small></div>
+  <button class="pill" id="bin" type="button"></button>
 </header>
 <main>
-  <p class="lead" id="lead">Every workspace’s apps. Open one to see its page, its changes and its earlier versions, to rename it or to move it to the trash. What the agent makes shows here as it makes it.</p>
-  <nav class="seg" role="tablist" aria-label="Show" id="tabs">
-    <button role="tab" data-tab="apps" aria-selected="true">Apps</button>
-    <button role="tab" data-tab="trash" aria-selected="false">Trash</button>
-  </nav>
+  <div class="chips" role="group" aria-label="Show apps from" id="chips"></div>
   <section id="apps"></section>
   <section id="trash" hidden></section>
   <section id="one" hidden></section>
-  <div class="foot" id="foot"><p class="cap">Anyone with this page’s link can see what it shows and act on it.</p></div>
 </main>
+<footer class="bar" id="foot"><div><p class="cap">Anyone with this page’s link can see what it shows and act on it.</p></div></footer>
 <div id="toast" role="status" hidden><span></span><button type="button" hidden>Undo</button></div>
 <script>
 (() => {
@@ -861,7 +879,10 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const node = Object.assign(document.createElement(tag), props); node.append(...kids.filter((kid) => kid !== null && kid !== undefined && kid !== false)); return node; };
   const icon = (d, size = 18) => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); for (const [k, v] of [["width", size], ["height", size], ["viewBox", "0 0 16 16"], ["fill", "none"], ["stroke", "currentColor"], ["stroke-width", "1.6"], ["stroke-linecap", "round"], ["stroke-linejoin", "round"], ["aria-hidden", "true"]]) s.setAttribute(k, v); s.innerHTML = `<path d="${d}"/>`; return s; };
-  const CLOSE = "M4 4l8 8M12 4l-8 8", BACK = "M10 3.5 5.5 8l4.5 4.5", CHEVRON = "M6 4l4 4-4 4";
+  const CLOSE = "M4 4l8 8M12 4l-8 8", BACK = "M10 3.5 5.5 8l4.5 4.5", CHECK = "M3.5 8.5l3 3 6-7", BIN = "M2.5 4.5h11 M6.2 4.5V2.8h3.6v1.7 M4 4.5l.7 8.7h6.6l.7-8.7",
+    OPEN = "M9.5 2.5h4v4 M13.5 2.5 7.5 8.5 M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3", PEN = "M10.5 2.8l2.7 2.7L6 12.7l-3.5.8.8-3.5z", CLOCK = "M2.8 8a5.2 5.2 0 1 0 1.5-3.7 M2.5 2.5v2.3h2.3 M8 5.2V8l2 1.3";
+  const dots = () => { const s = icon("", 18); s.setAttribute("fill", "currentColor"); s.innerHTML = '<circle cx="3.5" cy="8" r="0.9"/><circle cx="8" cy="8" r="0.9"/><circle cx="12.5" cy="8" r="0.9"/>'; return s; };
+  const initial = (title) => (title.trim()[0] || "?").toUpperCase();
 
   // ---- The toast: what was sent or done, or a refusal; with `undo`, an Undo button while it shows.
   let toastTimer = 0;
@@ -894,39 +915,45 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
     }
   }
 
-  // ---- The sheet: one question at a time over the page, as on the Vault. `body` goes between the
-  // question and its two buttons; `yes` runs with what `value` reads, unless `from` was drawn away.
+  // ---- The sheet: one at a time over the page, as on the Vault: `kids` in its `kind` of box, the
+  // heading `head` names it; closing it gives the focus back to `from`.
   let asking = null;
-  function ask({ title, line, yes, danger = true, body = null, value = () => null }, run, from) {
+  function sheet(kind, head, kids, from) {
     asking?.close();
-    const shade = [document.querySelector("header"), document.querySelector("main")];
+    const shade = [...document.querySelectorAll("body > header, body > main, body > footer")];
     const was = shade.map((part) => part.inert);
-    const id = "q" + Math.random().toString(36).slice(2, 8);
-    const keep = el("button", { className: danger ? "keep" : "keep soft", type: "button", textContent: "Keep" });
-    const go = el("button", { className: danger ? "go" : "yes", type: "button", textContent: yes });
     const scrim = el("div", { className: "scrim" });
-    const sheet = el("section", { className: "sheet" }, el("span", { className: "grip" }),
-      el("div", { className: "q" }, el("div", {}, el("h2", { id: id + "t", textContent: title }), line ? el("p", { id: id + "l", textContent: line }) : null), body, el("div", { className: "two" }, keep, go)));
-    for (const [k, v] of [["role", "dialog"], ["aria-modal", "true"], ["aria-labelledby", id + "t"]]) sheet.setAttribute(k, v);
+    const box = el("section", { className: "sheet" }, el("span", { className: "grip" }), el("div", { className: kind }, ...kids));
+    for (const [k, v] of [["role", "dialog"], ["aria-modal", "true"], ["aria-labelledby", head.id = "q" + Math.random().toString(36).slice(2, 8)]]) box.setAttribute(k, v);
     const me = {
       close: () => {
         if (asking !== me) return;
         asking = null;
-        scrim.remove(), sheet.remove();
+        scrim.remove(), box.remove();
         shade.forEach((part, i) => (part.inert = was[i]));
         if (from.isConnected) from.focus();
       },
     };
-    keep.onclick = scrim.onclick = me.close;
+    scrim.onclick = me.close;
+    for (const part of shade) part.inert = true;
+    document.body.append(scrim, box);
+    return (asking = me);
+  }
+
+  // One question: `body` goes between it and its two buttons; `yes` runs with what `value` reads,
+  // unless `from` was drawn away.
+  function ask({ title, line, yes, danger = true, body = null, value = () => null }, run, from) {
+    const keep = el("button", { className: danger ? "keep" : "keep soft", type: "button", textContent: "Keep" });
+    const go = el("button", { className: danger ? "go" : "yes", type: "button", textContent: yes });
+    const head = el("h2", { textContent: title });
+    const me = sheet("q", head, [el("div", {}, head, line ? el("p", { textContent: line }) : null), body, el("div", { className: "two" }, keep, go)], from);
+    keep.onclick = me.close;
     go.onclick = () => {
       const live = from.isConnected, v = value();
       if (v === false) return;
       me.close();
       if (live) run(v);
     };
-    for (const part of shade) part.inert = true;
-    document.body.append(scrim, sheet);
-    asking = me;
     (body?.querySelector("input") ?? keep).focus();
   }
 
@@ -955,53 +982,74 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
   // The theme this page has now (a client may switch it while it's open), at the moment the link is followed.
   const pageHref = (page) => { const now = document.documentElement.dataset.theme; return page + (now === "light" || now === "dark" ? `?theme=${now}` : ""); };
 
-  // ---- Views: the list (Apps or Trash) or one app, which is an entry of the browser's history,
-  // so Back returns to the list.
-  let now = null, opened = history.state?.app ?? null, tab = "apps", forward = false;
+  // ---- Views: the apps (all, or one workspace's), the trash, or one app; the last two are entries
+  // of the browser's history, so Back returns to the apps.
+  let now = null, view = history.state ?? {}, ws = new URLSearchParams(location.hash.slice(1)).get("ws") || "all", forward = false;
   const find = (key) => { for (const w of now?.workspaces ?? []) for (const a of w.apps) if (`${w.workspace}/${a.name}` === key) return { workspace: w.workspace, app: a }; return null; };
+  // Every app, newest first; the workspace chosen, or all where it has none now.
+  const everyApp = () => now.workspaces.flatMap((w) => w.apps.map((a) => ({ workspace: w.workspace, app: a }))).sort((p, q) => (q.app.changed > p.app.changed) - (q.app.changed < p.app.changed));
+  const chosen = () => (now.workspaces.some((w) => w.workspace === ws) ? ws : "all");
+  const count = (n) => `${n} app${n === 1 ? "" : "s"}`;
 
   function head(one) {
-    $("close").replaceChildren(icon(one ? BACK : CLOSE));
-    $("close").classList.toggle("back", !!one);
-    $("close").setAttribute("aria-label", one ? "Back to Apps" : "Close");
-    $("title").textContent = one ? one.app.title : "Apps";
-    $("sub").hidden = !one;
-    $("sub").textContent = one ? `${one.workspace} · ${one.app.name}` : "";
-    for (const id of ["lead", "tabs", "foot"]) $(id).hidden = !!one;
-    $("apps").hidden = !!one || tab !== "apps";
-    $("trash").hidden = !!one || tab !== "trash";
+    const deep = !!(one || view.trash), sub = $("sub");
+    $("close").replaceChildren(icon(deep ? BACK : CLOSE));
+    $("close").classList.toggle("back", deep);
+    $("close").setAttribute("aria-label", deep ? "Back to Apps" : "Close");
+    $("title").textContent = one ? one.app.title : view.trash ? "Trash" : "Apps";
+    sub.classList.toggle("mono", !!one);
+    const shown = chosen(), n = everyApp().filter((x) => shown === "all" || x.workspace === shown).length;
+    sub.textContent = one ? `${one.workspace} · ${one.app.name}` : view.trash ? count(now.trash.length) : `${shown === "all" ? "All" : shown} · ${count(n)} · newest first`;
+    sub.hidden = !sub.textContent;
+    for (const id of ["bin", "chips", "apps", "foot"]) $(id).hidden = deep;
+    if (!deep) $("chips").hidden = now.workspaces.length < 2;
+    $("trash").hidden = !view.trash || !!one;
     $("one").hidden = !one;
   }
 
   function draw() {
     if (!now) return;
-    const one = opened && find(opened);
-    if (opened && !one) return back();
-    head(one);
+    const one = view.app && find(view.app);
+    if (view.app && !one) return back();
     drawApps();
     drawTrash();
+    head(one);
     if (one) drawOne(one);
   }
 
   function drawApps() {
-    const count = now.workspaces.reduce((n, w) => n + w.apps.length, 0);
-    document.querySelector('[data-tab="apps"]').textContent = `Apps · ${count}`;
-    const parts = now.workspaces.flatMap((w) => {
-      const lab = el("div", { className: "lab", textContent: w.workspace });
-      lab.dataset.ws = w.workspace;
-      return [lab, el("div", { className: "card" }, ...w.apps.map((a) => {
-        const row = el("button", { className: "row link", type: "button", onclick: () => openApp(`${w.workspace}/${a.name}`) },
-          el("span", { className: "chip", ariaHidden: "true", textContent: (a.title.trim()[0] || "?").toUpperCase() }),
-          el("span", { className: "who" }, el("b", { textContent: a.title }), el("small", { textContent: [a.summary, when(a.changed)].filter(Boolean).join(" · ") })), icon(CHEVRON, 14));
-        row.dataset.key = `${w.workspace}/${a.name}`;
-        return row;
-      }))];
+    const all = everyApp(), shown = chosen(), apps = all.filter((x) => shown === "all" || x.workspace === shown);
+    const chip = (key, label, n) => {
+      const on = key === shown, b = el("button", { type: "button", ariaPressed: String(on), ariaLabel: `${label}, ${count(n)}`, onclick: () => pick(key) }, on ? icon(CHECK, 16) : null, label);
+      b.dataset.ws = key;
+      return b;
+    };
+    $("chips").replaceChildren(chip("all", "All", all.length), ...now.workspaces.map((w) => chip(w.workspace, w.workspace, w.apps.length)));
+    const tiles = apps.map(({ workspace, app: a }) => {
+      const key = `${workspace}/${a.name}`, time = when(a.changed), where = shown === "all" ? [workspace, time].filter(Boolean).join(" · ") : time;
+      const open = el("button", { className: "open", type: "button", ariaLabel: `${a.title}, ${workspace}${a.summary ? `: ${a.summary}` : ""}${time ? ` · ${time}` : ""}`, onclick: () => openApp(key) },
+        el("span", { className: "chip", ariaHidden: "true", textContent: initial(a.title) }),
+        el("span", { className: "who" }, el("b", { textContent: a.title }), a.summary ? el("small", { textContent: a.summary }) : null, where ? el("small", { textContent: where }) : null));
+      open.dataset.key = key;
+      const more = el("button", { className: "more", type: "button", ariaLabel: `More for ${a.title}` }, dots());
+      more.onclick = () => actions({ workspace, app: a }, more);
+      return el("li", { className: "tile" }, open, more);
     });
-    $("apps").replaceChildren(...(parts.length ? parts : [el("div", { className: "card" }, el("p", { className: "empty", textContent: "No apps yet. Ask the agent in a chat to make one." }))]));
+    const list = el("ul", { className: "grid" }, ...tiles);
+    list.setAttribute("aria-label", `${shown === "all" ? "All apps" : `${shown} apps`}, newest first`);
+    $("apps").replaceChildren(tiles.length ? list : el("div", { className: "card" }, el("p", { className: "empty", textContent: "No apps yet. Ask the agent in a chat to make one." })));
+  }
+
+  function pick(key) {
+    ws = key;
+    history.replaceState(history.state, "", key === "all" ? location.pathname + location.search : `#ws=${encodeURIComponent(key)}`);
+    draw();
+    [...$("chips").children].find((b) => b.dataset.ws === key)?.focus();
   }
 
   function drawTrash() {
-    document.querySelector('[data-tab="trash"]').textContent = `Trash · ${now.trash.length}`;
+    $("bin").replaceChildren(icon(BIN, 16), `Trash · ${now.trash.length}`);
+    $("bin").setAttribute("aria-label", `Trash, ${count(now.trash.length)}`);
     const rows = now.trash.map((x) => {
       const left = daysLeft(x.until);
       return el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: x.title }), el("small", { textContent: `${x.workspace} · ${left} day${left === 1 ? "" : "s"} left` })),
@@ -1023,21 +1071,55 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
     toast(`Taken back: ${changeText(c)}`, () => { clearTimeout(held?.timer); held = null; }, HOLD_MS);
   }
 
+  const baseOf = ({ workspace, app }) => ({ workspace, app: app.name, title: app.title });
+  const openPage = (app, ...label) => el("a", { className: "btn pri", href: pageHref(app.page), onclick() { this.href = pageHref(app.page); } }, ...label);
+
+  function rename(one, from) {
+    const { app } = one;
+    const input = el("input", { className: "fld", type: "text", value: app.title, maxLength: 80, autocomplete: "off" });
+    ask({ title: `Rename ${app.title}`, yes: "Rename", danger: false,
+      body: el("div", {}, el("label", {}, "Title", input), el("p", { className: "cap", style: "padding:12px 0 0" }, "Its name, ", el("span", { className: "mono", textContent: app.name }), ", stays: the agent and its scheduled jobs call it by that.")),
+      value: () => { const v = input.value.trim(); if (!v) return toast("Give it a title"), false; return v; } },
+      (title) => title !== app.title && post("rename", { ...baseOf(one), title }), from);
+  }
+
+  function toTrash(one, from) {
+    ask({ title: `Move ${one.app.title} to the trash?`, line: `It stays there ${now.trashDays} days, and Restore brings it back until then. Its page stops working, and the agent and its scheduled jobs can’t use it meanwhile.`, yes: "Move to trash" },
+      async () => { if ((await post("trash", baseOf(one))) && view.app) back(); }, from);
+  }
+
+  // ---- An app's actions, over the apps: its page, rename, its history, its last change taken back, the trash.
+  function actions(one, from) {
+    const { workspace, app } = one, c = app.changes[0];
+    const head = el("h2", { textContent: app.title });
+    const shut = el("button", { className: "rb back", type: "button", ariaLabel: "Close" }, icon(CLOSE));
+    const later = (fn) => () => { me.close(); fn(); };
+    const me = sheet("acts", head, [
+      el("div", { className: "hd" }, el("span", { className: "chip big", ariaHidden: "true", textContent: initial(app.title) }),
+        el("div", { className: "name" }, head, el("small", { textContent: `${workspace} · ${app.name}` })), shut),
+      app.page ? openPage(app, icon(OPEN, 16), "Open the page") : el("p", { className: "cap", style: "padding:0", textContent: "It has no page yet: the agent makes one when it builds the app." }),
+      el("div", { className: "pair" },
+        el("button", { className: "btn", type: "button", onclick: () => rename(one, from) }, icon(PEN, 16), "Rename"),
+        el("button", { className: "btn", type: "button", ariaLabel: "History: changes and earlier versions", onclick: later(() => openApp(`${workspace}/${app.name}`)) }, icon(CLOCK, 16), "History")),
+      c ? el("div", { className: "last" },
+        el("div", { className: "who" }, el("small", { textContent: "Last change" }), el("b", { textContent: changeText(c) }), el("small", { textContent: `${when(c.t)} · ${WHO[c.by] ?? c.by}` })),
+        el("button", { className: "act", type: "button", textContent: "Take back", ariaLabel: `Take back: ${changeText(c)}`, onclick: later(() => takeBack(one, c)) })) : null,
+      el("div", { className: "stack" }, el("button", { className: "btn bad", type: "button", onclick: () => toTrash(one, from) }, icon(BIN, 16), "Move to trash"),
+        el("p", { className: "cap", textContent: `It stays in the trash ${now.trashDays} days, and can be restored from there.` })),
+    ], from);
+    shut.onclick = me.close;
+    shut.focus();
+  }
+
   function drawOne(one) {
-    const { workspace, app } = one;
-    const base = { workspace, app: app.name, title: app.title };
-    const rename = el("button", { className: "btn", type: "button", textContent: "Rename" });
-    rename.onclick = () => {
-      const input = el("input", { className: "fld", type: "text", value: app.title, maxLength: 80, autocomplete: "off" });
-      ask({ title: `Rename ${app.title}`, yes: "Rename", danger: false,
-        body: el("div", {}, el("label", {}, "Title", input), el("p", { className: "cap", style: "padding:12px 0 0" }, "Its name, ", el("span", { className: "mono", textContent: app.name }), ", stays: the agent and its scheduled jobs call it by that.")),
-        value: () => { const v = input.value.trim(); if (!v) return toast("Give it a title"), false; return v; } },
-        (title) => title !== app.title && post("rename", { ...base, title }), rename);
-    };
-    const open = app.page ? el("a", { className: "btn pri", href: pageHref(app.page), onclick() { this.href = pageHref(app.page); }, textContent: "Open the page" }) : null;
+    const { app } = one;
+    const base = baseOf(one);
+    const renameButton = el("button", { className: "btn", type: "button", textContent: "Rename" });
+    renameButton.onclick = () => rename(one, renameButton);
+    const open = app.page ? openPage(app, "Open the page") : null;
     const top = el("div", { className: "card solo" }, app.summary ? el("p", { className: "sum", textContent: app.summary }) : null,
       app.page ? null : el("p", { className: "cap", style: "padding:0", textContent: "It has no page yet: the agent makes one when it builds the app." }),
-      el("div", { className: "pair" }, open, rename));
+      el("div", { className: "pair" }, open, renameButton));
     const changes = app.changes.map((c, i) => el("div", { className: "row" },
       el("div", { className: "who" }, el("b", { textContent: changeText(c) }), el("small", { textContent: `${when(c.t, true)} · ${WHO[c.by] ?? c.by}` })),
       i === 0 ? el("button", { className: "act", type: "button", textContent: "Take back", ariaLabel: `Take back: ${changeText(c)}`, onclick: () => takeBack(one, c) }) : null));
@@ -1045,8 +1127,7 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
       el("div", { className: "who" }, el("b", { className: "mono", textContent: v.file }), el("small", { textContent: made })),
       el("button", { className: "act", type: "button", textContent: "Put back", ariaLabel: `Put back ${v.file} from ${made}`, onclick: () => post("put-back", { ...base, file: v.file, at: v.t }) && toast(`Putting back ${v.file}`) })));
     const trash = el("button", { className: "btn bad", type: "button", style: "align-self:flex-start", textContent: "Move to trash" });
-    trash.onclick = () => ask({ title: `Move ${app.title} to the trash?`, line: `It stays there ${now.trashDays} days, and Restore brings it back until then. Its page stops working, and the agent and its scheduled jobs can’t use it meanwhile.`, yes: "Move to trash" },
-      async () => { if (await post("trash", base)) back(); }, trash);
+    trash.onclick = () => toTrash(one, trash);
     $("one").replaceChildren(top,
       el("div", { className: "lab", textContent: "Recent changes" }),
       el("div", { className: "card" }, ...(changes.length ? changes : [el("p", { className: "empty", textContent: "No changes yet." })])),
@@ -1057,51 +1138,50 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
       trash);
   }
 
-  function show(key) {
-    const was = opened;
-    opened = key;
+  const deep = (state) => !!(state?.app || state?.trash);
+  function show(state) {
+    const was = view;
+    view = state ?? {};
     draw();
-    if (opened) window.scrollTo(0, 0), $("close").focus();
-    else [...$("apps").querySelectorAll(".link")].find((b) => b.dataset.key === was)?.focus();
+    if (deep(view)) window.scrollTo(0, 0), $("close").focus();
+    else if (was.app) [...$("apps").querySelectorAll(".open")].find((b) => b.dataset.key === was.app)?.focus();
+    else if (was.trash) $("bin").focus();
   }
-  function openApp(key) {
-    history.pushState({ app: key }, "");
+  function go(state) {
+    history.pushState(state, "");
     forward = false;
-    show(key);
+    show(state);
   }
+  const openApp = (key) => go({ app: key });
   function back() {
-    if (history.state?.app) history.back();
+    if (deep(history.state)) history.back();
     else show(null);
   }
-  window.addEventListener("popstate", (e) => { asking?.close(); forward = !e.state?.app; show(e.state?.app ?? null); });
+  window.addEventListener("popstate", (e) => { asking?.close(); forward = !deep(e.state); show(e.state); });
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !(asking || opened)) return;
+    if (e.key !== "Escape" || !(asking || deep(view))) return;
     e.preventDefault();
     asking ? asking.close() : back();
   });
-  $("close").onclick = () => (opened ? back() : history.length - (forward ? 1 : 0) > 1 ? history.back() : window.close());
-  for (const b of document.querySelectorAll("nav button")) b.onclick = () => {
-    tab = b.dataset.tab;
-    for (const other of document.querySelectorAll("nav button")) other.setAttribute("aria-selected", String(other === b));
-    head(null);
-  };
+  $("close").onclick = () => (deep(view) ? back() : history.length - (forward ? 1 : 0) > 1 ? history.back() : window.close());
+  $("bin").onclick = () => go({ trash: true });
 
   // ---- A new link, asked first.
   const rotate = el("button", { className: "btn", type: "button", textContent: "New link" });
   rotate.onclick = () => ask({ title: "Make a new link?", line: "This one stops working, everywhere it was shared.", yes: "Make it" }, () => post("rotate"), rotate);
-  $("foot").append(rotate);
+  $("foot").querySelector("div").append(rotate);
 
   // ---- The state, every few seconds; not drawn again under a question or a field being typed in.
   // What the skill did with the last event shows once, as a toast.
-  let last = null, drawnAt = null, toldAt = null, first = true;
+  let last = null, drawnAt = null, toldAt = null;
   const busy = () => !!asking || document.activeElement?.tagName === "INPUT";
   async function load() {
     try {
       const res = await fetch(`${cfg.token}.json`, { cache: "no-cache" });
       if (res.status === 404) {
         clearInterval(poll); // the link is gone for good: said once
-        head(null);
-        $("tabs").hidden = $("lead").hidden = $("foot").hidden = $("trash").hidden = true;
+        view = {};
+        for (const id of ["bin", "chips", "foot", "trash", "one"]) $(id).hidden = true;
         $("apps").hidden = false;
         const gone = el("div", { className: "card solo gone", role: "status" }, el("b", { style: "font-weight:600", textContent: "This link was replaced" }),
           el("p", { className: "sum" }, "Open the page again from where you got it: the agent, AnywhereLLM Lite, or ", el("span", { className: "mono", textContent: "anywherellm-suite pages" }), "."));
@@ -1120,16 +1200,10 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
       }
       toldAt = now.result ? now.result.n : 0;
       draw();
-      if (first) {
-        first = false;
-        const ws = new URLSearchParams(location.hash.slice(1)).get("ws");
-        if (ws && !opened) [...document.querySelectorAll("[data-ws]")].find((l) => l.dataset.ws === ws)?.scrollIntoView({ block: "start" });
-      }
     } catch (e) {
       toast("Can’t reach AnythingLLM");
     }
   }
-  head(null);
   const poll = setInterval(load, 5000);
   load();
 })();
