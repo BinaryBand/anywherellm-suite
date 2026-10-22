@@ -71,7 +71,7 @@ function seedFor(e: Readonly<vault.Entry>): Buffer {
 }
 
 /** The signing key `label`'s public key and namespace. */
-export function publicKeyOf(label: string): { public: string; fingerprint: string; namespace: string } {
+function publicKeyOf(label: string): { public: string; fingerprint: string; namespace: string } {
   const e = entryOf(label);
   const pub = sshsig.publicOf(seedFor(e));
   return { public: sshsig.keyLine(pub), fingerprint: sshsig.fingerprint(pub), namespace: e.site };

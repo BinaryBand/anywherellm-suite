@@ -8,7 +8,7 @@
 // the page (page.evaluate), so it uses nothing outside itself.
 
 import type { Page } from "./host";
-import { firstLine } from "./state";
+import { firstLine } from "#shared/errors";
 
 /** A field in view one types into: its ref, its box in the page's CSS pixels, its input type. */
 export interface Field {

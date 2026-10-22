@@ -2,7 +2,6 @@
 // for the bundled Puppeteer (fixtures/puppeteer), the built handler.js called as AnythingLLM's agent
 // calls it, and what a tab's page posts, written as AnythingLLM's collector writes it.
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -11,7 +10,8 @@ import { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
-import { postEvent, setLinksHidden } from "#shared/test-helpers";
+import * as helpers from "#shared/test-helpers";
+import { pageCfg, postEvent, setLinksHidden } from "#shared/test-helpers";
 
 const require = createRequire(import.meta.url);
 export const testsDir = path.dirname(fileURLToPath(import.meta.url));
@@ -85,7 +85,7 @@ export function call(args: Record<string, unknown>, { workspace = "home", thread
 export function tabConfig(workspace = "home", tab = "1"): { token: string; secret: string; key: string; pub: string; workspace: string; tab: string } {
   const { token } = JSON.parse(fs.readFileSync(path.join(storage, "browser-lean", workspace, "tabs.json"), "utf8"))[tab];
   const html = fs.readFileSync(path.join(publicDir, "browser-lean", `${token}.html`), "utf8");
-  return JSON.parse(html.match(/const cfg = (\{.*?\});/)![1]);
+  return pageCfg(html);
 }
 
 /** A tab's state, as its page reads it. */
@@ -93,17 +93,11 @@ export function tabState(workspace = "home", tab = "1"): Record<string, any> {
   return JSON.parse(fs.readFileSync(path.join(publicDir, "browser-lean", `${tabConfig(workspace, tab).token}.json`), "utf8"));
 }
 
-/** `text` sealed as the page seals it: WebCrypto's RSA-OAEP (SHA-256) with the vault's public key. */
-export function seal(text: string, pub = tabConfig().pub): string {
-  const key = crypto.createPublicKey({ key: Buffer.from(pub, "base64"), format: "der", type: "spki" });
-  return crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, Buffer.from(text)).toString("base64");
-}
-
+/** `text` sealed as the page seals it (#shared/test-helpers seal), with the tab's key by default. */
+export const seal = (text: string, pub = tabConfig().pub): string => helpers.seal(text, pub);
 
 /** The Vault's names and its logins section, as the tab pages link to it and the Vault reads it. */
-export function vaultNames(): { token: string; secret: string } {
-  return JSON.parse(fs.readFileSync(path.join(storage, "vault-lean", "vault-page.json"), "utf8"));
-}
+export const vaultNames = () => helpers.vaultNames(storage);
 export const vaultLogins = (): { id: string; site: string; user: string; kind: string }[] =>
   JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultNames().token}-logins.json`), "utf8")).logins;
 
@@ -112,8 +106,7 @@ export const vaultAddresses = (): { origins: { origin: string }[]; refused: { or
   JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultNames().token}-addresses.json`), "utf8"));
 
 /** What the Vault posts in its logins section (or `section`) (#shared/test-helpers postEvent). */
-export const postVault = (event: Record<string, unknown>, section: "logins" | "addresses" = "logins"): void =>
-  postEvent(storage, `vault-lean-${section}`, { vault_lean_event: 1, secret: vaultNames().secret, ...event });
+export const postVault = (event: Record<string, unknown>, section: "logins" | "addresses" = "logins"): void => helpers.postVault(storage, section, event);
 
 /** What a tab's page posts (#shared/test-helpers postEvent), with the tab's secret. */
 export const post = (event: Record<string, unknown>, { workspace = "home", tab = "1" } = {}): void =>

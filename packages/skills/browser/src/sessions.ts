@@ -28,7 +28,7 @@ async function withSession<T>(browser: Browser, fn: (cdp: CDPSession) => Promise
 
 /** The cookies worth keeping, as setCookies takes them, in a stable order: not run out, not
  *  partitioned; one that ends with the browser (session) is kept too, so a sign-in lasts. */
-export function keepable(cookies: Cookie[], now = Date.now() / 1000): Cookie[] {
+function keepable(cookies: Cookie[], now = Date.now() / 1000): Cookie[] {
   return cookies
     .filter((c) => !c.partitionKey && (c.session || !(Number(c.expires) > 0) || Number(c.expires) > now))
     .map((c) => {

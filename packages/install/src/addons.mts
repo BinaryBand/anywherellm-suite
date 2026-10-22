@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { pageKeyFile, SAVED_NOW, SUITE_DIR } from "#shared/anythingllm";
-import { sameText, writeAtomicIfChanged } from "#shared/atomic";
+import { listDir, sameText, writeAtomicIfChanged } from "#shared/atomic";
 import { Told } from "#shared/errors";
 
 /** The files install writes, built into it (packages/build.mjs). */
@@ -136,11 +136,7 @@ export function put(storage: string, skills: Skill[]): string[] {
  *  AnythingLLM would otherwise keep beside it. A skill ships its files flat (build.mjs inlines its
  *  static/ folder), and keeps its data elsewhere in the storage, so the folder is its files alone. */
 function leftovers(storage: string, skill: Skill): string[] {
-  try {
-    return fs.readdirSync(skillDir(storage, skill)).filter((name) => !(name in skill.files));
-  } catch {
-    return [];
-  }
+  return listDir(skillDir(storage, skill)).filter((name) => !(name in skill.files));
 }
 
 /** Takes out what `put` put in (the skills it knows of); what it did. A skill's data stays. */

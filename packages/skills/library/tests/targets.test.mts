@@ -11,11 +11,12 @@ import crypto from "node:crypto";
 import dns from "node:dns";
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import ssh2 from "ssh2";
+import { listen } from "#shared/test-helpers";
+import { sshFingerprint } from "#shared/thishost";
 import { THIS_HOST_FINGERPRINT, call as called, library, pageConfig, pageState, post, publicDir, reset, seal as sealWith, storage, until } from "./harness.mts";
 
 const { Server, utils } = ssh2;
@@ -48,7 +49,7 @@ const seal = (text: string): string => sealWith(text, pageConfig().pub);
 
 const hostKey = utils.generateKeyPairSync("ed25519");
 const otherHostKey = utils.generateKeyPairSync("ed25519");
-const fingerprint = (pub: string) => `SHA256:${crypto.createHash("sha256").update(Buffer.from(pub.split(" ")[1], "base64")).digest("base64").replace(/=+$/, "")}`;
+const fingerprint = (pub: string) => sshFingerprint(Buffer.from(pub.split(" ")[1], "base64"));
 
 /** Misbehaviour of the stand-in's SFTP, by the path it concerns: removing it fails, and a rename to it
  *  is answered that many times before the next ones never are. */
@@ -211,10 +212,9 @@ const standIn = (key: string) =>
   });
 
 const server = standIn(hostKey.private);
-await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-const PORT = (server.address() as AddressInfo).port;
+const PORT = await listen(server);
 const imposter = standIn(otherHostKey.private);
-await new Promise<void>((resolve) => imposter.listen(0, "127.0.0.1", resolve));
+const IMPOSTER_PORT = await listen(imposter);
 test.after(() => (server.close(), imposter.close()));
 
 const boxState = () => pageState().targets.find((t: { label: string }) => t.label === "box");
@@ -316,7 +316,7 @@ test("a function names a target and nothing else of it: a host, a key or a targe
 });
 
 test("a host key other than the one pinned is refused before signing in, and nothing is sent", async () => {
-  await register({ port: (imposter.address() as AddressInfo).port });
+  await register({ port: IMPOSTER_PORT });
   await ops();
   seen.auths = 0;
   const said = await call({ action: "run", name: "ops.run", inputs: { req: { command: "echo hi" } } });
@@ -788,8 +788,7 @@ test("a target is looked at on its first use when it wasn't at its check for wan
 test("it warns, without refusing, of an AnythingLLM with no password, and the vault's key beside the vault", async () => {
   const answers = { results: { RequiresAuth: false, MultiUserMode: false } };
   const web = http.createServer((req, res) => res.end(req.url === "/api/setup-complete" ? JSON.stringify(answers) : "{}"));
-  await new Promise<void>((resolve) => web.listen(0, "127.0.0.1", resolve));
-  const base = `http://127.0.0.1:${(web.address() as AddressInfo).port}`;
+  const base = `http://127.0.0.1:${await listen(web)}`;
   try {
     const open = await registered(base);
     assert.equal(open.barred, null);
@@ -850,8 +849,7 @@ test("a machine that shows this host's SSH host key is refused, whatever its add
   assert.deepEqual(pageState().targets, []);
   // Saved with a fingerprint that isn't this host's, at a machine that shows this host's key: the
   // key it shows is what is refused, before anything is sent.
-  const imposterPort = (imposter.address() as AddressInfo).port;
-  assert.equal(await savedAs("twin", { port: imposterPort }), null);
+  assert.equal(await savedAs("twin", { port: IMPOSTER_PORT }), null);
   await until(() => pageState().targets.find((t: { label: string }) => t.label === "twin")?.status !== "not tried yet", SIGN_IN_MS);
   assert.match(pageState().targets.find((t: { label: string }) => t.label === "twin").status, /is this machine: SHA256:\S+ is this machine's own SSH host key.*Nothing was sent/);
   assert.equal(seen.execs, 0);

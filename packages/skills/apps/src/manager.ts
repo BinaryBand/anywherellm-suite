@@ -15,13 +15,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { jobTimeLeft } from "#shared/anythingllm";
-import { Told } from "#shared/errors";
+import { firstLine, Told } from "#shared/errors";
 import { linksHidden, OPEN_PAGES } from "#shared/page-links";
-import { embed, inTurn, pageKey, publicPath, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { embed, inTurn, pageKey, publicPath, sameSecret, takeEvents, watch } from "#shared/pages";
 import { type Names, tokenPage } from "#shared/token-page";
 import { summary } from "./card.ts";
 import { HUB_ID, root } from "./dirs.ts";
-import { firstLine, publish, refresh as refreshPage, tell, unpublish, whenApplied } from "./page.ts";
+import { publish, refresh as refreshPage, tell, unpublish, whenApplied } from "./page.ts";
 import { file } from "./parts.ts";
 import type { Json } from "./patch.ts";
 import * as store from "./store.ts";
@@ -35,7 +35,6 @@ const PREFIX = "manager-";
  *  `n` counts them, so the page knows one is new. */
 interface Result {
   n: number;
-  ev: string;
   title: string;
   error: string | null;
 }
@@ -56,7 +55,6 @@ const names = tokenPage<ManagerFile>({
   pattern: /^manager-([\w-]{24})(\.html|\.json)$/,
 });
 
-const put = (name: string, text: string): string => (writePublic(`${HUB_ID}/${name}`, text), name);
 const text = (v: unknown, n = 200) => String(v ?? "").trim().slice(0, n);
 
 /** One app as the manager shows it: nothing secret, and its page by the address relative to the
@@ -89,7 +87,7 @@ function state(p: ManagerFile) {
 /** Writes the page and its state into the public folder; answers its address relative to
  *  AnythingLLM's. `rotated` says the token was just replaced, which the links file records. */
 async function write(rotated = false, hidden = linksHidden()): Promise<string> {
-  const p = await names.publish((n) => [put(`${PREFIX}${n.token}.html`, html(n)), put(`${PREFIX}${n.token}.json`, JSON.stringify(state(n)))], rotated, hidden);
+  const p = await names.publish((n) => [names.put(`${PREFIX}${n.token}.html`, html(n)), names.put(`${PREFIX}${n.token}.json`, JSON.stringify(state(n)))], rotated, hidden);
   return `/${HUB_ID}/${PREFIX}${p.token}.html`;
 }
 
@@ -100,7 +98,7 @@ const html = (n: ManagerFile): string => file("pages/manager.html").replace("/*C
  *  failure is only logged. */
 export function refresh(): void {
   try {
-    names.refresh((p) => [put(`${PREFIX}${p.token}.json`, JSON.stringify(state(p)))]);
+    names.refresh((p) => [names.put(`${PREFIX}${p.token}.json`, JSON.stringify(state(p)))]);
   } catch (e) {
     console.error(`apps-lean couldn't refresh the apps manager: ${(e as Error).message}`);
   }
@@ -117,10 +115,10 @@ export async function show(base: string | null): Promise<string | null> {
     const kept = names.read();
     let rel: string;
     if (kept && fs.existsSync(publicPath(`${HUB_ID}/${PREFIX}${kept.token}.json`))) {
-      put(`${PREFIX}${kept.token}.html`, html(kept));
+      names.put(`${PREFIX}${kept.token}.html`, html(kept));
       rel = `/${HUB_ID}/${PREFIX}${kept.token}.html`;
     } else rel = await write();
-    return `${(base ?? "").replace(/\/+$/, "")}${rel}`;
+    return `${base ?? ""}${rel}`;
   } catch (e) {
     if (!(e instanceof Told)) console.error(`apps-lean couldn't write the apps manager: ${(e as Error).message}`);
     return null;
@@ -217,12 +215,12 @@ async function drain(): Promise<void> {
       }
       if (done.name) touched.set(`${done.workspace}/${done.name}`, { workspace: done.workspace, name: done.name });
       await tell(done.workspace, [`- ${done.said}`]);
-      result = { ev, title: done.said, error: null };
+      result = { title: done.said, error: null };
     } catch (err) {
       // The events are taken already: one that breaks (not a refusal) is logged, and the rest go on.
       const told = err instanceof Told;
       if (!told) console.error(`apps-lean couldn't apply an apps manager event (${ev}): ${(err as Error).message}`);
-      result = { ev, title: text(e.title ?? e.app, 120), error: `${NOT_DONE[ev] ?? "Not done"}: ${told ? firstLine(err).slice(0, 400) : "couldn't do that (see the log)"}` };
+      result = { title: text(e.title ?? e.app, 120), error: `${NOT_DONE[ev] ?? "Not done"}: ${told ? firstLine(err).slice(0, 400) : "couldn't do that (see the log)"}` };
     }
   }
   for (const { workspace, name } of touched.values()) await refreshPage(workspace, name);

@@ -47,12 +47,17 @@ interface Part {
 // file tuned under .static/ is read at the next run.
 let files: StaticFiles | null = null;
 const statics = (): StaticFiles => (files ??= staticFiles(STATIC_FILES, overrides()));
+const texts = new Map<string, string>();
 
 /** A static file's text; throws naming it when there's none (a part the build left out). */
 export function file(name: string): string {
-  const found = statics().get(name);
-  if (!found) throw new Error(`the skill has no ${name}`);
-  return found.text;
+  let text = texts.get(name);
+  if (text === undefined) {
+    const found = statics().get(name);
+    if (!found) throw new Error(`the skill has no ${name}`);
+    texts.set(name, (text = found.text));
+  }
+  return text;
 }
 
 /** A template's page: its own <main> in the shell every template shares (templates/shell.html,
@@ -312,12 +317,13 @@ export function starter(name: string): { line: string; template: string; parts: 
 
 /** The libraries a page may name, as a page gets them inline: parts.js with every figure, and
  *  motion.js with its motion.css, which show the cues the parts give (App.cue). */
+let libs: Record<string, string> | null = null;
 export function libraries(): Record<string, string> {
-  const figures = Object.values(parts()).filter((p) => p.kind === "figure").map((p) => p.body);
-  return {
-    "app.js": file("app.js"), "app.css": file("app.css"), "parts.js": [file("parts.js"), ...figures].join("\n"),
+  const figures = (): string[] => Object.values(parts()).filter((p) => p.kind === "figure").map((p) => p.body);
+  return (libs ??= {
+    "app.js": file("app.js"), "app.css": file("app.css"), "parts.js": [file("parts.js"), ...figures()].join("\n"),
     "motion.js": file("motion.js"), "motion.css": file("motion.css"),
-  };
+  });
 }
 
 // What a page may use without declaring it: the browser's own globals. A name starting with a

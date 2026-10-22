@@ -15,7 +15,7 @@ import path from "node:path";
 import { pageKeyFile, perBuild, perProcess, readPageKey, serial, serverDir, storageDir } from "./anythingllm.mts";
 import { Told } from "./errors.mts";
 import { PAGE_FOLDERS } from "./fence.mts";
-import { readText, writeAtomic } from "./atomic.mts";
+import { listDir, readText, writeAtomic } from "./atomic.mts";
 import { publicKey } from "./vault.mts";
 
 /** A file still being written is left this long before it's dropped as unreadable. */
@@ -74,14 +74,7 @@ export function renamePublic(from: string, to: string): void {
 }
 
 /** The files in a folder of the public folder ("library-lean"); none when there's none. */
-export function listPublic(rel: string): string[] {
-  const dir = publicPath(rel);
-  try {
-    return fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-}
+export const listPublic = (rel: string): string[] => listDir(publicPath(rel));
 
 /** `value` as JSON that can sit inside a <script> without ending it or starting markup. */
 export const embed = (value: unknown): string =>

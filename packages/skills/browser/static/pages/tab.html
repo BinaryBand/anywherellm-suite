@@ -769,13 +769,11 @@ html { font-size: 100%; }
   .hu-root .hu-button:active, .hu-root a.hu-tile:active, .hu-root button.hu-tile:active, .hu-root .hu-chip:active { transform: none; }
 }
 /* end of house ui */
-*{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{background:var(--ground);color:var(--ink);font:1rem/1.5 var(--font-sans);overflow:hidden;-webkit-tap-highlight-color:transparent}
+body{overflow:hidden;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input{font:inherit;color:var(--ink)}
-:focus-visible{outline:var(--size-focus) solid var(--focus);outline-offset:3px}
-input:focus-visible,#take:focus-visible{outline-offset:-3px}
+#take:focus-visible{outline-offset:-3px}
 [hidden],.hosted #hint,.hosted #mine{display:none!important}
 #stage{position:fixed;inset:0;overflow:hidden;touch-action:none}
 #shot{position:absolute;display:block;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;pointer-events:none;background:#fff}
@@ -945,14 +943,14 @@ input:focus-visible,#take:focus-visible{outline-offset:-3px}
   function place(input, f) {
     Object.assign(input.style, { left: left + f.x * scale + "px", top: top + f.y * scale + "px", width: Math.max(f.w * scale, 120) + "px", height: Math.max(f.h * scale, 40) + "px" });
   }
-  const KINDS = { email: "email", password: "password", tel: "tel", url: "url", search: "search", date: "date", time: "time", month: "month", week: "week", "datetime-local": "datetime-local" };
+  const KINDS = new Set(["email", "password", "tel", "url", "search", "date", "time", "month", "week", "datetime-local"]);
   function nextField(f) {
     const after = (st.fields || []).filter((g) => g.ref !== f.ref && (g.y > f.y + 2 || (Math.abs(g.y - f.y) <= 2 && g.x > f.x)));
     return after.sort((a, b) => a.y - b.y || a.x - b.x)[0] || null;
   }
   function openField(f) {
     closeField(false);
-    const input = el("input", { className: "over", type: KINDS[f.kind] || "text", autocomplete: f.kind === "password" ? "new-password" : "off", autocapitalize: "off", spellcheck: false, placeholder: f.filled ? "Type to replace" : "" });
+    const input = el("input", { className: "over", type: KINDS.has(f.kind) ? f.kind : "text", autocomplete: f.kind === "password" ? "new-password" : "off", autocapitalize: "off", spellcheck: false, placeholder: f.filled ? "Type to replace" : "" });
     if (f.kind === "number") input.inputMode = "decimal";
     input.setAttribute("aria-label", f.kind === "password" ? "Password" : "Field on the page");
     input.enterKeyHint = nextField(f) ? "next" : "go";

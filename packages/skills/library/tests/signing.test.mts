@@ -9,10 +9,10 @@ import { execFileSync, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { call, giveKey, idOf, library, outcome, page, pageState, postVault, reset, runRecord, seal, storage, testsDir, vaultState } from "./harness.mts";
+import { close, listen } from "#shared/test-helpers";
 import * as vault from "#shared/vault";
 
 const hasKeygen = spawnSync("ssh-keygen", ["-?"]).error === undefined;
@@ -290,11 +290,11 @@ async function savedNtfy(t: TestContext, settings: Record<string, unknown>) {
       res.end((topics.get(topic) ?? []).map((m) => `${JSON.stringify(m)}\n`).join(""));
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  t.after(() => server.close());
+  const port = await listen(server);
+  t.after(() => close(server));
   await giveKey("ntfy", "127.0.0.1", NTFY_TOKEN);
   const inputs = { op: { type: "string", required: true }, topic: { type: "string" }, since: { type: "string" }, text: { type: "string" }, title: { type: "string" } };
-  const toolkit = { title: "ntfy", base_urls: [`http://127.0.0.1:${(server.address() as AddressInfo).port}`], secrets: [{ label: "ntfy", as: "bearer" }] };
+  const toolkit = { title: "ntfy", base_urls: [`http://127.0.0.1:${port}`], secrets: [{ label: "ntfy", as: "bearer" }] };
   const fn = { name: "channel", description: "Reads the inbox, sends to the outbox.", inputs, source: adapted("ntfy-channel", "NTFY", settings) };
   assert.match(await call({ action: "save", service: "ntfy", toolkit, function: fn }), /Saved ntfy\.channel/);
   const arrives = (topic: string, text: string, title?: string): Message => {

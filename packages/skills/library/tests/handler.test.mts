@@ -5,11 +5,11 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
 import { allowedFile } from "#shared/fence";
 import { lf } from "#shared/static";
+import { close, listen } from "#shared/test-helpers";
 import { check } from "../src/sandbox.ts";
 import { call, cardsShown, giveKey, hideLinks, idOf, installed, library, pageConfig, postVault, publicDir, reset, runRecord, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
 
@@ -34,9 +34,8 @@ const api = http.createServer((req, res) => {
     return json(404, { message: "no" });
   });
 });
-await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
-const BASE = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
-test.after(() => api.close());
+const BASE = `http://127.0.0.1:${await listen(api)}`;
+test.after(() => close(api));
 
 const ISSUES = `async function main(input, kit) {
   const answer = await kit.http({ path: "/issues", params: { state: input.state || "open" } });

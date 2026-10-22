@@ -178,5 +178,3 @@ export function say(entry: Entry, key: string, text: string): void {
   entry.msgs.set(key, { text, id: Math.max(now, (entry.msgs.get(key)?.id ?? 0) + 1), until: now + SAY_MS });
 }
 
-/** The first line of what an error says. */
-export const firstLine = (e: unknown): string => String((e as Error)?.message ?? e).split("\n")[0];

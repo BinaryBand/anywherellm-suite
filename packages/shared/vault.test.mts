@@ -7,6 +7,7 @@ import path from "node:path";
 import { after, beforeEach, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { seal } from "./test-helpers.mts";
 import { VaultError, load, newId, openSealed, publicKey, readSealed, update, writeSealed } from "./vault.mts";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "vault-"));
@@ -152,14 +153,12 @@ test("a lock a dead process left behind is broken once it's old", async () => {
 test("what a page seals with the public key opens here, short (RSA) or long (h1.)", async () => {
   const pub = await publicKey(dir);
   assert.equal(await publicKey(dir), pub, "the pair is made once");
-  const key = crypto.createPublicKey({ key: Buffer.from(pub, "base64"), format: "der", type: "spki" });
-  const rsa = (data: Buffer) => crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, data).toString("base64");
-  assert.equal(openSealed(rsa(Buffer.from("hunter2")), dir), "hunter2");
+  const short = seal("hunter2", pub);
+  assert.doesNotMatch(short, /^h1\./);
+  assert.equal(openSealed(short, dir), "hunter2");
   const long = "x".repeat(2000);
-  const aes = crypto.randomBytes(32);
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv("aes-256-gcm", aes, iv);
-  const box = Buffer.concat([cipher.update(long, "utf8"), cipher.final(), cipher.getAuthTag()]);
-  assert.equal(openSealed(`h1.${rsa(aes)}.${iv.toString("base64")}.${box.toString("base64")}`, dir), long);
+  const sealed = seal(long, pub);
+  assert.match(sealed, /^h1\./);
+  assert.equal(openSealed(sealed, dir), long);
   assert.throws(() => openSealed("not sealed", dir), /couldn't be opened/);
 });

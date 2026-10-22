@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { close, listen } from "#shared/test-helpers";
 import { tempDir } from "./fakes/tmp.mts";
 
 const bundle = fileURLToPath(new URL("../dist/anywherellm-suite.cjs", import.meta.url));
@@ -31,9 +31,8 @@ for (const [name, pages] of [["apps", true], ["browser", true], ["library", true
   test(`the ${name} skill installs alone into a fresh storage, and health finds it`, async (t) => {
     // A stand-in AnythingLLM that takes the pages' key, as its browser extension's check does.
     const anythingllm = http.createServer((req, res) => ((res.statusCode = req.url === "/api/browser-extension/check" ? 200 : 404), res.end("{}")));
-    await new Promise<void>((resolve) => anythingllm.listen(0, "127.0.0.1", resolve));
-    t.after(() => anythingllm.close());
-    const extra = { ANYTHINGLLM_URL: `http://127.0.0.1:${(anythingllm.address() as AddressInfo).port}` };
+    const extra = { ANYTHINGLLM_URL: `http://127.0.0.1:${await listen(anythingllm)}` };
+    t.after(() => close(anythingllm));
     const storage = path.join(tmp, `alone-${name}`);
     fs.mkdirSync(path.join(storage, "plugins"), { recursive: true });
     const done = await cliAsync(extra, "install", "--storage", storage, "--skills", name, ...(pages ? ["--page-key", "brx-test"] : []));

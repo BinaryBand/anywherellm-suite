@@ -14,6 +14,7 @@ import path from "node:path";
 import { jobTimeLeft, perProcess } from "#shared/anythingllm";
 import { readJson, updateJson } from "#shared/atomic";
 import { embed, inTurn, newSecret, pageKey, publicPath, putBack, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { firstLine } from "#shared/errors";
 import { HUB_ID, root } from "./dirs.ts";
 import type { Json } from "./patch.ts";
 import { file, libraries, PLACEHOLDER, RUNTIME_TAG, tag } from "./parts.ts";
@@ -73,7 +74,7 @@ export const stateOf = (app: Json, version = versionOf(app)): Json => ({ line: a
 
 /** The address of a page from its token: under `base`, AnythingLLM's address as the user's browser
  *  reaches it, or relative to AnythingLLM's own pages without it; null when it has no page yet. */
-export const pageUrl = (token: unknown, base: string | null): string | null => (token ? `${(base ?? "").replace(/\/+$/, "")}/${pageFile(String(token))}` : null);
+export const pageUrl = (token: unknown, base: string | null): string | null => (token ? `${base ?? ""}/${pageFile(String(token))}` : null);
 
 /** Writes the app's page at its address, giving the app a random token the first time; answers the
  *  token, or null where the public folder can't be written or the app has no page. Throws pageKey's
@@ -140,8 +141,6 @@ export interface Result {
 /** How many events from one app's page are applied in one pass; the rest are refused, so a flood
  *  can't push the app's changes out of its history. */
 export const MOST_AT_ONCE = 20;
-
-export const firstLine = (e: unknown): string => (e as Error).message.split("\n")[0];
 
 /** How many times an event that met something passing is tried before it's given up on. */
 export const TRIES = 5;

@@ -1,11 +1,10 @@
 // What AnythingLLM and Puppeteer supply to the skill, as far as the skill uses them: the skill's own
 // description, which the bundled puppeteer-core and the tests' stand-in for it both meet.
 
+import type { Invoked } from "#shared/anythingllm";
+
 /** `this` in the handler, as AnythingLLM's agent sets it up. */
-export interface HandlerContext {
-  super?: {
-    handlerProps?: { invocation?: { workspace?: { slug?: string } | null; thread_id?: number | null; uuid?: string | null } };
-  };
+export interface HandlerContext extends Invoked {
   /** A line shown in the chat while the skill works. */
   introspect?: (message: string) => void;
   /** The skill's settings (plugin.json's setup_args), as the user set them in AnythingLLM. */

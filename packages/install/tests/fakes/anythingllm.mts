@@ -3,7 +3,7 @@
 // counted and gets a 404.
 
 import http from "node:http";
-import { close, listen } from "./net.mts";
+import { close, listen } from "#shared/test-helpers";
 
 export class FakeAnythingLLM {
   /** The browser-extension keys it takes. */

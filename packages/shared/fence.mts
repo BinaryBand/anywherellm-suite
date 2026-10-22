@@ -9,11 +9,10 @@
 // Ported from the lean browser skill's fence.js.
 
 import dns from "node:dns";
-import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { perBuild, storageDir } from "./anythingllm.mts";
-import { readJson, writeAtomic } from "./atomic.mts";
+import { fileStamp, readJson, writeJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
 
 /** A request refused or failed, said as it is: a fenced address, a bad header, an unreachable server. */
@@ -117,7 +116,7 @@ export function checkUrl(raw: unknown): string {
 
 /** The fence's folder in AnythingLLM's storage: the origins the user let through, and the ones it
  *  refused lately. The suite's alone. */
-export const FENCE_DIR = "fence-lean";
+const FENCE_DIR = "fence-lean";
 
 /** The origins the user let through: { origins: [{ origin, added }] }, written from the Vault
  *  page (addresses.mts). */
@@ -148,7 +147,7 @@ export function recentlyRefused(now = Date.now()): Refusal[] {
 export function noteRefused(origin: string, now = Date.now()): void {
   try {
     const refused = [{ origin, at: new Date(now).toISOString() }, ...recentlyRefused(now).filter((r) => r.origin !== origin)].slice(0, MAX_REFUSED);
-    writeAtomic(refusedFile(storageDir()), JSON.stringify({ refused }, null, 2) + "\n", 0o600);
+    writeJson(refusedFile(storageDir()), { refused });
   } catch {}
 }
 
@@ -172,14 +171,14 @@ const NOTHING: Listed = { origins: [], hosts: [] };
 function listed(): Listed {
   const kept = perBuild("fence.allowed", () => ({ last: null as ({ stamp: string } & Listed) | null }));
   let file: string;
-  let stamp: string;
   try {
     file = allowedFile(storageDir());
-    const s = fs.statSync(file);
-    stamp = `${file}\0${s.ino}:${s.mtimeMs}:${s.size}`;
   } catch {
     return NOTHING;
   }
+  const at = fileStamp(file);
+  if (at === null) return NOTHING;
+  const stamp = `${file}\0${at}`;
   if (kept.last?.stamp === stamp) return kept.last;
   let origins: string[] = [];
   try {

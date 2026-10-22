@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import { perBuild, storageDir } from "./anythingllm.mts";
-import { locked, readJson, writeAtomic } from "./atomic.mts";
+import { fileStamp, locked, readJson, writeAtomic } from "./atomic.mts";
 import { Told } from "./errors.mts";
 
 /** A refusal to show the agent or the user as it is. */
@@ -159,14 +159,7 @@ const cache = () => perBuild("vault.cache", () => ({ last: null as Cached | null
 
 /** Where the vault is, what its file is now, and where its key is (a key that goes missing shows
  *  the next time the vault is read from its file, which any change does). */
-const stampOf = (dir: string): string => {
-  let file = "none";
-  try {
-    const s = fs.statSync(fileOf(dir));
-    file = `${s.ino}:${s.mtimeMs}:${s.size}`;
-  } catch {}
-  return [dir, file, keyFile()].join("\0");
-};
+const stampOf = (dir: string): string => [dir, fileStamp(fileOf(dir)) ?? "none", keyFile()].join("\0");
 
 function store(dir: string, vault: Vault): void {
   if (vault.entries.length > MAX_ENTRIES) throw new VaultError(`the vault keeps at most ${MAX_ENTRIES} entries`);

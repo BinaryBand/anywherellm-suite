@@ -55,10 +55,8 @@ const page = tokenPage<Names>({
 /** A file of the Vault's in AnythingLLM's public folder. */
 const pub = (name: string) => `vault-lean/${name}`;
 /** The title a section's events are posted under, as the page posts them. */
-export const titleOf = (section: Section): string => `vault-lean-${section}`;
+const titleOf = (section: Section): string => `vault-lean-${section}`;
 
-/** Writes `text` to the Vault's public file `name`; answers the name. */
-const put = (name: string, text: string): string => (writePublic(pub(name), text), name);
 
 /** Writes the page under `names`, unless the one there was written by a newer version of it; answers its name. */
 async function writePage(names: Names): Promise<string> {
@@ -84,7 +82,7 @@ export const settle = (section: Section, drain: () => Promise<void>): Promise<vo
 export async function show(section: Section, state: unknown, drain: () => Promise<void>, base: string | null): Promise<string> {
   const hidden = linksHidden();
   const rotated = await page.settle(() => inTurn(titleOf(section), drain), hidden);
-  const names = await publish((n) => [put(`${n.token}-${section}.json`, JSON.stringify(state))], rotated, hidden);
+  const names = await publish((n) => [page.put(`${n.token}-${section}.json`, JSON.stringify(state))], rotated, hidden);
   watchFor(section, drain);
   return `${base ?? ""}/${pub(`${names.token}.html`)}`;
 }
@@ -106,7 +104,7 @@ export function linkOf(base: string | null): string | null {
 }
 
 /** Writes the section's state again, when there's a Vault. */
-export const refresh = (section: Section, state: unknown): void => page.refresh((n) => [put(`${n.token}-${section}.json`, JSON.stringify(state))]);
+export const refresh = (section: Section, state: unknown): void => page.refresh((n) => [page.put(`${n.token}-${section}.json`, JSON.stringify(state))]);
 
 /** The section's events posted since the last time, oldest first: only those with the Vault's secret. */
 export function take(section: Section): Record<string, unknown>[] {

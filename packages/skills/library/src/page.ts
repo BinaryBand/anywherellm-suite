@@ -27,7 +27,7 @@ import path from "node:path";
 import * as addresses from "#shared/addresses";
 import { mask } from "#shared/answer";
 import { Told } from "#shared/errors";
-import { inTurn, pageHtml, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { inTurn, pageHtml, sameSecret, takeEvents, watch } from "#shared/pages";
 import { linksHidden } from "#shared/page-links";
 import { type Names, tokenPage } from "#shared/token-page";
 import * as vault from "#shared/vault";
@@ -102,8 +102,6 @@ function template(): string {
   return file.text;
 }
 
-/** Writes `text` to the public file `name` unless it holds it already; answers the name. */
-const put = (name: string, text: string): string => (writePublic(pub(name), text), name);
 
 /** The needs of `kind` that haven't run out, as a page shows them. */
 const needsOf = (p: PageFile | null, kind: Need["kind"]) => (p?.needs ?? []).filter((n) => n.kind === kind && n.until > Date.now()).map(({ label, site }) => ({ label, site }));
@@ -134,7 +132,7 @@ function keysState(p: PageFile | null) {
 }
 
 /** Writes the page's state again under the names as they are, where there is a page. */
-const writeState = (base: string | null): void => names.refresh((p) => [put(`${p.token}.json`, JSON.stringify(state(p, base)))]);
+const writeState = (base: string | null): void => names.refresh((p) => [names.put(`${p.token}.json`, JSON.stringify(state(p, base)))]);
 
 /** Writes the Library page and its state into AnythingLLM's public folder, watches for its events
  *  for a while, and answers its address (absolute when AnythingLLM's address, `base`, is known). */
@@ -153,7 +151,7 @@ export const settle = (base: string | null): Promise<void> => names.settleCall((
 async function write(base: string | null, rotated = false, hidden = linksHidden()): Promise<string> {
   const kept = read();
   if (!kept || kept.watchUntil - Date.now() <= WATCH_MS / 2) await change((p) => void (p.watchUntil = Date.now() + WATCH_MS));
-  const p = await names.publish(async (n) => [put(`${n.token}.html`, await pageHtml(template(), { token: n.token, secret: n.secret, title: TITLE })), put(`${n.token}.json`, JSON.stringify(state(n, base)))], rotated, hidden);
+  const p = await names.publish(async (n) => [names.put(`${n.token}.html`, await pageHtml(template(), { token: n.token, secret: n.secret, title: TITLE })), names.put(`${n.token}.json`, JSON.stringify(state(n, base)))], rotated, hidden);
   watch(TITLE, () => drain(base), () => read()?.watchUntil ?? 0);
   return `${base ?? ""}/${pub(`${p.token}.html`)}`;
 }

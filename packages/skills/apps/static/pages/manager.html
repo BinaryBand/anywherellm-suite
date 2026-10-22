@@ -768,8 +768,7 @@ html { font-size: 100%; }
   .hu-root .hu-button:active, .hu-root a.hu-tile:active, .hu-root button.hu-tile:active, .hu-root .hu-chip:active { transform: none; }
 }
 /* end of house ui */
-*{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font:1rem/1.5 var(--font-sans);-webkit-tap-highlight-color:transparent}
+body{margin:0;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input{font:inherit;color:var(--ink)}
 a{color:inherit;text-decoration:none}
@@ -811,7 +810,6 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
 .card.solo>*+*{border-top:0}
 .sum{margin:0;font-size:1rem;line-height:1.5;color:var(--ink)}
 .empty{margin:0;padding:20px 0;font-size:1rem;color:var(--muted)}
-.warn{padding:12px 16px;border-radius:var(--radius-md);background:var(--warning-soft);color:var(--warning);font-size:0.8125rem;line-height:1.4}
 .foot{display:flex;flex-direction:column;gap:var(--space-4);align-items:flex-start}
 .scrim{position:fixed;inset:0;z-index:3;background:var(--scrim);animation:fade var(--duration-panel) var(--ease-out)}
 .sheet{position:fixed;left:0;right:0;bottom:0;z-index:4;max-width:640px;margin:0 auto;display:flex;flex-direction:column;background:var(--tile);border:1px solid var(--tile-edge);border-bottom:0;border-radius:var(--radius-xl) var(--radius-xl) 0 0;box-shadow:var(--shadow-sheet);animation:rise var(--duration-panel) var(--ease-out)}
@@ -1117,7 +1115,7 @@ section{display:flex;flex-direction:column;gap:var(--space-4)}
       drawnAt = minute;
       now = JSON.parse(text);
       if (now.result && toldAt !== null && now.result.n !== toldAt) {
-        const { ev, title, error } = now.result;
+        const { title, error } = now.result;
         toast(error || title.replace(/^./, (ch) => ch.toUpperCase()));
       }
       toldAt = now.result ? now.result.n : 0;

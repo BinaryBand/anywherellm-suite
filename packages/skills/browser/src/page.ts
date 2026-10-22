@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as addresses from "#shared/addresses";
-import { writeAtomic } from "#shared/atomic";
+import { writeJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hostOf } from "#shared/fence";
 import * as logins from "#shared/logins";
@@ -55,7 +55,7 @@ function readTabs(workspace: string): Record<string, Names> {
   }
 }
 
-const saveTabs = (workspace: string, tabs: Record<string, Names>) => writeAtomic(tabsFile(workspace), JSON.stringify(tabs, null, 2), 0o600);
+const saveTabs = (workspace: string, tabs: Record<string, Names>) => writeJson(tabsFile(workspace), tabs);
 
 /** A thread's tab's names, kept in tabs.json: its token names its files; its secret goes with every
  *  event its page posts. Made the first time unless `make` is false (then null). */

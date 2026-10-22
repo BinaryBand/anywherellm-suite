@@ -12,8 +12,9 @@
 import { onSite } from "#shared/fence";
 import * as logins from "#shared/logins";
 import type { Credential } from "#shared/logins";
+import { firstLine } from "#shared/errors";
 import type { Page } from "./host";
-import { type Authenticator, type Entry, OFFER_MS, firstLine, holder, note, state } from "./state";
+import { type Authenticator, type Entry, OFFER_MS, holder, note, state } from "./state";
 
 const OPTIONS = { protocol: "ctap2", ctap2Version: "ctap2_1", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true };
 const send = (a: Authenticator, method: string, params: Record<string, unknown>) => a.cdp.send(method, { authenticatorId: a.id, ...params }).catch(() => {});

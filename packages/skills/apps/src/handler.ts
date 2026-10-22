@@ -3,6 +3,7 @@
 // call works on the workspace AnythingLLM invoked it from and answers text for the agent, with the
 // app's card in Markdown to put in its reply.
 
+import { baseUrlOf } from "#shared/anythingllm";
 import { Told } from "#shared/errors";
 import { card, headline } from "./card.ts";
 import type { HandlerContext } from "./host.ts";
@@ -33,8 +34,8 @@ function asJson(value: Json, what: string): Json {
 
 /** The address the user's browser reaches AnythingLLM at, from the skill's settings. */
 function baseOf(self: HandlerContext): string | null {
-  const base = String(self?.runtimeArgs?.ANYTHINGLLM_URL || "").trim();
-  return /^https?:\/\/[^\s/]+/.test(base) ? base : null;
+  const base = baseUrlOf(self);
+  return base && /^https?:\/\/[^\s/]+/.test(base) ? base : null;
 }
 
 // A sentence leads into the card rather than a label: a model copies a label line ("Card:") into

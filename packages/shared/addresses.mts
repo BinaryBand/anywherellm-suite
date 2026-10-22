@@ -13,10 +13,9 @@
 // port. What can't be told (a name that can't be looked up; neither the record nor AnythingLLM's
 // address) is refused, and the page says why.
 
-import fs from "node:fs";
 import net from "node:net";
 import { lastBase, noteBase, perBuild, perProcess, storageDir } from "./anythingllm.mts";
-import { readJson, updateJson } from "./atomic.mts";
+import { fileStamp, readJson, updateJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
 import { type Lookup, allowedFile, bareHost, lookupAll, originOf, portOf, privateAddress, privateName, recentlyRefused, refusedFile } from "./fence.mts";
 import { OWN_PORTS, canonicalHost, isThisHost, thisHostRecorded } from "./thishost.mts";
@@ -109,14 +108,7 @@ export function state() {
 /** What the section is made from, as it is now: allowed.json's and refused.json's stamps, and the
  *  refusal the page was last told. */
 function sources(): string {
-  const stampOf = (file: string) => {
-    try {
-      const s = fs.statSync(file);
-      return `${s.ino}:${s.mtimeMs}:${s.size}`;
-    } catch {
-      return "none";
-    }
-  };
+  const stampOf = (file: string) => fileStamp(file) ?? "none";
   return [stampOf(allowedFile(storageDir())), stampOf(refusedFile(storageDir())), told().result?.n ?? 0].join(" ");
 }
 

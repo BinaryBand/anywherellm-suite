@@ -11,6 +11,7 @@ import { after } from "node:test";
 import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
+import { eventsDir as eventsDirOf } from "#shared/pages";
 import { postEvent } from "#shared/test-helpers";
 import { staticFiles } from "../../../build.mjs";
 
@@ -23,7 +24,7 @@ after(() => fs.rmSync(tmp, { recursive: true, force: true }));
 export const storage = path.join(tmp, "storage");
 export const publicDir = path.join(tmp, "public");
 export const root = path.join(storage, "apps-lean");
-export const eventsDir = path.join(storage, "documents", "custom-documents");
+export const eventsDir = eventsDirOf(storage);
 process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it

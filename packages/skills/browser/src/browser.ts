@@ -14,13 +14,14 @@ import os from "node:os";
 import path from "node:path";
 import { perProcess } from "#shared/anythingllm";
 import { FENCED, NetError, letThrough, makeFence, noteRefused, originOf, pathRefused } from "#shared/fence";
+import { firstLine } from "#shared/errors";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
 import type { Browser, Page, Puppeteer } from "./host";
 import { forgetTab, redraw } from "./page";
 import * as passkey from "./passkey";
 import * as sessions from "./sessions";
-import { type Entry, type Tab, VIEWPORT, firstLine, note, state, threadKey } from "./state";
+import { type Entry, type Tab, VIEWPORT, note, state, threadKey } from "./state";
 
 /** Where a system Chrome or Chromium is looked for, after the ones Puppeteer downloaded (Linux only, so far). */
 const SYSTEM_CHROMES = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];

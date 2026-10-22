@@ -10,10 +10,10 @@
 // and a writer that read them without it looks again under it after writing: a page is never left
 // under a token a rotation replaced. The page's path is kept in the links file whatever the switch.
 
-import { locked, readJson, updateJson, writeAtomic } from "./atomic.mts";
+import { locked, readJson, updateJson, writeJson } from "./atomic.mts";
 import { Told } from "./errors.mts";
 import { linksHidden, noteLink, type PageKind } from "./page-links.mts";
-import { listPublic, newSecret, removePublic, renamePublic } from "./pages.mts";
+import { listPublic, newSecret, removePublic, renamePublic, writePublic } from "./pages.mts";
 
 export interface Names {
   token: string;
@@ -53,6 +53,8 @@ const seam = (kind: PageKind, point: "gap" | "written") => (globalThis as unknow
 
 export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
   const pub = (name: string) => `${spec.folder}/${name}`;
+  /** Writes `text` to the page's public file `name` (in its folder) unless it holds it already; answers the name. */
+  const put = (name: string, text: string): string => (writePublic(pub(name), text), name);
   const prefix = spec.prefix ?? "";
   const underLock = <T,>(fn: () => T | Promise<T>): Promise<T> => locked(`${spec.file()}.lock`, spec.what, fn);
   /** A names file that isn't JSON is said to be damaged, never quoted: a parse error can quote it. */
@@ -91,7 +93,7 @@ export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
       const names = named(hidden);
       const now = old ? ({ ...old, ...names } as N) : spec.fresh(names);
       if (!hidden) delete now.hidden;
-      writeAtomic(spec.file(), JSON.stringify(now, null, 2) + "\n", 0o600);
+      writeJson(spec.file(), now);
       if (!old) return false;
       await seam(spec.kind, "gap");
       for (const name of listPublic(spec.folder)) {
@@ -180,5 +182,5 @@ export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
     if (read()?.token !== n.token) for (const name of written) removePublic(pub(name));
   }
 
-  return { read, change, rotate, settle, settleCall, sweep, publish, refresh };
+  return { read, change, rotate, settle, settleCall, sweep, publish, refresh, put };
 }

@@ -13,7 +13,7 @@
 import * as addresses from "#shared/addresses";
 import { BINARY, answerText, bodyOf, headersOf, keepOf, methodOf, withParams } from "#shared/answer";
 import { baseUrlOf, workspaceOf } from "#shared/anythingllm";
-import { Told } from "#shared/errors";
+import { firstLine, Told } from "#shared/errors";
 import { checkUrl, hostOf, onSite } from "#shared/fence";
 import * as logins from "#shared/logins";
 import { entryOf } from "#shared/static";
@@ -25,7 +25,7 @@ import { card, caughtUp, settlePages } from "./page";
 import * as research from "./research";
 import { type Scope, scopeOf } from "./scope";
 import { type Read, type Snap, asksCode, asksPassword, fieldAt, readPage } from "./snapshot";
-import { NEED_MS, type Need, type Tab, firstLine, holder, note, state, statics, takeNotes, threadKey } from "./state";
+import { NEED_MS, type Need, type Tab, holder, note, state, statics, takeNotes, threadKey } from "./state";
 import { free } from "./takeover";
 import { render } from "./view";
 

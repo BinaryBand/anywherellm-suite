@@ -3,7 +3,6 @@
 // written as AnythingLLM's collector writes it.
 
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -13,7 +12,8 @@ import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
 import { hiddenFile, linksFile } from "#shared/page-links";
-import { postEvent, setLinksHidden } from "#shared/test-helpers";
+import * as helpers from "#shared/test-helpers";
+import { pageCfg, postEvent, setLinksHidden } from "#shared/test-helpers";
 import { vendoredVersions } from "../../../build.mjs";
 
 const require = createRequire(import.meta.url);
@@ -137,15 +137,10 @@ export async function page(ev: string, service: string, secret?: string): Promis
 
 /** What the Vault posts in its keys section (or `section`), with the Vault's secret unless the event
  *  names another. */
-export const postVault = (event: Record<string, unknown>, section: "keys" | "addresses" = "keys"): void =>
-  postEvent(storage, `vault-lean-${section}`, { vault_lean_event: 1, secret: vaultConfig().secret, ...event });
+export const postVault = (event: Record<string, unknown>, section: "keys" | "addresses" = "keys"): void => helpers.postVault(storage, section, event);
 
 /** The Vault's settings: its token and secret, and the key and public key it was written with. */
-export function vaultConfig(): { token: string; secret: string; key: string; pub: string; version: number } {
-  const { token } = JSON.parse(fs.readFileSync(path.join(storage, "vault-lean", "vault-page.json"), "utf8"));
-  const html = fs.readFileSync(path.join(publicDir, "vault-lean", `${token}.html`), "utf8");
-  return JSON.parse(html.match(/const cfg = (\{.*?\});/)![1]);
-}
+export const vaultConfig = () => helpers.vaultConfig(storage, publicDir);
 
 /** What the Vault's keys section (or `section`) shows, as the Vault reads it. */
 export const vaultState = (section: "keys" | "addresses" = "keys") => JSON.parse(fs.readFileSync(path.join(publicDir, "vault-lean", `${vaultConfig().token}-${section}.json`), "utf8"));
@@ -153,23 +148,11 @@ export const vaultState = (section: "keys" | "addresses" = "keys") => JSON.parse
 /** The page's own settings: its token and secret, and the key and public key it was written with. */
 export function pageConfig(): { token: string; secret: string; key: string; pub: string } {
   const { token } = JSON.parse(fs.readFileSync(path.join(library, "page.json"), "utf8"));
-  const html = fs.readFileSync(path.join(publicDir, "library-lean", `${token}.html`), "utf8");
-  return JSON.parse(html.match(/const cfg = (\{.*?\});/)![1]);
+  return pageCfg(fs.readFileSync(path.join(publicDir, "library-lean", `${token}.html`), "utf8"));
 }
 
 /** What the page shows, as it reads it. */
 export const pageState = () => JSON.parse(fs.readFileSync(path.join(publicDir, "library-lean", `${pageConfig().token}.json`), "utf8"));
 
-/** `text` sealed as the pages seal it, with the vault's public key (`pub`, as a page has it: the
- *  Vault's by default): RSA-OAEP up to 190 bytes, and above that with a new AES-GCM key, itself
- *  sealed with RSA ("h1.<sealed key>.<iv>.<sealed>"). */
-export function seal(text: string, pub: string = vaultConfig().pub): string {
-  const key = crypto.createPublicKey({ key: Buffer.from(pub, "base64"), format: "der", type: "spki" });
-  const rsa = (bytes: Buffer) => crypto.publicEncrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, bytes).toString("base64");
-  if (Buffer.byteLength(text) <= 190) return rsa(Buffer.from(text));
-  const aes = crypto.randomBytes(32);
-  const iv = crypto.randomBytes(12);
-  const gcm = crypto.createCipheriv("aes-256-gcm", aes, iv);
-  const sealed = Buffer.concat([gcm.update(text), gcm.final(), gcm.getAuthTag()]);
-  return ["h1", rsa(aes), iv.toString("base64"), sealed.toString("base64")].join(".");
-}
+/** `text` sealed as the pages seal it (#shared/test-helpers seal), with the Vault's key by default. */
+export const seal = (text: string, pub: string = vaultConfig().pub): string => helpers.seal(text, pub);

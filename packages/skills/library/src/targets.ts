@@ -19,7 +19,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { Client, utils, type ClientChannel, type SFTPWrapper } from "ssh2";
-import { lastBase, perProcess, storageDir } from "#shared/anythingllm";
+import { lastBase, perProcess } from "#shared/anythingllm";
 import { NetError, bareHost, hostRefused, lookupAll, portOf } from "#shared/fence";
 import { connect, send } from "#shared/net";
 import { removePublic, writePublic } from "#shared/pages";

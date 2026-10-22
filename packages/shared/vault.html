@@ -769,7 +769,6 @@ html { font-size: 100%; }
   .hu-root .hu-button:active, .hu-root a.hu-tile:active, .hu-root button.hu-tile:active, .hu-root .hu-chip:active { transform: none; }
 }
 /* end of house ui */
-*{box-sizing:border-box}
 body{margin:0;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input{font:inherit;color:var(--ink)}
@@ -817,7 +816,6 @@ details[open] summary .chev{transform:rotate(180deg)}
 .kv dd.line{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .say{margin:0;font-size:.8125rem;line-height:1.4;color:var(--ink)}
 form{display:flex;flex-direction:column;gap:var(--space-3);margin:0}
-.need form{padding:var(--space-5) 0}
 .card>form{padding:var(--space-4) 0 var(--space-5)}
 .ff{display:flex;flex-direction:column;gap:6px}
 .ff>span,.ff>label{padding:0 var(--space-2);font-size:.8125rem;color:var(--ink)}
@@ -996,7 +994,7 @@ input::placeholder{color:var(--muted);opacity:1}
   }
 
   /** A button that asks first, in the sheet (`asked`: the question and the line under it, then Keep
-   *  or `yes`), before it runs `run`; its `del` goes where it shows. Heard as `label`. */
+   *  or `yes`), before it runs `run`. Heard as `label`. */
   function remove(asked, label, run, { text = "Delete", className = "del", yes = "Delete" } = {}) {
     const del = el("button", { className, type: "button", textContent: text });
     del.setAttribute("aria-label", label);
@@ -1004,7 +1002,7 @@ input::placeholder{color:var(--muted);opacity:1}
       e.preventDefault();
       ask(...asked, yes, run, del);
     };
-    return { del };
+    return del;
   }
 
   /** A row of a card: its name over its detail (mono), then `end`, a Delete or a tag. */
@@ -1030,7 +1028,7 @@ input::placeholder{color:var(--muted);opacity:1}
       return el("div", { className: "card need" }, f);
     });
     const saved = ks.secrets.map((k) => {
-      const { del } = remove([`Delete the key ${k.label}?`, `The agent can’t call ${k.site} with it after.`], `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
+      const del = remove([`Delete the key ${k.label}?`, `The agent can’t call ${k.site} with it after.`], `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
       return row(k.label, k.site, del);
     });
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
@@ -1059,7 +1057,7 @@ input::placeholder{color:var(--muted);opacity:1}
   function drawSigning(ks) {
     const list = ks.signing ?? [];
     const items = list.map((g) => {
-      const { del } = remove([`Delete the signing key ${g.label}?`, `Nothing signs as it after, and it can’t be made again: its peers would need a new public key.`], `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
+      const del = remove([`Delete the signing key ${g.label}?`, `Nothing signs as it after, and it can’t be made again: its peers would need a new public key.`], `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
       // The open row shows the fingerprint, and the public key itself only where it can't be copied:
       // the clipboard needs https, and a refusal shows it too.
       const canCopy = !!(window.isSecureContext && navigator.clipboard);
@@ -1097,7 +1095,7 @@ input::placeholder{color:var(--muted);opacity:1}
     const rows = ls.logins.map((l) => {
       const passkey = l.kind === "passkey";
       const asked = passkey ? ["Delete this passkey?", `The agent can’t sign in to ${l.site} with it after. Remove it in the site’s own settings too.`] : ["Delete this login?", `The agent can’t sign in to ${l.site} with it after.`];
-      const { del } = remove(asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`, () => post("logins", "login-delete", { id: l.id }));
+      const del = remove(asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`, () => post("logins", "login-delete", { id: l.id }));
       return row(l.site, [l.user, passkey ? "Passkey" : "Password"].filter(Boolean).join(" · "), del);
     });
     $("logins").replaceChildren(lab("Logins"), el("div", { className: "card" }, ...rows, ...(rows.length ? [] : [el("p", { className: "empty", textContent: "No logins yet. The browser offers to save one when you sign in on its tab’s page." })])),
@@ -1125,7 +1123,7 @@ input::placeholder{color:var(--muted);opacity:1}
     if (as.result && toldAt !== null && as.result.n !== toldAt) toast(as.result.error);
     toldAt = as.result ? as.result.n : 0;
     const allowed = as.origins.map((a) => {
-      const { del } = remove(["Remove this address?", `The skills can’t reach ${a.origin} after.`], `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
+      const del = remove(["Remove this address?", `The skills can’t reach ${a.origin} after.`], `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
       return addr(row(a.origin, a.added ? `Added ${day(a.added)}` : "", del));
     });
     const refused = as.refused.map((r) => {
@@ -1175,7 +1173,7 @@ input::placeholder{color:var(--muted);opacity:1}
 
   // ---- A new link, asked first.
   const rotate = remove(["Make a new link?", "This one stops working, everywhere it was shared."], "Make a new link", () => post([...shown][0], "rotate"), { text: "New link", className: "btn", yes: "Make it" });
-  $("foot").append(el("div", { id: "rotatebox", hidden: true }, rotate.del));
+  $("foot").append(el("div", { id: "rotatebox", hidden: true }, rotate));
   const poll = setInterval(load, 5000);
   load();
 })();

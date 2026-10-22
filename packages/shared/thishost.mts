@@ -22,6 +22,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { perBuild, storageDir, SUITE_DIR } from "./anythingllm.mts";
+import { fileStamp } from "./atomic.mts";
 
 /** The test seam: addresses to treat as not this machine. Nothing shipped sets it. */
 export const THISHOST_EXCEPT = Symbol.for("anywherellm-suite.thishost.except");
@@ -60,11 +61,7 @@ export function recorded(storage?: string): Recorded {
     return { why: (e as Error).message };
   }
   const kept = perBuild("thishost.recorded", () => new Map<string, { stamp: string; found: Recorded }>());
-  let stamp = "";
-  try {
-    const s = fs.statSync(file);
-    stamp = `${s.ino}:${s.mtimeMs}:${s.size}`;
-  } catch {} // read below, which says why
+  const stamp = fileStamp(file) ?? ""; // none: read below, which says why
   const last = kept.get(file);
   if (stamp && last?.stamp === stamp) return last.found;
   const found = read(file);

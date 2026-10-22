@@ -26,6 +26,26 @@ export function readText(file: string): string | null {
   }
 }
 
+/** The names in the folder `dir`, as readdir gives them; none when there's no folder or it can't be read. */
+export function listDir(dir: string): string[] {
+  try {
+    return fs.readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
+/** What `file` is now, as a stamp that changes whenever it is replaced or written (its inode, time and
+ *  size); null when there's no file or it can't be looked at. */
+export function fileStamp(file: string): string | null {
+  try {
+    const s = fs.statSync(file);
+    return `${s.ino}:${s.mtimeMs}:${s.size}`;
+  } catch {
+    return null;
+  }
+}
+
 /** Whether `file` holds exactly `text`; false when there is no file. */
 export const sameText = (file: string, text: string): boolean => readText(file) === text;
 
@@ -81,13 +101,16 @@ export function readJson<S>(file: string, fresh: () => S): S {
   return text === null ? fresh() : (JSON.parse(text) as S);
 }
 
+/** Writes `value` to `file` as JSON, atomically, readable by its owner alone. */
+export const writeJson = (file: string, value: unknown): void => writeAtomic(file, JSON.stringify(value, null, 2) + "\n", 0o600);
+
 /** Changes the JSON file `file` under its lock (`file`.lock): `change` gets what it holds now (or
  *  `fresh` when there's none) and changes it in place; what it answers is answered. */
 export function updateJson<S, T>(file: string, fresh: () => S, change: (value: S) => T): Promise<T> {
   return locked(`${file}.lock`, path.basename(file), () => {
     const value = readJson(file, fresh);
     const answer = change(value);
-    writeAtomic(file, JSON.stringify(value, null, 2) + "\n", 0o600);
+    writeJson(file, value);
     return answer;
   });
 }

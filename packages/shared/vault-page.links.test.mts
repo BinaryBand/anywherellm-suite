@@ -4,8 +4,6 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,22 +12,12 @@ import { SUITE_DIR, pageKeyFile } from "./anythingllm.mts";
 import { writeAtomic } from "./atomic.mts";
 import { readKept } from "../install/src/pagelinks.mts";
 import { linksFile, readLinks } from "./page-links.mts";
-import { postEvent, setLinksHidden } from "./test-helpers.mts";
+import { bundle, postEvent, setLinksHidden } from "./test-helpers.mts";
 
 // vault-page.mts imports its page as text, which only the skills' build (esbuild) understands: the
 // test bundles it the same way and loads that.
-const built = fs.mkdtempSync(path.join(os.tmpdir(), "vault-page-build-"));
-await build({
-  entryPoints: [fileURLToPath(new URL("./vault-page.mts", import.meta.url))],
-  outfile: path.join(built, "vault-page.cjs"),
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  loader: { ".html": "text" },
-  logLevel: "silent",
-});
-const vaultPage = createRequire(import.meta.url)(path.join(built, "vault-page.cjs")) as typeof import("./vault-page.mts");
-test.after(() => fs.rmSync(built, { recursive: true, force: true }));
+const built = await bundle(new URL("./vault-page.mts", import.meta.url));
+const vaultPage = createRequire(import.meta.url)(built) as typeof import("./vault-page.mts");
 
 let tmp: string;
 let storage: string;
@@ -385,7 +373,7 @@ test("calls from several processes at the switch-on all end with one rotation an
   const child = `const vp = require(process.argv[1]); vp.show(process.argv[2], { ok: 1 }, async () => {}, null).then(() => process.exit(0), (e) => { console.error(e.message); process.exit(1); });`;
   const run = (section: string) =>
     new Promise<number>((resolve) => {
-      const p = spawn(process.execPath, ["-e", child, path.join(built, "vault-page.cjs"), section], { env: process.env, stdio: ["ignore", "ignore", "inherit"] });
+      const p = spawn(process.execPath, ["-e", child, built, section], { env: process.env, stdio: ["ignore", "ignore", "inherit"] });
       p.on("exit", (code) => resolve(code ?? 1));
     });
   for (let round = 0; round < 3; round++) {

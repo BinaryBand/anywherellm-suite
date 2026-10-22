@@ -57,6 +57,7 @@ const runLine = (r: store.RunRecord) => `- ${r.fn}: ${r.status}${r.error ? ` (${
 
 type Saved = Map<string, secrets.Secret>;
 type KeyBar = ReturnType<typeof store.keyHolders>;
+type Held = ReturnType<typeof store.holders>;
 
 /** How a locked toolkit is marked where the agent reads it. */
 const LOCKED = " (locked by the user: it can't be changed or removed)";
@@ -77,11 +78,11 @@ function keyStatus(kit: store.Toolkit, saved: Saved, keyBar: KeyBar): string {
 type Machines = Map<string, targets.Target>;
 
 /** The toolkit's targets, each as it is: signed in, why not, or not registered yet. */
-function targetStatus(kit: store.Toolkit, machines: Machines): string {
+function targetStatus(kit: store.Toolkit, machines: Machines, held: Held): string {
   return kit.targets
     .map((name) => {
       const t = machines.get(name);
-      const bar = store.targetBar(kit, name);
+      const bar = store.targetBar(kit, name, held);
       return t ? `${name} (${t.login}@${t.host}:${t.port}, ${t.status}${t.unattended ? ", may run unattended" : ""}${t.barred ? `, not used: ${t.barred}` : ""}${bar ? `, not usable here: ${bar}` : ""})` : `${name} (not registered: ask for it with secret, kind "ssh")`;
     })
     .join(", ");
@@ -93,7 +94,8 @@ async function library(args: Args, self: HandlerContext): Promise<string> {
   const machines: Machines = new Map(targets.targets().map((t) => [t.label, t]));
   const service = clean(args.service) ? store.serviceOf(args.service) : "";
   const keyBar = store.keyHolders();
-  const lines = service ? toolkitLines(service, saved, machines, keyBar) : [...listingLines(saved, machines, keyBar), ...signingLines()];
+  const held = store.holders();
+  const lines = service ? toolkitLines(service, saved, machines, keyBar, held) : [...listingLines(saved, machines, keyBar, held), ...signingLines()];
   const recent = runs.recentRuns(5, service);
   if (recent.length && lines.length > 1) lines.push("", "Recent runs:", ...recent.map(runLine));
   lines.push("", await pageLine(self));
@@ -115,7 +117,7 @@ async function pageLine(self: HandlerContext): Promise<string> {
   }
 }
 
-function toolkitLines(service: string, saved: Saved, machines: Machines, keyBar: KeyBar): string[] {
+function toolkitLines(service: string, saved: Saved, machines: Machines, keyBar: KeyBar, held: Held): string[] {
   const kit = store.toolkit(service);
   if (!kit) throw new LibraryError(`there's no toolkit "${service}"; the toolkits are: ${store.services().join(", ") || "none yet"}`);
   const fns = store.functions(service);
@@ -124,7 +126,7 @@ function toolkitLines(service: string, saved: Saved, machines: Machines, keyBar:
     `Base addresses: ${kit.base_urls.join(", ") || "none"}`,
     `Hosts its functions reach: ${store.hostsOf(kit).join(", ") || "none"}`,
     `Keys: ${keyStatus(kit, saved, keyBar)}`,
-    ...(kit.targets.length ? [`Targets: ${targetStatus(kit, machines)}`] : []),
+    ...(kit.targets.length ? [`Targets: ${targetStatus(kit, machines, held)}`] : []),
     ...(kit.docs.length ? [`Docs: ${kit.docs.join(", ")}`] : []),
     "",
     "Functions:",
@@ -135,13 +137,13 @@ function toolkitLines(service: string, saved: Saved, machines: Machines, keyBar:
   ];
 }
 
-function listingLines(saved: Saved, machines: Machines, keyBar: KeyBar): string[] {
+function listingLines(saved: Saved, machines: Machines, keyBar: KeyBar, held: Held): string[] {
   const services = store.services();
   if (!services.length) return ["The library is empty: no toolkit yet. guide says how to build one (topic toolkits)."];
   const lines = ["The library's toolkits (library with service for one in full):"];
   for (const service of services) {
     const kit = store.toolkit(service)!;
-    lines.push(`- ${service}: ${kit.title}${kit.locked ? LOCKED : ""}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved, keyBar)}${kit.targets.length ? `. Targets: ${targetStatus(kit, machines)}` : ""}`);
+    lines.push(`- ${service}: ${kit.title}${kit.locked ? LOCKED : ""}. Functions: ${store.functionNames(service).join(", ") || "none yet"}. Keys: ${keyStatus(kit, saved, keyBar)}${kit.targets.length ? `. Targets: ${targetStatus(kit, machines, held)}` : ""}`);
   }
   return lines;
 }

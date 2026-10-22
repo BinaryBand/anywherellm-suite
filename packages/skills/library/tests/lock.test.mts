@@ -5,8 +5,8 @@
 
 import assert from "node:assert/strict";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { close, listen } from "#shared/test-helpers";
 import { call, giveKey, idOf, outcome, page, pageState, post, reset, runRecord } from "./harness.mts";
 
 const LOCKED = /the user locked the toolkit chan on the Library page: it can't be changed or removed/;
@@ -67,9 +67,8 @@ test("a locked toolkit's functions run only locked toolkits' functions", async (
 
 test("a key a locked toolkit names is for locked toolkits only: not for call, nor an unlocked toolkit, until the user unlocks it", async (t) => {
   const api = http.createServer((req, res) => res.end(JSON.stringify(req.headers.authorization === "Bearer tok-1" ? "posted" : "no key")));
-  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
-  t.after(() => api.close());
-  const base = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+  const base = `http://127.0.0.1:${await listen(api)}`;
+  t.after(() => close(api));
   await giveKey("tok", "127.0.0.1", "tok-1");
   const posting = "async function main(i, kit) { return (await kit.http({ method: 'POST', path: '/topic', body: 'hi' })).body; }";
   const kit = (title: string) => ({ title, base_urls: [base], secrets: [{ label: "tok", as: "bearer" }] });

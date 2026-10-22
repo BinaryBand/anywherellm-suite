@@ -21,7 +21,7 @@ export interface HostView {
   interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]>;
 }
 
-export const realHost = (): HostView => ({ sshDir: "/etc/ssh", interfaces: os.networkInterfaces() });
+const realHost = (): HostView => ({ sshDir: "/etc/ssh", interfaces: os.networkInterfaces() });
 
 /** `SHA256:…` of a public key line ("ssh-ed25519 AAAA… comment"), as ssh-keygen -lf prints it; null
  *  for a line that isn't one. */

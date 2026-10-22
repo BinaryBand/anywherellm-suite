@@ -9,9 +9,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { locked, readJson, writeAtomic } from "#shared/atomic";
+import { listDir, locked, readJson, writeAtomic } from "#shared/atomic";
 import { newSecret } from "#shared/pages";
-import { Told } from "#shared/errors";
+import { firstLine, Told } from "#shared/errors";
 import { root } from "./dirs.ts";
 import { apply, PatchError, type Json } from "./patch.ts";
 import { DEFINITION, definitionOf, pageProblems } from "./parts.ts";
@@ -248,7 +248,7 @@ export function changesOn(first: Json, changes: Change[], most = Infinity): { ne
       app = next;
       return {};
     } catch (error) {
-      app = remember(app, opts.id, (error as Error).message.split("\n")[0]);
+      app = remember(app, opts.id, firstLine(error));
       return { error: error as Error };
     }
   });
@@ -498,13 +498,7 @@ function trashedOf(id: string): (Trashed & { app: Json }) | null {
 
 /** The apps in the trash still within their days, the newest deleted first. */
 export function trashed(): Trashed[] {
-  let files: string[];
-  try {
-    files = fs.readdirSync(trash());
-  } catch {
-    return [];
-  }
-  return files
+  return listDir(trash())
     .sort()
     .reverse()
     .flatMap((id) => {

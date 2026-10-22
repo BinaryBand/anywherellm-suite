@@ -37,7 +37,7 @@ test("a page is published at one random address, rewritten and removed", async (
   await store.writeFile("home", "shop", "page.html", listPage());
   const token = await publish(store.read("home", "shop"), "home");
   assert.equal(token, store.read("home", "shop").pageToken);
-  assert.equal(pageUrl(token, "https://owen.example:3001/"), `https://owen.example:3001/apps-lean/${token}.html`);
+  assert.equal(pageUrl(token, "https://owen.example:3001"), `https://owen.example:3001/apps-lean/${token}.html`);
   assert.equal(pageUrl(token, null), `/apps-lean/${token}.html`, "relative without AnythingLLM's address");
   const file = path.join(publicDir, "apps-lean", `${token}.html`);
   assert.ok(!fs.existsSync(path.join(publicDir, "_apps")), "no font beside it: pages use the system's own");

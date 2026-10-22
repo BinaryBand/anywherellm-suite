@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { objectOf } from "#shared/answer";
 import { storageDir } from "#shared/anythingllm";
-import { locked, readJson as readJsonOr, writeAtomic } from "#shared/atomic";
+import { listDir, locked, readJson as readJsonOr, writeAtomic, writeJson } from "#shared/atomic";
 import { checkUrl, hostOf } from "#shared/fence";
 import { canonicalHost } from "#shared/thishost";
 import { staticFiles, type StaticFiles } from "#shared/static";
@@ -123,16 +123,8 @@ function readJson<T>(file: string): T | null {
   }
 }
 
-const writeJson = (file: string, value: unknown) => writeAtomic(file, JSON.stringify(value, null, 2) + "\n", 0o600);
-
-/** The names in a folder, or none when there's no folder. */
-const namesIn = (dir: string): string[] => {
-  try {
-    return fs.readdirSync(dir).sort();
-  } catch {
-    return [];
-  }
-};
+/** The names in a folder, sorted, or none when there's no folder. */
+const namesIn = (dir: string): string[] => listDir(dir).sort();
 
 /** A service's name, checked. */
 export function serviceOf(raw: unknown): string {
@@ -157,7 +149,7 @@ type Pinned = Pick<Target, "host" | "port" | "login" | "fingerprint">;
  *  IPv6, so one machine isn't two), port, account and host key, as a digest; "" for one that isn't
  *  registered. A target moved to another machine or account no longer matches. The "v2" is part of
  *  every pin kept, so it stays. */
-export const pinOf = (t: Pinned | undefined): string =>
+const pinOf = (t: Pinned | undefined): string =>
   t ? crypto.createHash("sha256").update(["v2", canonicalHost(t.host), t.port, t.login, t.fingerprint].join("\n")).digest("hex") : "";
 
 /** The pins of `names`, as the targets are now. */
@@ -214,7 +206,9 @@ const lockedKits = (): Toolkit[] =>
     return kit?.locked ? [kit] : [];
   });
 
-/** heldBy for any number of targets, with the targets and the locked toolkits read once. */
+/** The locked toolkit that holds the target `name`, other than `except`: one that lists it, or lists
+ *  another that is the same account on the same machine (sameAccount); null when none does. For any
+ *  number of targets, with the targets and the locked toolkits read once. */
 export function holders(): (name: string, except?: string) => string | null {
   const now = registered();
   const kits = lockedKits();
@@ -225,16 +219,12 @@ export function holders(): (name: string, except?: string) => string | null {
   };
 }
 
-/** The locked toolkit that holds the target `name`, other than `except`: one that lists it, or lists
- *  another that is the same account on the same machine (sameAccount); null when none does. */
-export const heldBy = (name: string, except = ""): string | null => holders()(name, except);
-
 /** Why the toolkit `kit` may not use its target `name` now, in a few words, or null when it may. An
  *  unlocked toolkit can't use what a locked one holds: it could change what the locked one runs or
  *  reads on the machine. A locked one can't use a target changed since the user locked it. */
-export function targetBar(kit: Toolkit, name: string): string | null {
+export function targetBar(kit: Toolkit, name: string, held = holders()): string | null {
   if (kit.locked) return kit.pins?.[name] === pinOf(registered().find((t) => t.label === name)) ? null : `changed since the user locked ${kit.service}`;
-  const holder = heldBy(name, kit.service);
+  const holder = held(name, kit.service);
   return holder ? `kept for locked toolkits (${holder})` : null;
 }
 
@@ -404,10 +394,11 @@ export function recentRuns(n: number, service: string): RunRecord[] {
     .filter((r): r is RunRecord => r !== null);
 }
 
-/** A run by its id, as recorded; null when it isn't kept. */
-export function runOf(id: string): RunRecord | null {
+/** A run by its id, as recorded, from the runs folder's names (`files`, read once for many ids);
+ *  null when it isn't kept. */
+export function runOf(id: string, files = namesIn(runsDir())): RunRecord | null {
   if (!/^r-[\w-]+$/.test(id)) return null;
-  const file = namesIn(runsDir()).find((f) => f.startsWith(`${id}.`));
+  const file = files.find((f) => f.startsWith(`${id}.`));
   return file ? readRun(file) : null;
 }
 
@@ -419,8 +410,9 @@ export const markSeen = (id: string): void => fs.rmSync(path.join(unseenDir(), i
 
 /** The runs not shown yet, oldest first, as recorded; a mark whose run is no longer kept goes. */
 export function unseen(): RunRecord[] {
+  const files = namesIn(runsDir());
   return namesIn(unseenDir()).flatMap((id) => {
-    const run = runOf(id);
+    const run = runOf(id, files);
     if (!run) markSeen(id);
     return run ? [run] : [];
   });

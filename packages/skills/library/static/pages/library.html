@@ -763,8 +763,7 @@ html { font-size: 100%; }
   .hu-root .hu-button:active, .hu-root a.hu-tile:active, .hu-root button.hu-tile:active, .hu-root .hu-chip:active { transform: none; }
 }
 /* end of house ui */
-*{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font:1rem/1.5 var(--font-sans);-webkit-tap-highlight-color:transparent}
+body{margin:0;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input,textarea{font:inherit;color:var(--ink)}
 [hidden]{display:none!important}
@@ -777,7 +776,6 @@ main{max-width:640px;margin:0 auto;padding:var(--space-1) max(var(--space-4),env
 section{display:flex;flex-direction:column;gap:var(--space-4)}
 .cap{margin:0;font-size:0.8125rem;line-height:1.4;color:var(--ink)}
 main>.cap,section>.cap,.foot .cap{padding:0 var(--space-2)}
-a{color:var(--accent);text-decoration:underline}
 .card{background:var(--tile);border:1px solid var(--tile-edge);border-radius:var(--radius-lg);padding:var(--space-4) var(--space-5);display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow-tile)}
 .card strong{font-size:1rem;font-weight:600;overflow-wrap:anywhere}
 .row{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-2);flex-wrap:wrap}
@@ -914,43 +912,32 @@ textarea.fld{min-height:calc((var(--control-h) + var(--space-2)) * 2);padding:va
     return type === "checkbox" ? el("label", { className: "check" }, input, label) : el("label", { className: "ff" }, el("span", { textContent: label }), input);
   };
 
-  // `clears`: the form is emptied once its event is posted; a target's waits for the skill to say
-  // it saved it (answered), so a refusal leaves what the user typed.
-  function form(title, fields, submit, onsubmit, need = false, clears = true) {
-    const inputs = {};
-    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type, mono]) => field(inputs, name, label, type, mono)), el("p", { className: "bad err", hidden: true }), el("button", { className: "btn pri", type: "submit", textContent: submit }));
-    node.onsubmit = async (e) => {
-      e.preventDefault();
-      node.querySelector(".err").hidden = true;
-      const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.type === "checkbox" ? i.checked : i.value.trim()]));
-      if ((await onsubmit(v, node)) && clears) node.reset();
-    };
-    return node;
-  }
-
   // The target form waiting to hear whether the skill saved what it posted.
   let waiting = null;
 
   // A target: the machine's address and account, its host key's fingerprint, and a key, pasted here
   // (sealed on this device) or made by the skill, which then shows the public line for the machine.
-  const targetForm = (need) =>
-    form(
+  // The form keeps what was typed until the skill says it saved it (answered), so a refusal leaves it.
+  function targetForm(need) {
+    const inputs = {};
+    const fields = [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…", "text", true],
+      ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
+      ["private", "On my network: a private address. The machine must not be this one, and must not be able to reach this AnythingLLM: its pages carry the page secret", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]];
+    const node = el("form", { className: "card" + (need ? " need" : "") },
       el("div", { className: "ttl" }, el("strong", { textContent: need ? `The agent asks for a target: ${need.label}` : "Add a target" }),
         el("p", { className: "cap", textContent: "A machine the agent’s functions run commands on over SSH. Read the fingerprint on the machine itself: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" })),
-      [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…", "text", true],
-        ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
-        ["private", "On my network: a private address. The machine must not be this one, and must not be able to reach this AnythingLLM: its pages carry the page secret", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
-      "Save",
-      async (v, node) => {
-        const label = need ? need.label : v.label;
-        if (!label || !v.host || !v.login || !v.fingerprint) return toast("Give a name, the host, the account and the fingerprint"), false;
-        const sent = await post("target-save", { label, host: v.host, port: v.port, login: v.login, fingerprint: v.fingerprint, private: v.private, unattended: v.unattended, sealed: v.key ? await seal(v.key) : "" });
-        if (sent) (waiting = node), setTimeout(() => waiting === node && (waiting = null), 30000); // not for ever if no answer comes
-        return false;
-      },
-      !!need,
-      false,
-    );
+      ...fields.map(([name, label, type, mono]) => field(inputs, name, label, type, mono)), el("p", { className: "bad err", hidden: true }), el("button", { className: "btn pri", type: "submit", textContent: "Save" }));
+    node.onsubmit = async (e) => {
+      e.preventDefault();
+      node.querySelector(".err").hidden = true;
+      const v = Object.fromEntries(Object.entries(inputs).map(([k, i]) => [k, i.type === "checkbox" ? i.checked : i.value.trim()]));
+      const label = need ? need.label : v.label;
+      if (!label || !v.host || !v.login || !v.fingerprint) return toast("Give a name, the host, the account and the fingerprint");
+      const sent = await post("target-save", { label, host: v.host, port: v.port, login: v.login, fingerprint: v.fingerprint, private: v.private, unattended: v.unattended, sealed: v.key ? await seal(v.key) : "" });
+      if (sent) (waiting = node), setTimeout(() => waiting === node && (waiting = null), 30000); // not for ever if no answer comes
+    };
+    return node;
+  }
 
   // Copies `text`; where the clipboard is refused, selects it to copy by hand.
   const copyable = (text) => {
@@ -1036,9 +1023,8 @@ textarea.fld{min-height:calc((var(--control-h) + var(--space-2)) * 2);padding:va
     if (said.ev === "target-save") waiting = null;
   }
 
-  // Each part is drawn when it changes, so an open function or a typed form stays as it is.
-  const parts = { targets: (s) => JSON.stringify([s.needs, s.targets]), toolkits: (s) => JSON.stringify(s.toolkits), runs: (s) => JSON.stringify(s.runs) };
-  const drawn = { targets: drawTargets, toolkits: drawToolkits, runs: drawRuns };
+  // Each part: what it's drawn from, and how. It's drawn when that changes, so an open function or a typed form stays as it is.
+  const parts = { targets: [(s) => JSON.stringify([s.needs, s.targets]), drawTargets], toolkits: [(s) => JSON.stringify(s.toolkits), drawToolkits], runs: [(s) => JSON.stringify(s.runs), drawRuns] };
   const shown = {};
   async function load() {
     try {
@@ -1048,9 +1034,9 @@ textarea.fld{min-height:calc((var(--control-h) + var(--space-2)) * 2);padding:va
       $("vault").hidden = !s.vault;
       if (s.vault) $("vaultlink").href = s.vault;
       answered(s);
-      for (const name of Object.keys(parts)) {
-        const key = parts[name](s);
-        if (key !== shown[name] && !(name === "targets" && busy())) (shown[name] = key), drawn[name](s);
+      for (const [name, [keyOf, draw]] of Object.entries(parts)) {
+        const key = keyOf(s);
+        if (key !== shown[name] && !(name === "targets" && busy())) (shown[name] = key), draw(s);
       }
     } catch (e) {
       toast("Can’t reach AnythingLLM");

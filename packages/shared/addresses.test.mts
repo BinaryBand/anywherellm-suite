@@ -1,30 +1,18 @@
 // The Vault's Allowed addresses section: what it lets through and refuses, allowed.json as the fence
 // reads it, and the page against what the section applies and writes.
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
 import path from "node:path";
 import test, { afterEach, beforeEach } from "node:test";
 import { alwaysAllowed, allowedFile } from "./fence.mts";
 import { THISHOST_RECORD } from "./thishost.mts";
+import { bundled } from "./test-helpers.mts";
 
 // addresses.mts reaches the Vault page, which imports its page as text, which only the skills' build
 // (esbuild) understands: the test bundles it the same way and loads that.
-const built = fs.mkdtempSync(path.join(os.tmpdir(), "addresses-build-"));
-await build({
-  entryPoints: [fileURLToPath(new URL("./addresses.mts", import.meta.url))],
-  outfile: path.join(built, "addresses.cjs"),
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  loader: { ".html": "text" },
-  logLevel: "silent",
-});
-const addresses = createRequire(import.meta.url)(path.join(built, "addresses.cjs")) as typeof import("./addresses.mts");
-test.after(() => fs.rmSync(built, { recursive: true, force: true }));
+const addresses = await bundled<typeof import("./addresses.mts")>(new URL("./addresses.mts", import.meta.url));
 
 const g = globalThis as unknown as Record<symbol, unknown>;
 let storage: string;

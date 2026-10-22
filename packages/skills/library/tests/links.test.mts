@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { linksFile, readLinks } from "#shared/page-links";
+import { vaultNames as vaultNamesIn } from "#shared/test-helpers";
 import { readKept } from "../../../install/src/pagelinks.mts";
 import { call, hideLinks, library, pageState, post, publicDir, reset, storage } from "./harness.mts";
 
@@ -138,7 +139,7 @@ test("the page's own rotate event follows the switch: the new names are marked w
   assert.ok(!fs.existsSync(pub(`${first.token}.html`)));
 });
 
-const vaultNames = (): { token: string; secret: string; hidden?: true } => JSON.parse(fs.readFileSync(path.join(storage, "vault-lean", "vault-page.json"), "utf8"));
+const vaultNames = () => vaultNamesIn(storage);
 
 test("every call settles the names, one that shows no page too, for a chat and for a job: the old links are dead at once, both pages", async () => {
   for (const via of [(args: Record<string, unknown>) => call(args), (args: Record<string, unknown>) => call(args, null)]) {

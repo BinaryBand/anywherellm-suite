@@ -7,7 +7,7 @@
 // links file exists so that nobody needs to.
 
 import fs from "node:fs";
-import { writeAtomic } from "#shared/atomic";
+import { listDir, readText, writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hiddenFile, KINDS, linksFile, type PageKind } from "#shared/page-links";
 import { eventsDir } from "#shared/pages";
@@ -26,13 +26,8 @@ export interface Kept extends Partial<Record<PageKind, string>> {
  *  not what the skills write is a refusal that says how it is made again. */
 export function readKept(storage: string): Kept | null {
   const file = linksFile(storage);
-  let text: string;
-  try {
-    text = writable(file, () => fs.readFileSync(file, "utf8"), "read");
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw e;
-  }
+  const text = writable(file, () => readText(file), "read");
+  if (text === null) return null;
   let found: unknown;
   try {
     found = JSON.parse(text);
@@ -80,32 +75,21 @@ export function show(storage: string): boolean {
   return true;
 }
 
-/** How many page events wait in AnythingLLM's documents to be applied, by where they were posted: the
- *  Vault's keys section (raw-vault-lean-keys-*), its logins section (raw-vault-lean-logins-*, the
- *  browser's), the Library page (raw-library-lean-event-*) and the apps manager (raw-apps-lean-manage-*). They carry the secrets of the links as
- *  they are, and are dropped when the links change. */
-export interface Waiting {
-  keys: number;
-  logins: number;
-  library: number;
-  apps: number;
-}
+/** Where page events are posted, by the start of their names in AnythingLLM's documents: the Vault's
+ *  keys section, its logins section (the browser's), the Library page and the apps manager. */
+const WAITING: [where: string, prefix: string][] = [
+  ["Vault keys", "raw-vault-lean-keys-"],
+  ["Vault logins", "raw-vault-lean-logins-"],
+  ["Library page", "raw-library-lean-event-"],
+  ["Apps manager", "raw-apps-lean-manage-"],
+];
 
-export function waitingEvents(storage: string): Waiting {
-  const waiting: Waiting = { keys: 0, logins: 0, library: 0, apps: 0 };
-  let names: string[] = [];
-  try {
-    names = fs.readdirSync(eventsDir(storage));
-  } catch {
-    return waiting;
-  }
-  for (const name of names) {
-    if (name.startsWith("raw-vault-lean-keys-")) waiting.keys++;
-    else if (name.startsWith("raw-vault-lean-logins-")) waiting.logins++;
-    else if (name.startsWith("raw-library-lean-event-")) waiting.library++;
-    else if (name.startsWith("raw-apps-lean-manage-")) waiting.apps++;
-  }
-  return waiting;
+/** How many page events wait in AnythingLLM's documents to be applied, by where they were posted
+ *  (where any wait). They carry the secrets of the links as they are, and are dropped when the links
+ *  change. */
+export function waitingEvents(storage: string): { where: string; count: number }[] {
+  const names = listDir(eventsDir(storage));
+  return WAITING.map(([where, prefix]) => ({ where, count: names.filter((name) => name.startsWith(prefix)).length })).filter((w) => w.count);
 }
 
 /** When the switch was made; null when there is none (the links are given to the agent). */

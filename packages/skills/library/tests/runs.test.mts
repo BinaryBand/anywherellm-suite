@@ -7,9 +7,9 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test from "node:test";
+import { close, listen } from "#shared/test-helpers";
 import { call as callAs, idOf, installed, library, reset, runRecord as recordOf, until, type Call } from "./harness.mts";
 
 process.env.LIBRARY_WAIT_MS = "300";
@@ -26,11 +26,10 @@ const ntfy = http.createServer((req, res) => {
 });
 const settings: Record<string, string> = {};
 test.before(async () => {
-  await new Promise<void>((resolve) => ntfy.listen(0, "127.0.0.1", resolve));
-  settings.NTFY_URL = `http://127.0.0.1:${(ntfy.address() as AddressInfo).port}/mine`;
+  settings.NTFY_URL = `http://127.0.0.1:${await listen(ntfy)}/mine`;
   settings.NTFY_TOKEN = "tk_1";
 });
-test.after(() => ntfy.close());
+test.after(() => close(ntfy));
 
 /** `callAs`, with the ntfy topic set. */
 const call = (args: Record<string, unknown>, at: Call | string | null = {}) => callAs(args, at === null || typeof at === "string" ? { slug: at, settings } : { settings, ...at });

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, test } from "node:test";
 import { notify, topicUrl } from "./notify.mts";
+import { close, listen } from "./test-helpers.mts";
 
 /** What the server on 127.0.0.1 was sent, and the status it answers with. */
 const seen: { method?: string; url?: string; headers: http.IncomingHttpHeaders; body: string }[] = [];
@@ -18,10 +18,9 @@ const server = http.createServer((req, res) => {
   });
 });
 before(async () => {
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mine`;
+  url = `http://127.0.0.1:${await listen(server)}/mine`;
 });
-after(() => server.close());
+after(() => close(server));
 beforeEach(() => {
   seen.length = 0;
   status = 200;

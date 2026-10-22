@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import fs from "node:fs";
 import os from "node:os";
@@ -8,6 +7,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { recentlyRefused, refusedFile } from "./fence.mts";
 import * as net from "./net.mts";
+import { listen } from "./test-helpers.mts";
 
 type Route = (req: http.IncomingMessage, res: http.ServerResponse, body: string) => void;
 
@@ -24,8 +24,7 @@ async function serve(routes: Record<string, Route>) {
       return route(req, res, body);
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
+  const port = await listen(server);
   return { url: `http://127.0.0.1:${port}`, port, seen, close: () => server.close() };
 }
 
@@ -157,8 +156,7 @@ test("a request never reaches the skills' pages or AnythingLLM's upload for them
 
 test("a TCP connection for another protocol is fenced as a request is: refused inside, checked at its lookup, stoppable", async () => {
   const server = (await import("node:net")).createServer((sock) => sock.end("hello\n"));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
+  const port = await listen(server);
   await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: [] }), /127\.0\.0\.1:\d+ isn't reached: 127\.0\.0\.1 isn't a public address\. Don't reach it another way/);
   await assert.rejects(net.connect({ host: "pi", port, allow: [] }), /pi is a name on this machine or its network/);
   const inside: Resolve = (host, options, callback) => callback(null, [{ address: "127.0.0.1", family: 4 }]);
@@ -176,8 +174,7 @@ test("a TCP connection for another protocol is fenced as a request is: refused i
 
 test("a connection can be refused by address whatever its host is let through for, at connect time", async () => {
   const server = (await import("node:net")).createServer((sock) => sock.end("hello\n"));
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const { port } = server.address() as AddressInfo;
+  const port = await listen(server);
   const itself = (ip: string) => (ip === "127.0.0.1" ? "that's the machine itself" : null);
   const answers: Resolve = (host, options, callback) => callback(null, [{ address: "127.0.0.1", family: 4 }]);
   await assert.rejects(net.connect({ host: "127.0.0.1", port, allow: ["127.0.0.1"], refuse: itself }), /127\.0\.0\.1:\d+ isn't reached: that's the machine itself/);
