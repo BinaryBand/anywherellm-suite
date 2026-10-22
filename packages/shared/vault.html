@@ -220,7 +220,7 @@ input::placeholder{color:var(--muted);opacity:1}
   function ask(title, line, yes, run, from) {
     asking?.close();
     const shade = [document.querySelector("header"), document.querySelector("main")];
-    const was = shade.map((n) => n.inert);
+    const was = shade.map((part) => part.inert);
     const id = "q" + Math.random().toString(36).slice(2, 8);
     const keep = el("button", { className: "keep", type: "button", textContent: "Keep" });
     const go = el("button", { className: "go", type: "button", textContent: yes });
@@ -233,7 +233,7 @@ input::placeholder{color:var(--muted);opacity:1}
         if (asking !== me) return;
         asking = null;
         scrim.remove(), sheet.remove();
-        shade.forEach((n, i) => (n.inert = was[i]));
+        shade.forEach((part, i) => (part.inert = was[i]));
         if (from.isConnected) from.focus();
       },
     };
@@ -243,7 +243,7 @@ input::placeholder{color:var(--muted);opacity:1}
       me.close();
       if (live) run();
     };
-    for (const n of shade) n.inert = true;
+    for (const part of shade) part.inert = true;
     document.body.append(scrim, sheet);
     asking = me;
     keep.focus();
