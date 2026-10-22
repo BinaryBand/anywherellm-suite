@@ -10,10 +10,12 @@
 /* The agent's browser tab: its picture between the controls at the top and the bottom, refreshed as
    it changes. Tap it to take it over; tap a field to type with this device's keyboard. The tab's
    screen follows the room between the controls, so it fills a phone or a desktop alike. Inside
-   AnywhereLLM Lite, which draws its own bar for handing the tab back, the bottom row is left out. */
+   AnywhereLLM Lite, which draws its own bar for handing the tab back, the bottom row is left out.
+   ?theme=light or dark keeps it to one, as the Vault's does. */
 :root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--onaccent:oklch(1 0 0);--okdot:oklch(0.62 0.14 160);--page:oklch(0.99 0 0);
 --float:0 12px 32px -8px oklch(0.3 0.04 280 / 0.28),0 2px 6px oklch(0.3 0.03 280 / 0.16);--sans:system-ui,-apple-system,'Segoe UI',sans-serif;--mono:ui-monospace,Menlo,monospace;color-scheme:light}
-@media (prefers-color-scheme:dark){:root{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.72 0.018 280);--accent:oklch(0.78 0.1 272);--onaccent:oklch(0.2 0.03 280);--okdot:oklch(0.72 0.14 160);--page:oklch(0.18 0.01 280);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.72 0.018 280);--accent:oklch(0.78 0.1 272);--onaccent:oklch(0.2 0.03 280);--okdot:oklch(0.72 0.14 160);--page:oklch(0.18 0.01 280);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
+:root[data-theme="dark"]{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.72 0.018 280);--accent:oklch(0.78 0.1 272);--onaccent:oklch(0.2 0.03 280);--okdot:oklch(0.72 0.14 160);--page:oklch(0.18 0.01 280);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--page);color:var(--ink);font:15px/1.4 var(--sans);overflow:hidden;-webkit-tap-highlight-color:transparent}
@@ -77,6 +79,8 @@ input{font:inherit;color:var(--ink)}
 <script>
 (() => {
   const cfg = /*CONFIG*/null;
+  const theme = new URLSearchParams(location.search).get("theme");
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids); return n; };
   const field = (label, input) => el("label", { className: "ff" }, el("span", { textContent: label }), input);

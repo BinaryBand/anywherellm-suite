@@ -178,7 +178,8 @@ section{display:flex;flex-direction:column;gap:16px}
   const when = (t) => { const d = new Date(t); return isNaN(d) ? "" : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); };
   const changeText = (c) => `${c.ev}${c.text ? `: ${c.text}` : ""}`;
   const daysLeft = (until) => Math.max(0, Math.ceil((Date.parse(until) - Date.now()) / 86400000));
-  const pageHref = (page) => page + (theme === "light" || theme === "dark" ? `?theme=${theme}` : "");
+  // The theme this page has now (a client may switch it while it's open), at the moment the link is followed.
+  const pageHref = (page) => { const now = document.documentElement.dataset.theme; return page + (now === "light" || now === "dark" ? `?theme=${now}` : ""); };
 
   // ---- Views: the list (Apps or Trash) or one app, which is an entry of the browser's history,
   // so Back returns to the list.
@@ -258,7 +259,7 @@ section{display:flex;flex-direction:column;gap:16px}
         value: () => { const v = input.value.trim(); if (!v) return toast("Give it a title"), false; return v; } },
         (title) => title !== app.title && post("rename", { ...base, title }), rename);
     };
-    const open = app.page ? el("a", { className: "btn pri", href: pageHref(app.page), textContent: "Open the page" }) : null;
+    const open = app.page ? el("a", { className: "btn pri", href: pageHref(app.page), onclick() { this.href = pageHref(app.page); }, textContent: "Open the page" }) : null;
     const top = el("div", { className: "card solo" }, app.summary ? el("p", { className: "sum", textContent: app.summary }) : null,
       app.page ? null : el("p", { className: "cap", style: "padding:0", textContent: "It has no page yet: the agent makes one when it builds the app." }),
       el("div", { className: "pair" }, open, rename));

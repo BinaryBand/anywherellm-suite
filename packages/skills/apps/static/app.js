@@ -40,7 +40,8 @@
 // A value that follows from the time (a timer's seconds left) is never stored: store when
 // something started and work the rest out from Date.now().
 //
-// A page opened with ?theme=light or ?theme=dark keeps to that theme whatever the device's.
+// A page opened with ?theme=light or ?theme=dark keeps to that theme whatever the device's;
+// <html data-theme> set or removed later switches it again.
 // Forms don't submit on the pages server (its sandbox has no allow-forms), so Enter in a
 // field and a click on a submit button become a submit event the form's handler sees.
 "use strict";
@@ -259,7 +260,7 @@ const App = (() => {
     }
   }
 
-  // --- forms, which the sandbox won't submit, and the theme a page was opened in ---
+  // --- forms, which the sandbox won't submit, and the theme ---
 
   function submit(form, submitter) {
     if (!form.noValidate && !submitter?.formNoValidate && !form.checkValidity()) return form.reportValidity();
@@ -269,12 +270,17 @@ const App = (() => {
     form.dispatchEvent(event);
   }
   const SCHEME = /\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi;
-  function keepTheme(theme) {
+  const written = new WeakMap(); // a media list: its text as the page wrote it
+  function keepTheme() {
+    const set = document.documentElement.dataset.theme;
+    const theme = set === "light" || set === "dark" ? set : null;
     const fix = (media) => {
-      const text = media.mediaText;
-      const kept = text.replace(SCHEME, (_, scheme) =>
-        scheme.toLowerCase() === theme ? "(min-width: 0px)" : "(max-width: -1px)");
-      if (kept !== text) media.mediaText = kept;
+      const text = written.get(media) ?? media.mediaText;
+      if (text.search(SCHEME) < 0) return;
+      written.set(media, text);
+      const kept = theme ? text.replace(SCHEME, (_, scheme) =>
+        scheme.toLowerCase() === theme ? "(min-width: 0px)" : "(max-width: -1px)") : text;
+      if (media.mediaText !== kept) media.mediaText = kept;
     };
     const visit = (rules) => {
       for (const rule of rules) {
@@ -288,11 +294,13 @@ const App = (() => {
         visit(sheet.cssRules);
       } catch {}
     }
-    document.documentElement.style.colorScheme = theme;
+    document.documentElement.style.colorScheme = theme || "";
   }
   if (typeof location !== "undefined" && typeof document !== "undefined" && document.styleSheets) {
     const theme = new URLSearchParams(location.search).get("theme");
-    if (theme === "light" || theme === "dark") keepTheme(theme);
+    if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    keepTheme();
+    new MutationObserver(keepTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   }
   // --- parts: a component's script runs once for each element that holds it ---
 

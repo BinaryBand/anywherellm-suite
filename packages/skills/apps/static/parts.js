@@ -178,8 +178,8 @@ var Parts =
 .dk-go b{display:block;font-size:17px;font-weight:600}.dk-go small{display:block;margin-top:2px;font-size:12.5px;color:inherit;opacity:.8}
 .dk-go svg{width:20px;height:20px;transition:transform .2s}.dk-go:hover svg{transform:translateX(3px)}.dk-go:active{transform:scale(.985)}
 .dk-hint{margin-top:10px;text-align:center;font-size:12px;color:var(--muted)}
-.dk-in>*{animation:dk-rise .42s cubic-bezier(.2,.8,.2,1) both}
-.dk-in>:nth-child(2){animation-delay:.06s}.dk-in>:nth-child(3){animation-delay:.12s}.dk-in>:nth-child(4){animation-delay:.18s}.dk-in>:nth-child(5){animation-delay:.24s}
+@media (prefers-reduced-motion:no-preference){.dk-in>*{animation:dk-rise .42s cubic-bezier(.2,.8,.2,1) both}
+.dk-in>:nth-child(2){animation-delay:.06s}.dk-in>:nth-child(3){animation-delay:.12s}.dk-in>:nth-child(4){animation-delay:.18s}.dk-in>:nth-child(5){animation-delay:.24s}}
 @keyframes dk-rise{from{opacity:.001;transform:translateY(12px)}to{opacity:1;transform:none}}
 @media (max-height:680px){.deck .fig{max-height:24vh}.deck pre.dk-ex{max-height:26vh}.dk-say{font-size:22px}.dk-say.hero{font-size:32px}}`;
     const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h15M13 6l6 6-6 6"/></svg>';
@@ -203,7 +203,6 @@ var Parts =
 
     function deck(host, { title = "", screens = [], sources = [] } = {}) {
       if (!document.getElementById("parts-deck")) document.head.append(Object.assign(make("style", ""), { id: "parts-deck", textContent: DECK_CSS }));
-      const motion = !(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
       host.classList.add("deck");
       host.innerHTML = `<div class="dk-app"><header class="dk-top"><button type="button" class="dk-back" aria-label="Previous screen">${BACK}</button><div class="dk-ttl"><b></b><span aria-live="polite"></span></div><span></span></header><div class="dk-sq" role="slider" tabindex="0" aria-label="Screen" aria-valuemin="1"></div><div class="dk-screen" tabindex="-1"></div><div class="dk-bottom"><button type="button" class="dk-go"><span><b></b><small></small></span>${ARROW}</button><div class="dk-hint">Swipe, or use the arrow keys</div></div></div>`;
       const $ = (sel) => host.querySelector(sel), screen = $(".dk-screen"), squares = $(".dk-sq");
@@ -268,7 +267,7 @@ var Parts =
         }
         screen.replaceChildren(...parts);
         screen.classList.remove("dk-in");
-        if (motion && !squares.classList.contains("held")) {
+        if (!squares.classList.contains("held")) {
           void screen.offsetWidth;
           screen.classList.add("dk-in");
         }
