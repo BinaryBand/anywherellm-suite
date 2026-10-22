@@ -791,8 +791,10 @@ main>.cap,section>.cap,.foot .cap{padding:0 var(--space-2)}
 .info{margin:0;font:0.8125rem/1.4 var(--font-mono);color:var(--muted);overflow-wrap:anywhere}
 .bad{margin:0;font-size:0.8125rem;line-height:1.4;color:var(--danger)}
 .stack{display:flex;flex-direction:column;gap:var(--space-3)}
-.acts{display:flex;gap:var(--space-3)}
-.acts>.btn{flex:1}
+/* A pair of buttons shares a line while each label fits on one line, and otherwise stacks, each
+   full width, the first on top; a label wraps only where it can't fit even alone. */
+.acts{display:flex;flex-wrap:wrap;gap:var(--space-3)}
+.acts>.btn{flex:1 1 0;min-width:fit-content}
 .acts>.btn:only-child,.body>.btn,.stack>.btn{flex:none;align-self:flex-start}
 .stack>.btn{padding:0 18px}
 summary{list-style:none;cursor:pointer;min-height:var(--control-h);display:flex;align-items:center;gap:10px}
