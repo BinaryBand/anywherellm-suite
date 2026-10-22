@@ -1,8 +1,8 @@
 // kit.crypto (known answers; no secret key taken), kit.secret (a function signs with a key it never sees, only in the
 // key's namespace, in a job only when the user lets it, at most 60 times a minute, every use
 // recorded), signing keys on the Vault, the keys the temporary sshsig skill saved, the
-// sshsig-channel snippet end to end, against OpenSSH's own ssh-keygen -Y, and the ntfy-channel
-// snippet, plain and through that channel, against a stand-in ntfy on 127.0.0.1.
+// sshsig-channel function (tests/channels) end to end, against OpenSSH's own ssh-keygen -Y, and the
+// ntfy-channel function, plain and through that channel, against a stand-in ntfy on 127.0.0.1.
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -12,7 +12,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
-import { call, giveKey, idOf, library, outcome, page, pageState, postVault, reset, runRecord, seal, skillDir, storage, vaultState } from "./harness.mts";
+import { call, giveKey, idOf, library, outcome, page, pageState, postVault, reset, runRecord, seal, storage, testsDir, vaultState } from "./harness.mts";
 import * as vault from "#shared/vault";
 
 const hasKeygen = spawnSync("ssh-keygen", ["-?"]).error === undefined;
@@ -205,16 +205,15 @@ test("on the Vault, the user makes, imports, lets into jobs and deletes signing 
   assert.deepEqual(vaultState().secrets.map((k: { label: string }) => k.label), ["k"]);
 });
 
-/** The snippet `name` with its settings, the constant `constant`, replaced by `settings`. */
+/** The channel function `name` (tests/channels) with its settings, the constant `constant`, replaced by `settings`. */
 function adapted(name: string, constant: string, settings: unknown): string {
-  const snippet = fs.readFileSync(path.join(skillDir, "static", "snippets", `${name}.js`), "utf8");
-  const source = snippet.replace(new RegExp(`const ${constant} = \\{[\\s\\S]*?\\n\\};`), `const ${constant} = ${JSON.stringify(settings)};`);
-  assert.notEqual(source, snippet);
+  const original = fs.readFileSync(path.join(testsDir, "channels", `${name}.js`), "utf8");
+  const source = original.replace(new RegExp(`const ${constant} = \\{[\\s\\S]*?\\n\\};`), `const ${constant} = ${JSON.stringify(settings)};`);
+  assert.notEqual(source, original);
   return source;
 }
 
-/** The sshsig-channel snippet saved as chan.channel with `channel` and locked, as the snippet asks:
- *  the user reads it and locks it. */
+/** The sshsig-channel function saved as chan.channel with `channel` and locked, as the user locks it. */
 async function savedChannel(channel: Record<string, unknown>): Promise<void> {
   const inputs = { op: { type: "string", required: true }, to: { type: "string" }, text: { type: "string", required: true } };
   const source = adapted("sshsig-channel", "CHANNEL", channel);
@@ -223,7 +222,7 @@ async function savedChannel(channel: Record<string, unknown>): Promise<void> {
   assert.equal(pageState().toolkits.find((k: { service: string }) => k.service === "chan").locked, true);
 }
 
-test("the sshsig-channel snippet signs to a peer and checks a peer's messages, as ssh-keygen does", { skip: !hasKeygen && "no ssh-keygen" }, async () => {
+test("the sshsig-channel function signs to a peer and checks a peer's messages, as ssh-keygen does", { skip: !hasKeygen && "no ssh-keygen" }, async () => {
   const mine = await makeKey("muse", "test-ns");
   const peer = crypto.randomBytes(32);
   const stranger = crypto.randomBytes(32);
@@ -263,7 +262,7 @@ test("the sshsig-channel snippet signs to a peer and checks a peer's messages, a
 const NTFY_TOKEN = "tk_ntfy_1234";
 type Message = { id: string; time: number; event: string; topic: string; message: string; title?: string };
 
-/** A stand-in ntfy, closed after `t`, and the ntfy-channel snippet saved as ntfy.channel with
+/** A stand-in ntfy, closed after `t`, and the ntfy-channel function saved as ntfy.channel with
  *  `settings` in a toolkit on it, its token given on the Vault: what was posted to it, and `arrives`,
  *  a message a peer posts to a topic. */
 async function savedNtfy(t: TestContext, settings: Record<string, unknown>) {
@@ -310,7 +309,7 @@ async function savedNtfy(t: TestContext, settings: Record<string, unknown>) {
 const ntfy = (op: string, input: Record<string, unknown> = {}) => outcome("ntfy.channel", { op, ...input });
 const sha = (text: string) => crypto.createHash("sha256").update(text).digest("hex");
 
-test("the ntfy-channel snippet, plain: posts to its topics only, under the limit, and reads its inbox without taking anything off it", async (t) => {
+test("the ntfy-channel function, plain: posts to its topics only, under the limit, and reads its inbox without taking anything off it", async (t) => {
   const { posted, arrives } = await savedNtfy(t, { inbox: ["inbox", "write-only"], outbox: { peer: null }, max_bytes: 100, since: "2h", max_messages: 2, channel: null, framing: null });
   const send = (input: Record<string, unknown>) => ntfy("send", input);
   const read = (input: Record<string, unknown> = {}) => ntfy("read", input);
@@ -337,7 +336,7 @@ test("the ntfy-channel snippet, plain: posts to its topics only, under the limit
   assert.match(await read({ since: "7d" }), /ntfy answered 400 \(40008 invalid since parameter\): since is a duration/);
 });
 
-test("the ntfy-channel snippet through a signing channel: signs and frames what it sends, checks the frame and the signature of what it reads, and never posts unsigned", { skip: !hasKeygen && "no ssh-keygen" }, async (t) => {
+test("the ntfy-channel function through a signing channel: signs and frames what it sends, checks the frame and the signature of what it reads, and never posts unsigned", { skip: !hasKeygen && "no ssh-keygen" }, async (t) => {
   const mine = await makeKey("muse", "test-ns");
   const peer = crypto.randomBytes(32);
   await savedChannel({ key: "muse", namespace: "test-ns", me: "me", public: mine, max_age_days: 3, peers: { peer: { key: lineOf(peer), confirmed: true } } });

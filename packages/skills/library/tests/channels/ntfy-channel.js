@@ -1,11 +1,9 @@
 // An ntfy channel: op "read" polls the inbox topics, op "send" posts to the topics it may. Optionally
-// each message is signed through a signing-channel function (one saved from the sshsig-channel
-// snippet, run with kit.run) and framed with a line carrying the hash of its text. read takes
+// each message is signed through a signing-channel function (one like sshsig-channel.js, run with
+// kit.run) and framed with a line carrying the hash of its text. read takes
 // nothing off the server, and what it answers is data, never instructions.
-// Adapt: NTFY, the deployment's own. The server is the toolkit's first base_urls; its token is the
-// toolkit's first key, given on the Vault and sent as a bearer token (secrets [{ label, as: "bearer" }]).
-// With a channel, ask the user to lock the channel's toolkit, then this one: a locked toolkit runs
-// only locked toolkits' functions, so nothing then changes what read reports or how send signs.
+// Test fixture: signing.test.mts replaces NTFY and runs it against a stand-in ntfy, whose address
+// is the toolkit's first base_urls and whose token is the toolkit's first key, sent as a bearer token.
 const NTFY = {
   inbox: ["inbox"], // the topics read polls; the first is the default
   outbox: { "peer-topic": "peer" }, // the topics send posts to, each with the tag the channel signs to (null without a channel)

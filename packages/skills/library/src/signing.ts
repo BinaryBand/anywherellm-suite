@@ -7,8 +7,8 @@
 //
 // What bounds a signing oracle, none of it the model's to change: a key signs only in its own
 // namespace, which SSHSIG signs with the data, so its signatures mean nothing in another; it signs
-// in a scheduled job only when the user lets it ("May run unattended"); at most PER_MINUTE times a
-// minute from one process; and every use is in the run's record.
+// in a scheduled job only when the user lets it ("Let it sign in scheduled jobs"); at most
+// PER_MINUTE times a minute from one process; and every use is in the run's record.
 
 import crypto from "node:crypto";
 import * as vault from "#shared/vault";
@@ -81,7 +81,7 @@ export function publicKeyOf(label: string): { public: string; fingerprint: strin
 export function sign(label: string, data: Buffer, use: Use): { signature: string; public: string; namespace: string } {
   const e = entryOf(label);
   check({ op: "sign", fn: use.fn, key: e.user, trigger: use.trigger });
-  if (use.trigger === "job" && e.unattended !== true) throw new LibraryError(`the signing key "${e.user}" doesn't sign in a scheduled job: the user allows it on the Vault ("May run unattended")`);
+  if (use.trigger === "job" && e.unattended !== true) throw new LibraryError(`the signing key "${e.user}" doesn't sign in a scheduled job: the user allows it on the Vault ("Let it sign in scheduled jobs")`);
   if ((e.algorithm ?? "ed25519") !== "ed25519") throw new LibraryError(`the signing key "${e.user}" is ${String(e.algorithm)}, which the library doesn't sign with`);
   const seed = seedFor(e);
   countUse("library-lean.sign-calls", e.id, (max) => `the signing key "${e.user}" signed ${max} times in the last minute: wait a minute, and sign less`);
