@@ -1,8 +1,7 @@
 // What the library calls with, kept in the instance's vault (#shared/vault), whose values the model
-// never reads: an API key (kind "key": the site it may go to, a name, its value) or an OAuth sign-in
-// (oauth.ts: how to sign in, the suite's client and the tokens it got). The user gives a
-// key on the Vault (page.ts), sealed on their device; not on AnythingLLM's question card, which shows
-// its answers in the chat. A secret goes with a request only to its own site (or a site under
+// never reads: API keys (kind "key": the site it may go to, a name, its value). The user gives a key
+// on the Vault (page.ts), sealed on their device; not on AnythingLLM's question card, which shows its
+// answers in the chat. A secret goes with a request only to its own site (or a site under
 // it), only over https (or plain http to a host the user lets through), put where the API wants it
 // (as a bearer token, by HTTP Basic, in a header or in the query), and at most PER_MINUTE times a
 // minute from one process (a scheduled job's child process counts its own).
@@ -13,7 +12,6 @@ import { allowedHosts, alwaysAllowedHosts, bareHost, onSite, secureFor, siteOf }
 import type { Headers } from "#shared/net";
 import * as vault from "#shared/vault";
 import { LibraryError } from "./errors";
-import { accessToken, isSignIn, stateOf, type Definition, type SignIn, type SignInState } from "./oauth";
 
 /** How a secret goes with a request: as a bearer token, by HTTP Basic (the key the password, with a
  *  user name or none), as Authorization with another scheme, in a header, or in the query. */
@@ -25,12 +23,6 @@ const PER_MINUTE = 60;
 export interface Secret {
   site: string;
   label: string;
-  kind: "key" | "oauth";
-  /** "saved" (a key), or where a sign-in is, in words (statusText). */
-  status: string;
-  /** A sign-in's Vault tag, and whether it is signed in; its scopes. */
-  tag?: { text: string; ok: boolean };
-  scopes?: string;
 }
 
 /** `as`, checked. */
@@ -64,41 +56,15 @@ export function siteChecked(site: unknown): string {
   return want;
 }
 
-/** Whether an entry is a secret (a key or a sign-in) named `label` (any case), or any secret. */
-const named = (label?: string) => (e: Readonly<vault.Entry>) => (e.kind === "key" || e.kind === "oauth") && (label === undefined || e.user.toLowerCase() === label.toLowerCase());
-
-/** Where a sign-in is, in words, for the agent and the pages. */
-function statusText(state: SignInState): string {
-  switch (state.at) {
-    case "signed in":
-      return "signed in";
-    case "code waits":
-      return "waiting for the user to enter its code";
-    case "ran out":
-      return "its sign-in ran out and can't be renewed: start it again with secret";
-    case "failed":
-      return `its last sign-in didn't finish: ${state.why}`;
-    case "ready":
-      return "ready to sign in";
-  }
-}
-
-/** A sign-in as the agent and the pages see it. */
-function signInSecret(e: Readonly<SignIn>): Secret {
-  const state = stateOf(e);
-  const tag = { text: state.at === "signed in" ? "Signed in" : state.at === "code waits" ? "Enter the code" : "Not signed in", ok: state.at === "signed in" };
-  return { site: e.site, label: e.user, kind: "oauth", status: statusText(state), tag, scopes: e.oauth.scopes };
-}
+/** Whether an entry is a key named `label` (any case), or any key. */
+const named = (label?: string) => (e: Readonly<vault.Entry>) => e.kind === "key" && (label === undefined || e.user.toLowerCase() === label.toLowerCase());
 
 /** The saved secrets, without their values. */
 export const secrets = (): Secret[] =>
   vault
     .entries()
     .filter(named())
-    .map((e): Secret => (isSignIn(e) ? signInSecret(e) : { site: e.site, label: e.user, kind: "key", status: "saved" }));
-
-/** The sign-in named `label`, as the vault keeps it; null when there's none. */
-export const signIn = (label: string): Readonly<SignIn> | null => (vault.entries().find((e) => named(label)(e) && isSignIn(e)) as SignIn | undefined) ?? null;
+    .map((e): Secret => ({ site: e.site, label: e.user }));
 
 /** The name of the secret a request to `host` goes with when it names none: the one saved for the
  *  host's site, the closest site first; a LibraryError when there's none, or no one. */
@@ -111,12 +77,11 @@ export function labelForHost(host: string): string {
   return found[0].label;
 }
 
-/** The kinds of the library's secrets: keys, sign-ins and signing keys (signing.ts). A name is one
- *  of them. */
-const KINDS = ["key", "oauth", "signing"];
+/** The kinds of the library's secrets: keys and signing keys (signing.ts). A name is one of them. */
+const KINDS = ["key", "signing"];
 
 /** The refusal for a name that is another kind of secret already. */
-export const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${e.kind === "signing" ? "a signing key" : isSignIn(e) ? "a sign-in" : "a key"} already: use another name, or the user deletes it on the Vault first`);
+export const nameTaken = (e: Readonly<vault.Entry>): LibraryError => new LibraryError(`"${e.user}" is ${e.kind === "signing" ? "a signing key" : "a key"} already: use another name, or the user deletes it on the Vault first`);
 
 /** The secret named `label` (any case) that is of another kind than `kind`, if any. */
 export const otherNamed = (entries: readonly Readonly<vault.Entry>[], label: string, kind: string): Readonly<vault.Entry> | undefined =>
@@ -153,25 +118,6 @@ export async function saveKey(site: string, label: string, value: string): Promi
   await vault.update((v) => put(v, { kind: "key", site, user: label, value }));
 }
 
-/** Whether `signIn` signs in as `oauth` and `clientId` say (fields it may carry from before are no matter). */
-const signsInAs = (signIn: Readonly<SignIn>, oauth: Definition, clientId: string): boolean =>
-  signIn.client_id === clientId && signIn.oauth.token_url === oauth.token_url && signIn.oauth.device_url === oauth.device_url && signIn.oauth.scopes === oauth.scopes;
-
-/** Saves how a sign-in signs in, with the suite's client `clientId` (a preset's); one of the same
- *  name keeps its tokens and the code it waits on while how it signs in is unchanged (and the vault
- *  isn't written then). One sign-in per provider: a new name for a provider signed in at already is
- *  refused, naming the one there. */
-export async function saveSignIn(site: string, label: string, oauth: Definition, clientId: string): Promise<void> {
-  const there = vault.entries().find(named(label));
-  if (there && isSignIn(there) && signsInAs(there, oauth, clientId)) return;
-  await vault.update((v) => {
-    const host = new URL(oauth.token_url).host;
-    const other = v.entries.find((e) => isSignIn(e) && !named(label)(e) && new URL(e.oauth.token_url).host === host) as SignIn | undefined;
-    if (other) throw new LibraryError(`there's a sign-in at ${host} already: "${other.user}" (${statusText(stateOf(other))}; scopes: ${other.oauth.scopes || "none"}). Use it: call secret with label "${other.user}"; to change its scopes, give its preset again with the scopes. For another account, the user deletes it on the Vault first`);
-    put(v, { kind: "oauth", site, user: label, oauth, client_id: clientId, tokens: null, device: null, error: null });
-  });
-}
-
 /** Deletes a secret; whether there was one. */
 export const removeSecret = (label: string): Promise<boolean> =>
   vault.update((v) => {
@@ -193,15 +139,14 @@ export interface Credentialed {
   next: (to: string) => Headers | null;
 }
 
-/** A request with the secret `label` put where `as` says, when it may go to `url`: a key's value, or
- *  a sign-in's access token, renewed first when it runs out. */
-export async function credentialed(label: string, as: string, url: string, headers: Headers): Promise<Credentialed> {
+/** A request with the key `label` put where `as` says, when it may go to `url`. */
+export function credentialed(label: string, as: string, url: string, headers: Headers): Credentialed {
   const secret = vault.entries().find(named(label));
   if (!secret) throw new LibraryError(`no key named "${label}" is saved: ask the user for it with secret`);
   const target = new URL(url);
   if (!mayGo(secret.site, target)) throw new LibraryError(`the key "${label}" is for ${secret.site} over https, and goes nowhere else: not to ${target.origin}`);
   countUse("library-lean.key-calls", secret.id, (max) => `the key "${label}" was used ${max} times in the last minute: wait a minute, and make fewer requests`);
-  const value = isSignIn(secret) ? await accessToken(secret) : String(secret.value);
+  const value = String(secret.value);
   const sent = { ...headers };
   const [kind, ...rest] = as.split(":");
   const arg = rest.join(":");

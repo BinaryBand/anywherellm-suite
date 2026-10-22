@@ -36,7 +36,7 @@ export async function send(target: URL, spec: Spec, key: { label: string; as: st
   const bar = key && keyBar(key.label, from?.kit);
   if (bar) throw new LibraryError(`the key "${key.label}" can't be used ${from ? `by the ${from.kit.service} toolkit` : "in call"}: ${bar}; run the locked toolkit's function instead, or ask the user to unlock it`);
   check({ op: "http", fn: from?.fn ?? null, method, url: target.href, key: key?.label ?? null });
-  const cred = key ? await credentialed(key.label, key.as, target.href, headers) : null;
+  const cred = key ? credentialed(key.label, key.as, target.href, headers) : null;
   const answer = await net.send({ method, url: cred?.url ?? target.href, headers: cred?.headers ?? headers, body, signal, ...(cred ? { next: cred.next } : {}) });
   return { method, answer, secret: cred?.value ?? null };
 }

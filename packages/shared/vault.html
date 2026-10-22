@@ -8,7 +8,7 @@
 <title>Vault</title>
 <style>
 /* The Vault, shared by the skills that keep secrets (packages/shared/vault-page.mts): a tab for each
-   section a skill wrote, Keys (the library's API keys, sign-ins and signing keys, a group each), Logins
+   section a skill wrote, Keys (the library's API keys and signing keys, a group each), Logins
    (the browser's) and Addresses (either skill's: addresses.mts). What's done in a section is posted under its
    title and applied by the skill that owns it. The look is
    AnywhereLLM Lite's, as the browser's tab page has it; ?theme=light or dark keeps it to one. */
@@ -89,13 +89,6 @@ input::placeholder{color:var(--muted);opacity:1}
 @keyframes rise{from{transform:translateY(100%)}}
 @keyframes fade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.sheet,.scrim{animation:none}}
-.link{width:100%;text-align:left}
-.link>svg{flex:none;color:var(--muted)}
-.card.solo{padding:20px;gap:12px}
-.card.solo>*+*{border-top:0}
-.one main>:not(#keys),.one #keys>:not(#signins){display:none}
-.top h1{flex:1;min-width:0;overflow-wrap:anywhere}
-.top .tag{margin-right:4px}
 #toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);font-size:14px;text-align:center}
 </style>
 </head>
@@ -111,7 +104,7 @@ input::placeholder{color:var(--muted);opacity:1}
     <button role="tab" data-tab="logins" hidden>Logins</button>
     <button role="tab" data-tab="addresses" hidden>Addresses</button>
   </nav>
-  <section id="keys" hidden><div class="grp" id="apikeys"></div><div class="grp" id="signins"></div><div class="grp" id="signing"></div></section>
+  <section id="keys" hidden><div class="grp" id="apikeys"></div><div class="grp" id="signing"></div></section>
   <section id="logins" hidden></section>
   <section id="addresses" hidden></section>
   <div class="foot" id="foot"><p class="cap">Anyone with this page's link can see what it shows and act on it.</p></div>
@@ -127,10 +120,7 @@ input::placeholder{color:var(--muted);opacity:1}
   const icon = (d, size = 18) => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("width", size); s.setAttribute("height", size); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "1.6"); s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true"); s.innerHTML = `<path d="${d}"/>`; return s; };
   let toastTimer = 0;
   const toast = (text) => { $("toast").textContent = text; $("toast").hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => ($("toast").hidden = true), 4000); };
-  /** The sign-in whose own page shows (its label), if any; and whether a history entry that page
-   *  made is left ahead of the list, which the close button doesn't count. */
-  let opened = history.state?.signin ?? null, forward = false;
-  $("close").onclick = () => (opened ? back() : history.length - (forward ? 1 : 0) > 1 ? history.back() : window.close());
+  $("close").onclick = () => (history.length > 1 ? history.back() : window.close());
 
   // ---- Posting: each thing done here is an event of its section, posted through AnythingLLM's
   // upload under the section's title, so the skill that owns the section applies it.
@@ -263,7 +253,7 @@ input::placeholder{color:var(--muted);opacity:1}
   /** A row of a card: its name over its detail (mono), then `end`, a Delete or a tag. */
   const row = (name, detail, ...end) => el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: name }), el("small", { textContent: detail })), ...end);
 
-  // ---- Keys, sign-ins and signing keys: the library's section, a group each on the Keys tab.
+  // ---- Keys and signing keys: the library's section, a group each on the Keys tab.
   let adding = false;
   /** A group's heading, with how many it holds: the tabs carry no counts, so the bar fits a phone. */
   const lab = (text, n) => el("div", { className: "lab", textContent: n === undefined ? text : `${text} · ${n}` });
@@ -282,14 +272,14 @@ input::placeholder{color:var(--muted);opacity:1}
         el("dl", { className: "kv" }, el("dt", { textContent: "Name" }), el("dd", { textContent: n.label }), el("dt", { textContent: "Site" }), el("dd", { textContent: n.site })));
       return el("div", { className: "card need" }, f);
     });
-    const saved = ks.secrets.filter((x) => x.kind === "key").map((k) => {
+    const saved = ks.secrets.map((k) => {
       const { del } = remove([`Delete the key ${k.label}?`, `The agent can't call ${k.site} with it after.`], `Delete the key ${k.label}`, () => post("keys", "key-delete", { label: k.label }));
       return row(k.label, k.site, del);
     });
     const addForm = form([["label", "Name, like github"], ["site", "The site it goes to, like api.github.com", "text", true], ["value", "Key", "password"]], "Save key", async (v) => {
       if (!v.value || !v.label || !v.site) return toast("Fill in every field"), false;
       const taken = named(ks, v.label);
-      if (taken && taken.kind !== "key") return toast(`That name is ${taken.kind === "oauth" ? "a sign-in's" : "a signing key's"}: use another`), false;
+      if (taken?.kind === "signing") return toast("That name is a signing key's: use another"), false;
       const went = await post("keys", "key-save", { label: v.label, site: v.site, sealed: await seal(v.value) });
       if (went) (adding = false), drawKeys(ks);
       return went;
@@ -297,85 +287,13 @@ input::placeholder{color:var(--muted);opacity:1}
     const add = el("button", { className: "add", type: "button", onclick: () => ((adding = !adding), drawKeys(ks)) }, icon(adding ? "M4 8h8" : "M8 3v10M3 8h10"), adding ? "Cancel" : "Add a key");
     keys.replaceChildren(...needs, lab("API keys", saved.length), el("div", { className: "card" }, ...saved, ...(saved.length ? [] : [el("p", { className: "empty", textContent: "No keys yet. The agent asks for one when a task needs it." })]), el("div", {}, add, adding ? addForm : null)));
 
-    drawSignins(ks);
     drawSigning(ks);
   }
 
-  // ---- Sign-ins: a row for each, which opens that provider's own page in place of the list. The
-  // page is an entry of the browser's history, so Back returns to the list.
-  let keysNow = null;
-  /** A sign-in's tag: where it is, as the library words it. */
-  const signinTag = (o) => el("span", { className: "tag" + (o.tag.ok ? " ok" : ""), textContent: o.tag.text });
-  const title = document.querySelector(".top h1"), vaultTitle = title.textContent;
-  const closeKids = [...$("close").childNodes], closeLabel = $("close").getAttribute("aria-label");
-
-  /** The header for the sign-in `o`'s page (Back, its name and its tag), or the Vault's (null). */
-  function head(o) {
-    document.body.classList.toggle("one", !!o);
-    $("close").replaceChildren(...(o ? [icon("M10 3.5 5.5 8l4.5 4.5")] : closeKids));
-    $("close").setAttribute("aria-label", o ? "Back to Keys" : closeLabel);
-    title.textContent = o ? o.label : vaultTitle;
-    document.querySelector(".top .tag")?.remove();
-    if (o) title.after(signinTag(o));
-  }
-
-  /** The sign-ins group: the list (none while there's no sign-in, which only the agent starts), or
-   *  the page of the one `opened` in place of the Keys tab; back to the list when that one is gone
-   *  (deleted here or elsewhere). */
-  function drawSignins(ks) {
-    keysNow = ks;
-    const oauth = ks.secrets.filter((x) => x.kind === "oauth");
-    const one = opened && oauth.find((o) => o.label === opened);
-    if (opened && !one) return back();
-    head(one);
-    if (one) {
-      select(document.querySelector('nav [data-tab="keys"]'));
-      const { del } = remove([`Delete the sign-in ${one.label}?`, `The agent can't reach ${one.site} with it after. Remove its access in the provider's own settings too.`], `Delete the sign-in ${one.label}`, () => post("keys", "key-delete", { label: one.label }), { text: "Delete sign-in", className: "btn bad" });
-      const facts = [["Site", one.site], ["Allows", one.scopes], ["Status", one.status]].filter(([, v]) => v);
-      return $("signins").replaceChildren(el("div", { className: "card solo" },
-        el("dl", { className: "kv" }, ...facts.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })])),
-        one.tag.text === "Enter the code" ? el("p", { className: "say", textContent: "The code and where to enter it are in the agent's answer." }) : null,
-        del));
-    }
-    const items = oauth.map((o) => {
-      const open = el("button", { className: "row link", type: "button", onclick: () => openSignin(o.label) },
-        el("div", { className: "who" }, el("b", { textContent: o.label }), el("small", { textContent: `${o.site}${o.scopes ? " · " + o.scopes : ""}` })), signinTag(o), icon("M6 4l4 4-4 4", 14));
-      open.dataset.label = o.label;
-      open.setAttribute("aria-label", `${o.label} sign-in, ${o.status}. Open`);
-      return open;
-    });
-    $("signins").replaceChildren(...(items.length ? [lab("Sign-ins", items.length), el("div", { className: "card" }, ...items)] : []));
-  }
-
-  /** Shows the sign-in `label`'s page (null: the list again), with focus on Back, or on the row the
-   *  page was opened from. */
-  function showSignin(label) {
-    const was = opened;
-    opened = label;
-    if (keysNow) drawSignins(keysNow);
-    if (opened) window.scrollTo(0, 0), $("close").focus();
-    else [...$("signins").querySelectorAll(".link")].find((b) => b.dataset.label === was)?.focus();
-  }
-  /** Opens the sign-in `label`'s page, as a history entry of its own. */
-  function openSignin(label) {
-    history.pushState({ signin: label }, "");
-    forward = false;
-    showSignin(label);
-  }
-  /** Back to the list: through the history entry the page made, when it's the one showing. */
-  function back() {
-    if (history.state?.signin) history.back();
-    else showSignin(null);
-  }
-  window.addEventListener("popstate", (e) => {
-    asking?.close();
-    forward = !e.state?.signin;
-    showSignin(e.state?.signin ?? null);
-  });
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !(asking || opened)) return;
+    if (e.key !== "Escape" || !asking) return;
     e.preventDefault();
-    asking ? asking.close() : back();
+    asking.close();
   });
 
   // ---- Signing keys: the library's too. A function signs with one by its name and gets the

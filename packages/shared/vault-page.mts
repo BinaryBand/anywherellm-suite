@@ -1,6 +1,6 @@
 // The Vault: one page where the user sees every secret the instance's vault keeps, by name and
-// never by value, and deletes it: the browser's logins and passkeys, the library's API keys, OAuth
-// sign-ins and signing keys; and the addresses on their network they let the skills reach
+// never by value, and deletes it: the browser's logins and passkeys, the library's API keys and
+// signing keys; and the addresses on their network they let the skills reach
 // (addresses.mts). Each skill that keeps secrets bundles this module and serves the page itself, so
 // either skill works installed alone; installed together, they serve the same page.
 //
@@ -34,7 +34,7 @@ import template from "./vault.html";
 export type Section = "logins" | "keys" | "addresses";
 
 /** The page's version: a skill writes the page unless the one there is newer. */
-const VERSION = 7;
+const VERSION = 8;
 /** How long a section's events are watched for after the page was last shown for it. */
 const WATCH_MS = 30 * 60 * 1000;
 const MARKER = "vault_lean_event";

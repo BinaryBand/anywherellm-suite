@@ -55,7 +55,7 @@
     },
     {
       "prompt": "Connect my GitHub so you can read my private repos",
-      "call": "{\"action\": \"secret\", \"preset\": \"github\", \"scopes\": \"repo\"}"
+      "call": "{\"action\": \"secret\", \"site\": \"api.github.com\", \"label\": \"github\"}"
     },
     {
       "prompt": "Try the issues endpoint",
@@ -67,7 +67,7 @@
     "params": {
       "action": {
         "type": "string",
-        "description": "guide (how; topic or snippet), library (the toolkits; service for one in full), secret (a key: site, label; GitHub's sign-in: preset github, scopes; or a machine: kind ssh, label), call (one request to an API: method, url, params, headers, body, auth, keep), save (service with toolkit and/or function, test; or remove), run (name, inputs; or run_id, stop: a run already made, or one going on in the background)."
+        "description": "guide (how; topic or snippet), library (the toolkits; service for one in full), secret (a key: site, label; or a machine: kind ssh, label), call (one request to an API: method, url, params, headers, body, auth, keep), save (service with toolkit and/or function, test; or remove), run (name, inputs; or run_id, stop: a run already made, or one going on in the background)."
       },
       "topic": {
         "type": "string",
@@ -149,17 +149,9 @@
         "type": "boolean",
         "description": "run with run_id: true stops that run, when it goes on in the background."
       },
-      "preset": {
-        "type": "string",
-        "description": "secret: a sign-in the library knows, with the suite's own client: \"github\"."
-      },
       "kind": {
         "type": "string",
         "description": "secret: \"ssh\" for a machine to run commands on (guide topic targets); left out, a key."
-      },
-      "scopes": {
-        "type": "string",
-        "description": "secret, with preset: the narrowest scopes the task needs, space-separated (GitHub: none for public data, \"repo\" for private repositories)."
       }
     }
   }

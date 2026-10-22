@@ -1,6 +1,6 @@
 // The secrets the skills use and the model never reads, for the whole AnythingLLM instance: the
-// browser's passwords and passkeys, the library's API keys, OAuth sign-ins and SSH targets. Each is an entry
-// { id, kind, site, user, ... } whose other fields are its kind's own; the skills give them meaning,
+// browser's passwords and passkeys, the library's API keys, signing keys and SSH targets. Each is an
+// entry { id, kind, site, user, ... } whose other fields are its kind's own; the skills give them meaning,
 // this file only keeps them. The Vault page (vault-page.mts), which each skill that keeps secrets
 // serves, lists them by name and deletes them. They're kept in one file,
 // <storage>/vault-lean/vault.json, encrypted with AES-256-GCM under a random key (32 bytes in
@@ -16,8 +16,8 @@
 // Two skills (each with its own copy of this file, bundled in) and AnythingLLM's scheduled jobs (a
 // child process) write it, so a change goes through update(): changes in one process wait their
 // turn on a queue all copies share, and the processes take turns by a lock folder beside the file.
-// A change is synchronous, so the lock is held for milliseconds: what needs the network (renewing an
-// OAuth token) is done first, and the change then checks that what it read is still there.
+// A change is synchronous, so the lock is held for milliseconds: what needs the network is done
+// first, and the change then checks that what it read is still there.
 // Ported from the lean browser skill's vault.js, which kept one vault per workspace.
 
 import crypto from "node:crypto";

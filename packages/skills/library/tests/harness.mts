@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { after, type TestContext } from "node:test";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { pageKeyFile } from "#shared/anythingllm";
 import { writeAtomic } from "#shared/atomic";
 import { hiddenFile, linksFile } from "#shared/page-links";
@@ -172,19 +172,4 @@ export function seal(text: string, pub: string = vaultConfig().pub): string {
   const gcm = crypto.createCipheriv("aes-256-gcm", aes, iv);
   const sealed = Buffer.concat([gcm.update(text), gcm.final(), gcm.getAuthTag()]);
   return ["h1", rsa(aes), iv.toString("base64"), sealed.toString("base64")].join(".");
-}
-
-type SaveSignIn = (site: string, label: string, oauth: unknown, clientId: string) => Promise<void>;
-let bundled: Promise<SaveSignIn> | null = null;
-
-/** secrets.ts's saveSignIn, bundled as the handler is (src imports without extensions, which Node
- *  alone doesn't resolve): saves a sign-in as a preset does, but at any address a test names. */
-export async function saveSignIn(...args: Parameters<SaveSignIn>): Promise<void> {
-  bundled ??= (async () => {
-    const { build } = await import("esbuild");
-    const outfile = path.join(storage, "..", "from-src.mjs");
-    await build({ stdin: { contents: 'export { saveSignIn } from "./secrets";', resolveDir: path.join(skillDir, "src"), loader: "ts" }, bundle: true, platform: "node", format: "esm", outfile, logLevel: "silent" });
-    return (await import(pathToFileURL(outfile).href)).saveSignIn as SaveSignIn;
-  })();
-  return (await bundled)(...args);
 }

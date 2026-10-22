@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { linksFile, readLinks } from "#shared/page-links";
-import { call, giveKey, hideLinks, library, pageConfig, pageState, post, postVault, publicDir, reset, saveSignIn, seal, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
+import { call, giveKey, hideLinks, library, pageConfig, pageState, post, postVault, publicDir, reset, seal, skillDir, storage, until, vaultConfig, vaultState } from "./harness.mts";
 
 const KEY = "page-key-0123456789";
 test.beforeEach(reset);
@@ -15,7 +15,7 @@ test.beforeEach(reset);
 const vaultFile = (name: string) => path.join(publicDir, "vault-lean", name);
 
 test("library ends with the Vault's link and the Library page's: relative, or absolute with ANYTHINGLLM_URL", async () => {
-  assert.match(await call({ action: "library" }), /The Vault, the user's own view of every key, sign-in and browser login, by name: \/vault-lean\/[\w-]+\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html$/);
+  assert.match(await call({ action: "library" }), /The Vault, the user's own view of every key and browser login, by name: \/vault-lean\/[\w-]+\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html$/);
   const said = await call({ action: "library" }, { base: "https://llm.example.com/" });
   const { token, key, secret } = pageConfig();
   assert.ok(said.endsWith(`https://llm.example.com/library-lean/${token}.html`));
@@ -42,7 +42,7 @@ test("the Vault shows a saved key by name only, never its value, and only the li
   await giveKey("ex", "api.example.com", KEY);
   await call({ action: "library" });
   const state = vaultState();
-  assert.deepEqual(state.secrets, [{ label: "ex", site: "api.example.com", kind: "key", status: "saved" }]);
+  assert.deepEqual(state.secrets, [{ label: "ex", site: "api.example.com" }]);
   assert.ok(!JSON.stringify(state).includes(KEY));
   assert.ok(!fs.readFileSync(vaultFile(`${vaultConfig().token}.html`), "utf8").includes(KEY));
   assert.ok(!fs.existsSync(vaultFile(`${vaultConfig().token}-logins.json`)), "no logins section without the browser");
@@ -66,7 +66,7 @@ test("a key is asked for on the Vault, given there, and the agent is told", asyn
   postVault({ ev: "key-save", label: "ex", site: "api.example.com", sealed: seal(KEY) });
   await call({ action: "library" });
   assert.deepEqual(vaultState().needs, [], "the need is met");
-  assert.equal(vaultState().secrets[0].status, "saved");
+  assert.deepEqual(vaultState().secrets, [{ label: "ex", site: "api.example.com" }]);
 });
 
 test("an event without the page's secret (an old link's, or a forgery) is dropped", async () => {
@@ -220,7 +220,6 @@ test("every event the pages post is one the skill applies", () => {
 test("every field the pages read from their state is one the skill writes", async () => {
   await giveKey("ex", "api.example.com", KEY);
   await call({ action: "secret", site: "api.other.example", label: "other" });
-  await saveSignIn("api.example.com", "demo", { token_url: "https://auth.example.com/token", device_url: "https://auth.example.com/device/code", scopes: "read" }, "client-1");
   await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "one", description: "One.", source: "async function main() { return 1; }" }, test: {} });
   await call({ action: "secret", kind: "ssh", label: "pi" });
   postVault({ ev: "signing-new", label: "signer", namespace: "test-ns" });
@@ -233,7 +232,7 @@ test("every field the pages read from their state is one the skill writes", asyn
   const keys = vaultState();
   const vault = vaultSource();
   for (const [, field] of vault.matchAll(/\bks\.([a-z_]+)/g)) assert.ok(field in keys, `ks.${field}`);
-  const vaultItems = { k: keys.secrets.find((x: { kind: string }) => x.kind === "key"), o: keys.secrets.find((x: { kind: string }) => x.kind === "oauth"), n: keys.needs[0], g: keys.signing[0] };
+  const vaultItems = { k: keys.secrets[0], n: keys.needs[0], g: keys.signing[0] };
   for (const [name, item] of Object.entries(vaultItems)) {
     assert.ok(item, name);
     for (const [, field] of vault.matchAll(new RegExp(`\\b${name}\\.([a-z_]+)`, "g"))) assert.ok(field in item, `${name}.${field}`);

@@ -1,11 +1,11 @@
 // The library's pages, the user's own view of it on any device, served by AnythingLLM from its
 // public folder (#shared/pages):
 // - The Vault's keys section (#shared/vault-page, the page every skill that keeps secrets shares):
-//   the API keys, OAuth sign-ins and signing keys by name, never their values. The user adds a key
-//   there, sealed on their device with the vault's public key, and deletes a key or a sign-in; makes
-//   a signing key or imports its seed, sealed the same way (signing.ts). It's where the
-//   user gives a key, from any chat (AnywhereLLM Lite too): the agent asks, the need shows at the
-//   top of Keys, and the user enters it there.
+//   the API keys and signing keys by name, never their values. The user adds a key there, sealed on
+//   their device with the vault's public key, and deletes one; makes a signing key or imports its
+//   seed, sealed the same way (signing.ts). It's where the user gives a key, from any chat
+//   (AnywhereLLM Lite too): the agent asks, the need shows at the top of Keys, and the user enters
+//   it there.
 // - The Library page (static/pages/library.html): the targets (machines the functions run commands
 //   on over SSH; the user registers one there, with a key pasted or made, sealed on their device
 //   with the vault's public key), the toolkits, their functions' sources and the recent runs; the
@@ -177,9 +177,6 @@ export function refresh(base: string | null): void {
   }
   addresses.refresh(); // a refusal of the run's
 }
-
-/** Writes the Vault's keys section again, where there is a Vault, as a sign-in starts or ends. */
-export const refreshKeys = (): void => vaultPage.refresh("keys", keysState(read()));
 
 /** What makes a need the same as another: a key and a target can share a label. */
 const needId = (kind: Need["kind"], label: string) => `${kind}:${label}`;

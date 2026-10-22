@@ -31,13 +31,11 @@ Each run has its own runtime: 32 MB of memory, 1 MB of stack, a deadline (10 min
 
 A memory bomb dies of "out of memory" after about 9.5 s near the limit (QuickJS collects hard there); the deadline stops it sooner, so the deadline is the bound.
 
-## Generic OAuth taken out, 2026-10-20
+## OAuth taken out: generic sign-ins 2026-10-20, GitHub's 2026-10-22
 
 Sign-ins with an OAuth client of the user's own (Google, Microsoft, Slack...) were the skill's heaviest and most exposed path: a client the user registers and gives on the Vault, a redirect page (`oauth.html`) the provider sends them back to, PKCE, and a definition (authorize, token and device addresses) that the agent writes from a provider's docs and that a page it read may steer. Four fixes landed in a day: a forged `oauth-code` event could delete the vault, a redefinition could move a signed-in sign-in to another site, a token address could be set to the attacker's, and the state check depended on how long a secret was made. A GitHub token or any provider's API key on the Vault does the same job with none of that.
 
-What stays is the GitHub sign-in by the device flow (`presets.ts`, `device.ts`): no redirect, no secret, nothing the agent writes but the scopes. `oauth.ts` keeps the tokens, where a sign-in is, and the single renewal of a refresh token, for a provider whose tokens expire. The whole generic flow, its tests and its notes ("Redefining a sign-in", "Where a sign-in's client goes": why a token address must stay on the provider's or the site's domain) are on the branch `archive/generic-oauth`, at `884382b`.
-
-A sign-in saved before this that has a user's client, such as the one for Google, is not migrated and is never used: with no device address it reads as failed ("made by a sign-in the suite no longer has"), refreshes nothing and sends no token, since its token address was the agent's to write. The user deletes it on the Vault, or the agent asks for it again with a preset under the same label, which replaces it.
+The GitHub sign-in by the device flow stayed until 2026-10-22, then went too (`archive/oauth-signin`; the decisions have why). The whole generic flow, its tests and its notes ("Redefining a sign-in", "Where a sign-in's client goes": why a token address must stay on the provider's or the site's domain) are on the branch `archive/generic-oauth`, at `884382b`.
 
 ## Check
 

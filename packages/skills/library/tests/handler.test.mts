@@ -193,7 +193,7 @@ test("with the pages' links kept from the agent, library, secret and target carr
   const where = /they open it in AnywhereLLM Lite, or with `anywherellm-suite pages` on the AnythingLLM host/;
   const answers = [await call({ action: "library" }), await giveKey("demo", "https://127.0.0.1/", KEY), await call({ action: "secret", kind: "ssh", label: "box" })];
   const [listing, key, machine] = answers;
-  assert.match(listing, /The Vault \(every key, sign-in and browser login, by name\) and the Library page \(the toolkits and runs\) are the user's own pages: they open them in AnywhereLLM Lite, or with `anywherellm-suite pages` on the AnythingLLM host\. You are never given their links: don't ask the user for them, and never fetch them\./);
+  assert.match(listing, /The Vault \(every key and browser login, by name\) and the Library page \(the toolkits and runs\) are the user's own pages: they open them in AnywhereLLM Lite, or with `anywherellm-suite pages` on the AnythingLLM host\. You are never given their links: don't ask the user for them, and never fetch them\./);
   assert.match(key, /^The user gives the key on the Vault \(they open it /);
   assert.equal((key.match(/at the top of Keys/g) ?? []).length, 1, "said once");
   assert.match(key, where);
@@ -214,7 +214,7 @@ test("the switch is read on every call: turned off, the links are in the answers
   assert.ok(!/library-lean\/|vault-lean\//.test(await call({ action: "library" })));
   hideLinks(false);
   const open = await call({ action: "library" });
-  assert.match(open, /The Vault, the user's own view of every key, sign-in and browser login, by name: \/vault-lean\/[\w-]+\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html/);
+  assert.match(open, /The Vault, the user's own view of every key and browser login, by name: \/vault-lean\/[\w-]+\.html\nThe Library page, the user's own view of the toolkits and runs: \/library-lean\/[\w-]+\.html/);
   assert.match(await call({ action: "secret", kind: "ssh", label: "box" }), /^The user registers the target "box" on the Library page, under Targets: \/library-lean\/[\w-]+\.html\n/);
   hideLinks(true);
   assert.ok(!/library-lean\/|vault-lean\//.test(await call({ action: "library" })));

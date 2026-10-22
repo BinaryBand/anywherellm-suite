@@ -12,7 +12,7 @@
 // esbuild bundles this into the one handler.js AnythingLLM loads.
 
 import * as addresses from "#shared/addresses";
-import { baseUrlOf as baseOf, noteBase, serial, workspaceOf } from "#shared/anythingllm";
+import { baseUrlOf as baseOf, noteBase, workspaceOf } from "#shared/anythingllm";
 import { answerText, flag, keepOf, objectOf, textOf } from "#shared/answer";
 import { Told } from "#shared/errors";
 import { checkUrl } from "#shared/fence";
@@ -20,13 +20,10 @@ import { notify, topicUrl, type Ntfy } from "#shared/notify";
 import { OPEN_PAGES, linksHidden } from "#shared/page-links";
 import { entryOf } from "#shared/static";
 import { LibraryError } from "./errors";
-import { askDevices, askNow, startDevice } from "./device";
 import type { HandlerContext } from "./host";
 import * as listing from "./listing";
-import { stateOf, type DeviceCode, type SignInState } from "./oauth";
 import * as page from "./page";
 import { check } from "./policy";
-import { presetOf } from "./presets";
 import { send } from "./request";
 import * as runs from "./runs";
 import { check as compiles, failureText } from "./sandbox";
@@ -64,9 +61,9 @@ type KeyBar = ReturnType<typeof store.keyHolders>;
 /** How a locked toolkit is marked where the agent reads it. */
 const LOCKED = " (locked by the user: it can't be changed or removed)";
 
-/** The toolkit's secrets, each as it is: saved, signed in, or not yet. */
+/** The toolkit's secrets, each as it is: saved or not yet. */
 function keyStatus(kit: store.Toolkit, saved: Saved, keyBar: KeyBar): string {
-  const status = (label: string) => saved.get(label.toLowerCase())?.status ?? "not saved: ask for it with secret";
+  const status = (label: string) => (saved.has(label.toLowerCase()) ? "saved" : "not saved: ask for it with secret");
   return kit.secrets.length
     ? kit.secrets
         .map((s) => {
@@ -111,8 +108,8 @@ async function pageLine(self: HandlerContext): Promise<string> {
     const base = baseOf(self);
     const vault = await page.showVault(base);
     const library = await page.show(base);
-    if (linksHidden()) return `The Vault (every key, sign-in and browser login, by name) and the Library page (the toolkits and runs) are the user's own pages: they open them ${OPEN_PAGES}. You are never given their links: don't ask the user for them, and never fetch them.`;
-    return `The Vault, the user's own view of every key, sign-in and browser login, by name: ${vault}\nThe Library page, the user's own view of the toolkits and runs: ${library}`;
+    if (linksHidden()) return `The Vault (every key and browser login, by name) and the Library page (the toolkits and runs) are the user's own pages: they open them ${OPEN_PAGES}. You are never given their links: don't ask the user for them, and never fetch them.`;
+    return `The Vault, the user's own view of every key and browser login, by name: ${vault}\nThe Library page, the user's own view of the toolkits and runs: ${library}`;
   } catch (e) {
     return `The Vault and the Library page aren't available here: ${page.plain((e as Error).message)}.`;
   }
@@ -157,22 +154,11 @@ function signingLines(): string[] {
   return ["", "Signing keys (kit.secret.sign; the user makes them on the Vault, under Keys):", ...keys.map(line)];
 }
 
-/** Whether secret is asked for a sign-in: a preset is given, or the label names one (with no site);
- *  else it is a key. */
-function asksForSignIn(args: Args): boolean {
-  const named = clean(args.label);
-  return args.preset !== undefined || (!!named && !clean(args.site) && !!secrets.signIn(named));
-}
-
-/** Asks the user for a key, or starts a preset's OAuth sign-in. A key the user gives on the Vault,
- *  sealed on their device: AnythingLLM's question card would show it in the chat once answered. */
+/** Asks the user for a key, which they give on the Vault, sealed on their device: AnythingLLM's
+ *  question card would show it in the chat once answered. */
 async function secret(args: Args, self: HandlerContext): Promise<string> {
   const named = clean(args.label);
   if (clean(args.kind).toLowerCase() === "ssh") return target(args, self);
-  if (asksForSignIn(args)) {
-    const label = secrets.labelOf(named || clean(args.preset));
-    return serial(`library-lean.sign-in.${label.toLowerCase()}`, () => signIn(args, label)); // two chats at once share one code; other sign-ins go on
-  }
   const site = secrets.siteChecked(args.site);
   const label = secrets.labelOf(named || site);
   secrets.assertKeyName(label);
@@ -189,48 +175,6 @@ async function target(args: Args, self: HandlerContext): Promise<string> {
   const library = await page.show(baseOf(self));
   return `${linksHidden() ? `The user registers the target "${label}" on the Library page, under Targets (they open it ${OPEN_PAGES}).` : `The user registers the target "${label}" on the Library page, under Targets: ${library}`}\nTell them to open it and give the machine's address, port and the account to sign in as, and the fingerprint of its host key, read on the machine itself (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). The page makes a key and shows the line to add to that account's ~/.ssh/authorized_keys, or takes one of theirs. Never ask for a key, a password or a fingerprint in the chat. When they say it's done, call library: "${label}" shows whether it signed in. Name it in a toolkit's targets: ["${label}"] (guide topic targets).`;
 }
-
-/** The OAuth sign-in `label`, one step at a time. A call that gives a preset saves it; then, by where
- *  the sign-in is (stateOf): that it's signed in, the code that still waits, or a new code, saying
- *  why the last one ended. */
-async function signIn(args: Args, label: string): Promise<string> {
-  if (args.preset !== undefined) {
-    const p = presetOf(args.preset, args.scopes);
-    await secrets.saveSignIn(p.site, label, p.definition, p.client_id);
-  }
-  const saved = secrets.signIn(label);
-  if (!saved) throw new LibraryError(`there's no sign-in "${label}": start one with a preset (guide topic secrets); for any other service, ask for a key or token with secret`);
-  if (saved.device) await askNow(saved.id); // the user may have agreed since the last ask
-  const found = saved.device ? (secrets.signIn(label) ?? saved) : saved;
-  const state = stateOf(found);
-  switch (state.at) {
-    case "signed in":
-      return `"${label}" is signed in already: start no new sign-in. Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }. If the provider refuses calls with it, the user deletes it on the Vault, and then you call secret again.`;
-    case "code waits":
-      return "The code shown before still waits, and no new one was made: show it again. " + codeText(state.code, label);
-    default: {
-      const code = await startDevice(found);
-      page.refreshKeys(); // the Vault says "Enter the code"
-      return whyNew(state) + codeText(code, label);
-    }
-  }
-}
-
-/** Why a new code is made for a sign-in at `state`: its last one failed, or ran out. */
-function whyNew(state: SignInState): string {
-  if (state.at === "failed") return `Its last sign-in didn't finish (${state.why}), so this is a new one. `;
-  if (state.at === "ran out") return "Its sign-in ran out and can't be renewed, so this is a new one. ";
-  return "";
-}
-
-/** What the agent does once the user has the code: call library to see it signed in. */
-const done = (label: string): string => `When they say they're done, call library: "${label}" shows as signed in (or why it didn't finish). Name it in a toolkit's secrets as { "label": "${label}", "as": "bearer" }.`;
-
-/** The code to show the user for the sign-in `label`. */
-const codeText = (code: DeviceCode, label: string): string =>
-  `Show the user this code in a code block of its own, so they can copy it:\n\n\`\`\`\n${code.user_code}\n\`\`\`\n\nThey open ${code.link}, enter the code and agree; it's good for ${minutesText(code.minutes)}. ${done(label)}`;
-
-const minutesText = (n: number): string => `${n} minute${n === 1 ? "" : "s"}`;
 
 /** auth as call takes it: none, how the key saved for the address's site goes ("bearer"), or
  *  { key, as }. */
@@ -393,7 +337,6 @@ export const runtime = {
       const base = baseOf(this);
       noteBase(base);
       await fromPage(this, base);
-      await askDevices(action === "library");
       return await act(args, this);
     } catch (e) {
       if (e instanceof Told) return `Library: ${page.plain(e.message)}.`;

@@ -25,7 +25,7 @@ The first one is `kit.crypto` (`src/extensions/crypto.ts`): `sha256`/`sha512`, `
 
 The rule: **the code that touches a secret is this repo's, never the model's.** A function the model wrote can't be given a secret under any rule about what it may compute, because any output carries information about it: `return key.charCodeAt(0) > 109` leaks a bit a run, and 200 runs read the key. Masking doesn't help, since the output isn't the key.
 
-So a function names a secret and the host computes, the key never entering the sandbox. That's what the library does already: `credentialed()` (`secrets.ts`) puts a key into a request, and `accessToken()` (`oauth.ts`) renews a token. A secret operation is the same, on a closed list of operations, each written so its output is safe:
+So a function names a secret and the host computes, the key never entering the sandbox. That's what the library does already: `credentialed()` (`secrets.ts`) puts a key into a request. A secret operation is the same, on a closed list of operations, each written so its output is safe:
 
 | Its output | Like | The script gets |
 | --- | --- | --- |
