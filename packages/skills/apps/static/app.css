@@ -4,7 +4,8 @@
    and data-density="compact" or "roomy" on <html>. The accent colours are worked out on every
    element, so a scoped --accent-h recolours that element in both themes. Token names are
    fixed: pages set them. The look: white tiles that float on a ground tinted toward the accent,
-   no borders, filled controls, one glowing main action. */
+   no borders, filled controls, one glowing main action. With prefers-contrast: more, stronger ink and
+   accent, and edges in place of shadows and glow. */
 :root{--accent-h:272;--radius:16px;--gap:14px;--pad:20px;--ring:10px;
 --bg:oklch(.995 .002 var(--accent-h));--panel:oklch(.962 .012 var(--accent-h));--well:oklch(.945 .014 var(--accent-h));--line:oklch(.9 .014 var(--accent-h));
 --ink:oklch(.25 .03 var(--accent-h));--muted:oklch(.5 .025 var(--accent-h));--ok:oklch(.5 .13 160);--bad:oklch(.55 .19 30);
@@ -15,6 +16,10 @@
 --ink:oklch(.95 .008 var(--accent-h));--muted:oklch(.76 .02 var(--accent-h));--ok:oklch(.78 .13 160);--bad:oklch(.78 .13 30);
 --lift:0 0 0 1px oklch(1 0 0 / .06),0 12px 32px -12px oklch(0 0 0 / .6)}
 *,::before,::after{--accent:oklch(.76 .13 var(--accent-h));--on-accent:oklch(.2 .04 var(--accent-h));--soft:oklch(.35 .06 var(--accent-h));--glow:0 8px 20px -8px oklch(.76 .13 var(--accent-h) / .45)}}
+@media (prefers-contrast:more){:root{--ink:oklch(.2 .03 var(--accent-h));--muted:oklch(.38 .03 var(--accent-h));--edge:oklch(.5 .03 var(--accent-h));--lift:0 0 0 1px var(--edge)}
+*,::before,::after{--accent:oklch(.45 .19 var(--accent-h));--glow:none}}
+@media (prefers-contrast:more) and (prefers-color-scheme:dark){:root{--ink:oklch(.98 .005 var(--accent-h));--muted:oklch(.82 .015 var(--accent-h));--edge:oklch(.75 .02 var(--accent-h))}
+*,::before,::after{--accent:oklch(.8 .12 var(--accent-h))}}
 :root[data-density=compact]{--gap:8px;--pad:14px}
 :root[data-density=roomy]{--gap:22px;--pad:28px}
 *,*::before,*::after{box-sizing:border-box}
@@ -28,13 +33,13 @@ h1{font-size:26px;font-weight:700;letter-spacing:-.015em}h2{font-size:19px;font-
 small{color:var(--muted);font-size:13.5px}
 a{color:var(--accent)}
 button,input,select,textarea{font:inherit;color:inherit}
-button{min-height:44px;min-width:44px;padding:0 18px;border:1px solid transparent;border-radius:var(--radius);background:var(--soft);color:var(--ink);font-weight:600;cursor:pointer;transition:transform .08s}
+button{min-height:44px;min-width:44px;padding:0 18px;border:1px solid var(--edge,transparent);border-radius:var(--radius);background:var(--soft);color:var(--ink);font-weight:600;cursor:pointer;transition:transform .08s}
 button:active{transform:scale(.97)}
 button.primary,button[type=submit]{background:var(--accent);color:var(--on-accent);box-shadow:var(--glow)}
 button.quiet{background:none;box-shadow:none;font-weight:inherit;padding:0 10px}
 th button{text-transform:inherit;letter-spacing:inherit;color:inherit}
 button:disabled{opacity:.5;cursor:default;box-shadow:none}
-input:not([type=checkbox],[type=radio],[type=range]),select,textarea{min-height:48px;width:100%;min-width:0;padding:10px 14px;border:1px solid transparent;border-radius:var(--radius);background:var(--well)}
+input:not([type=checkbox],[type=radio],[type=range]),select,textarea{min-height:48px;width:100%;min-width:0;padding:10px 14px;border:1px solid var(--edge,transparent);border-radius:var(--radius);background:var(--well)}
 input:not([type=checkbox],[type=radio],[type=range]):focus,select:focus,textarea:focus{border-color:var(--accent);background:var(--bg);outline:0}
 textarea{min-height:96px;resize:vertical}
 input[type=checkbox],input[type=radio]{width:22px;height:22px;margin:0;flex:none;accent-color:var(--accent)}

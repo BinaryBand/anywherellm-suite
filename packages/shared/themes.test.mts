@@ -1,6 +1,6 @@
-// The pages' two dark palettes: each page writes its dark colours once for the device's setting
-// (@media prefers-color-scheme) and once for ?theme=dark (:root[data-theme="dark"]). An edit to one
-// copy and not the other shows only under one of them, so the copies are checked here.
+// The pages' colours: every page carries the same house token block (the design canvas's lite.css),
+// which follows the device's light or dark and high contrast, and ?theme forces light or dark. A
+// page that drifted from the others, or set dark colours of its own, would show it only in one theme.
 
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -9,17 +9,24 @@ import test from "node:test";
 
 const PAGES = ["./vault.html", "../skills/apps/static/pages/manager.html", "../skills/browser/static/pages/tab.html", "../skills/library/static/pages/library.html"];
 const read = (page: string): string => fs.readFileSync(fileURLToPath(new URL(page, import.meta.url)), "utf8");
-/** A block's declarations, one each, whatever the spacing. */
-const decls = (body: string): string[] => body.split(";").map((d) => d.trim().replace(/\s*:\s*/, ":")).filter(Boolean);
+const tokens = (html: string): string => /\/\* house tokens:[\s\S]*?\/\* end of house tokens \*\//.exec(html)?.[0] ?? "";
+const first = tokens(read(PAGES[0]));
+
+test("the house token block: light and dark in one list each, forced by data-theme, with high contrast", () => {
+  assert.match(first, /--bg:light-dark\(/);
+  assert.match(first, /:root\[data-theme="light"\]\{color-scheme:light\}/);
+  assert.match(first, /:root\[data-theme="dark"\]\{color-scheme:dark\}/);
+  const device = /@media \(prefers-contrast: more\)\{:root:not\(\[data-contrast="off"\]\)\{([^}]*)\}\}/.exec(first)?.[1];
+  const chosen = /:root\[data-contrast="more"\]\{([^}]*)\}/.exec(first)?.[1];
+  assert.ok(device, "high contrast follows the device");
+  assert.equal(chosen, device, "data-contrast=more is the same high contrast");
+});
 
 for (const page of PAGES) {
-  test(`${page.split("/").pop()}: ?theme sets the theme, and its dark colours are the same for the device's dark and ?theme=dark`, () => {
+  test(`${page.split("/").pop()}: ?theme sets the theme, and its colours are the house tokens, as every page's`, () => {
     const html = read(page);
     assert.match(html, /document\.documentElement\.dataset\.theme = theme/, "the page reads ?theme");
-    const device = [...html.matchAll(/@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root:not\(\[data-theme="light"\]\)\s*\{([^}]*)\}\s*\}/g)].map((m) => decls(m[1]));
-    const chosen = [...html.matchAll(/:root\[data-theme="dark"\]\s*\{([^}]*)\}/g)].map((m) => decls(m[1]));
-    assert.equal((html.match(/prefers-color-scheme/g) || []).length, device.length, "every dark rule gives way to ?theme=light");
-    assert.ok(device.length >= 1);
-    assert.deepEqual(chosen, device);
+    assert.equal(tokens(html), first, "the same token block as vault.html");
+    assert.doesNotMatch(html, /prefers-color-scheme/, "no dark colours of its own: light-dark() in the tokens");
   });
 }

@@ -6,41 +6,162 @@
 <meta name="referrer" content="no-referrer">
 <title>Library</title>
 <style>
-  /* ?theme=light or dark keeps the page to one, as the Vault's does; without it, the device's. */
-  :root { --bg: #fafaf8; --fg: #1d1d1b; --muted: #6b6b66; --line: #e2e1dc; --card: #fff; --accent: #2f5bd3; --onaccent: #fff; --warn: #b5470b; --ok: #237a3c; color-scheme: light; }
-  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #161615; --fg: #ecebe6; --muted: #9b9a93; --line: #2f2e2b; --card: #1f1e1c; --accent: #8aa8ff; --onaccent: #161615; --warn: #f0995c; --ok: #7bcf8f; color-scheme: dark; } }
-  :root[data-theme="dark"] { --bg: #161615; --fg: #ecebe6; --muted: #9b9a93; --line: #2f2e2b; --card: #1f1e1c; --accent: #8aa8ff; --onaccent: #161615; --warn: #f0995c; --ok: #7bcf8f; color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--line); padding: 12px 16px 0; z-index: 1; }
-  h1 { font-size: 18px; margin: 0 0 8px; }
-  nav { display: flex; gap: 4px; overflow-x: auto; }
-  nav button { border: 0; background: none; color: var(--muted); padding: 8px 10px; font: inherit; border-bottom: 2px solid transparent; cursor: pointer; }
-  nav button[aria-selected="true"] { color: var(--fg); border-color: var(--accent); }
-  main { padding: 16px; max-width: 760px; margin: 0 auto; }
-  section[hidden] { display: none; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0 0 12px; }
-  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-  .cap { color: var(--muted); font-size: 13px; }
-  .bad { color: var(--warn); } .good { color: var(--ok); }
-  a { color: var(--accent); }
-  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 2px; }
-  label.check { display: flex; gap: 8px; align-items: center; color: var(--fg); }
-  label.check input { width: auto; }
-  input, textarea { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; }
-  .need { border-color: var(--accent); }
-  button.act { margin-top: 10px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--onaccent); font: inherit; cursor: pointer; }
-  button.quiet { background: none; color: var(--warn); border-color: var(--line); }
-  pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 12px; max-height: 360px; overflow: auto; }
-  details > summary { cursor: pointer; }
-  #toast { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); }
-  #toast[hidden] { display: none; }
+/* house tokens: AnywhereLLM Lite's colours (the design canvas's lite.css), the same in every page. Dark
+   follows the device unless <html data-theme> is light or dark; high contrast follows prefers-contrast,
+   and <html data-contrast> more or off forces it. */
+:root{color-scheme:light dark;
+--bg:light-dark(oklch(0.962 0.012 272),oklch(0.19 0.014 272));
+--panel:light-dark(oklch(0.995 0.002 272),oklch(0.27 0.018 272));
+--well:light-dark(oklch(0.94 0.016 272),oklch(0.31 0.02 272));
+--page:light-dark(oklch(0.99 0 0),oklch(0.18 0.01 280));
+--line:light-dark(oklch(0.89 0.014 272),oklch(0.4 0.022 272));
+--line2:light-dark(oklch(0.925 0.012 272),oklch(0.33 0.02 272));
+--ink:light-dark(oklch(0.25 0.03 272),oklch(0.94 0.01 272));
+--ink2:light-dark(oklch(0.38 0.028 272),oklch(0.82 0.014 272));
+--muted:light-dark(oklch(0.46 0.025 272),oklch(0.72 0.02 272));
+--accent:light-dark(oklch(0.54 0.22 272),oklch(0.62 0.18 272));
+--accentbg:light-dark(oklch(0.908 0.044 270),oklch(0.34 0.09 272));
+--accentfg:light-dark(oklch(0.45 0.209 272),oklch(0.834 0.082 269));
+--onaccent:light-dark(oklch(1 0 0),oklch(0.2 0.05 272));
+--hover:light-dark(oklch(0.925 0.016 272),oklch(0.31 0.02 272));
+--sel:light-dark(oklch(0.917 0.04 270),oklch(0.331 0.063 272));
+--okfg:light-dark(oklch(0.468 0.083 184),oklch(0.801 0.12 185));
+--okbg:light-dark(oklch(0.945 0.04 185),oklch(0.32 0.05 185));
+--okdot:light-dark(oklch(0.628 0.111 184),oklch(0.726 0.128 184));
+--warnfg:light-dark(oklch(0.529 0.119 64),oklch(0.83 0.12 65));
+--warnbg:light-dark(oklch(0.944 0.039 66),oklch(0.319 0.05 65));
+--badfg:light-dark(oklch(0.42 0.17 27),oklch(0.7 0.119 27));
+--edge:light-dark(oklch(0.58 0.02 272),oklch(0.6 0.022 272));
+--off:light-dark(oklch(0.84 0.012 272),oklch(0.42 0.02 272));
+--bubble:light-dark(oklch(0.917 0.04 270),oklch(0.319 0.064 271));
+--scrim:light-dark(oklch(0.25 0.03 272 / 0.4),oklch(0.1 0.02 272 / 0.6));
+--shadow:light-dark(oklch(0.35 0.06 272 / 0.14),oklch(0.05 0.02 272 / 0.4));
+--tileedge:transparent;
+--hi:light-dark(transparent,oklch(1 0 0 / 0.06));
+--sh0:light-dark(oklch(0.35 0.06 272 / 0.1),transparent);
+--sh1:light-dark(oklch(0.35 0.06 272 / 0.08),transparent);
+--sh2:light-dark(oklch(0.35 0.06 272 / 0.08),oklch(0.05 0.02 272 / 0.4));
+--sh3:light-dark(oklch(0.35 0.06 272 / 0.08),oklch(0.05 0.02 272 / 0.3));
+--tileshadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh1),0 4px 8px var(--sh2),0 12px 24px var(--sh3);
+--chipshadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh0),0 4px 8px var(--sh2);
+--fl1:light-dark(oklch(0.35 0.06 272 / 0.28),oklch(0 0 0 / 0.5));
+--fl2:light-dark(oklch(0.35 0.06 272 / 0.16),oklch(0 0 0 / 0.3));
+--float:0 12px 32px -8px var(--fl1),0 2px 6px var(--fl2);
+--glow:0 8px 24px -4px color-mix(in oklab,var(--accent) 35%,transparent);
+--sheetbg:var(--panel);
+--sheetblur:none;
+--sheetedge:transparent;
+--sheethi:light-dark(oklch(1 0 0 / 0.7),oklch(1 0 0 / 0.1));
+--meshA:light-dark(oklch(0.91 0.055 350),oklch(0.30 0.08 340));
+--meshB:light-dark(oklch(0.89 0.07 295),oklch(0.32 0.10 295));
+--meshC:light-dark(oklch(0.91 0.045 255),oklch(0.30 0.07 255))}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+@media (prefers-contrast: more){:root:not([data-contrast="off"]){
+--ink:light-dark(oklch(0.2 0.03 272),oklch(0.98 0.005 272));
+--ink2:light-dark(oklch(0.3 0.03 272),oklch(0.9 0.01 272));
+--muted:light-dark(oklch(0.38 0.03 272),oklch(0.82 0.015 272));
+--accent:light-dark(oklch(0.45 0.19 272),oklch(0.8 0.12 272));
+--accentfg:light-dark(oklch(0.4 0.19 272),oklch(0.9 0.08 272));
+--line:light-dark(oklch(0.55 0.02 272),oklch(0.65 0.02 272));
+--line2:light-dark(oklch(0.65 0.02 272),oklch(0.55 0.02 272));
+--edge:light-dark(oklch(0.5 0.03 272),oklch(0.75 0.02 272));
+--tileedge:var(--edge);--sheetedge:var(--edge);
+--hi:transparent;--sh0:transparent;--sh1:transparent;--sh2:transparent;--sh3:transparent;--shadow:transparent;
+--float:0 0 0 1px var(--edge);--glow:none;
+--sheetbg:var(--panel);--sheetblur:none;--sheethi:transparent;
+--meshA:transparent;--meshB:transparent;--meshC:transparent}}
+:root[data-contrast="more"]{
+--ink:light-dark(oklch(0.2 0.03 272),oklch(0.98 0.005 272));
+--ink2:light-dark(oklch(0.3 0.03 272),oklch(0.9 0.01 272));
+--muted:light-dark(oklch(0.38 0.03 272),oklch(0.82 0.015 272));
+--accent:light-dark(oklch(0.45 0.19 272),oklch(0.8 0.12 272));
+--accentfg:light-dark(oklch(0.4 0.19 272),oklch(0.9 0.08 272));
+--line:light-dark(oklch(0.55 0.02 272),oklch(0.65 0.02 272));
+--line2:light-dark(oklch(0.65 0.02 272),oklch(0.55 0.02 272));
+--edge:light-dark(oklch(0.5 0.03 272),oklch(0.75 0.02 272));
+--tileedge:var(--edge);--sheetedge:var(--edge);
+--hi:transparent;--sh0:transparent;--sh1:transparent;--sh2:transparent;--sh3:transparent;--shadow:transparent;
+--float:0 0 0 1px var(--edge);--glow:none;
+--sheetbg:var(--panel);--sheetblur:none;--sheethi:transparent;
+--meshA:transparent;--meshB:transparent;--meshC:transparent}
+/* end of house tokens */
+:root{--sans:'Instrument Sans','Noto Sans','Segoe UI',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--sans);-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+input,textarea{font:inherit;color:var(--ink)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.fld:focus-visible{outline-offset:-3px}
+[hidden]{display:none!important}
+header{position:sticky;top:0;z-index:2;display:flex;flex-direction:column;gap:16px;padding:calc(12px + env(safe-area-inset-top,0px)) max(16px,calc((100% - 608px) / 2)) 12px;background:var(--bg)}
+h1{min-height:48px;display:flex;align-items:center;margin:0;padding:0 8px;font-size:19px;font-weight:600}
+nav{display:flex;padding:3px;border-radius:16px;background:var(--hover)}
+nav button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:15px;line-height:1.2;text-align:center;color:var(--ink)}
+nav button[aria-selected="true"]{background:var(--panel);box-shadow:inset 0 0 0 1.5px var(--edge);font-weight:600}
+main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px}
+section{display:flex;flex-direction:column;gap:16px}
+.cap{margin:0;font-size:13px;line-height:1.45;color:var(--muted)}
+main>.cap,section>.cap,.foot .cap{padding:0 8px}
+a{color:var(--accentfg)}
+.card{background:var(--panel);border:1px solid var(--tileedge);border-radius:24px;padding:16px 20px;display:flex;flex-direction:column;gap:10px;box-shadow:var(--tileshadow)}
+.card strong{font-size:17px;font-weight:600;overflow-wrap:anywhere}
+.row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.svc{font:12px var(--mono);color:var(--muted)}
+.tag{max-width:100%;padding:2px 8px;border-radius:6px;background:var(--warnbg);color:var(--warnfg);font-size:12px;overflow-wrap:anywhere}
+.tag.ok{background:var(--okbg);color:var(--okfg)}
+.tag.run{background:var(--hover);color:var(--ink2)}
+.info{margin:0;font:12px/1.5 var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.bad{margin:0;font-size:14px;line-height:1.45;color:var(--badfg)}
+.stack{display:flex;flex-direction:column;gap:10px}
+.acts{display:flex;gap:12px}
+.acts>.btn{flex:1}
+.acts>.btn:only-child,.body>.btn,.stack>.btn{flex:none;align-self:flex-start;padding:0 18px}
+summary{list-style:none;cursor:pointer;min-height:44px;display:flex;align-items:center;gap:10px}
+summary::-webkit-details-marker{display:none}
+.chev{flex:none;color:var(--muted);transition:transform .2s}
+details[open]>summary .chev{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){.chev{transition:none}}
+.fns:empty{display:none}
+.fns>details{border-top:1px solid var(--line2)}
+.fns>details:last-child{border-bottom:1px solid var(--line2)}
+.fns summary{font-size:14px;color:var(--ink2)}
+.fns summary>span{flex:1;min-width:0;overflow-wrap:anywhere}
+.fns summary b{font-weight:600;color:var(--ink)}
+.body{display:flex;flex-direction:column;gap:10px;padding:0 0 12px}
+.card.list{padding:0 20px;gap:0}
+.list>details{padding:12px 0}
+.list>details+details{border-top:1px solid var(--line2)}
+.who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.who>span{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.who b{font-size:16px;font-weight:500;overflow-wrap:anywhere}
+.who small{font:12px var(--mono);color:var(--muted)}
+.list pre{margin-top:8px}
+.list pre:empty{display:none}
+pre{margin:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line2);background:var(--bg);font:12px/1.55 var(--mono);color:var(--ink2);white-space:pre-wrap;word-break:break-word;font-variant-ligatures:none;max-height:360px;overflow:auto}
+form.card{padding:20px;gap:12px}
+.need{border-color:var(--accent);box-shadow:none}
+.ttl{display:flex;flex-direction:column;gap:4px}
+.ff{display:flex;flex-direction:column;gap:6px}
+.ff>span{padding:0 8px;font-size:13px;line-height:1.45;color:var(--muted)}
+.fld{width:100%;min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--edge);background:var(--bg);color:var(--ink);font-size:16px}
+.fld.mono{font-family:var(--mono)}
+textarea.fld{min-height:104px;padding:12px 16px;resize:vertical}
+.check{min-height:44px;display:flex;align-items:flex-start;gap:12px;padding:4px 0;font-size:14px;color:var(--ink);cursor:pointer}
+.check input{flex:none;width:20px;height:20px;margin:0;accent-color:var(--accent)}
+.btn{min-height:44px;padding:4px 12px;line-height:1.2;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;text-align:center}
+.btn.pri{border-radius:999px;border-color:var(--accent);background:var(--accent);color:var(--onaccent);box-shadow:var(--glow)}
+.btn.del{color:var(--badfg)}
+.btn.try{color:var(--accentfg)}
+.foot{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.quiet{min-height:44px;padding:0 8px;color:var(--badfg);font-size:15px;font-weight:500}
+#toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);font-size:14px;line-height:1.45;text-align:center;box-shadow:var(--float)}
 </style>
 </head>
 <body>
 <header>
   <h1>Library</h1>
-  <nav role="tablist">
+  <nav role="tablist" aria-label="Show">
     <button role="tab" data-tab="toolkits" aria-selected="true">Toolkits</button>
     <button role="tab" data-tab="targets">Targets</button>
     <button role="tab" data-tab="runs">Runs</button>
@@ -51,10 +172,10 @@
   <section id="targets" hidden></section>
   <section id="toolkits"></section>
   <section id="runs" hidden></section>
-  <p class="cap">What you type for a target's key is sealed on this device; the agent never sees it. Anyone with this page's link can see what it shows and act on it.
-    <button class="act quiet" id="rotate">New link</button></p>
+  <div class="foot"><p class="cap">What you type for a target's key is sealed on this device; the agent never sees it. Anyone with this page's link can see what it shows and act on it.</p>
+    <button class="quiet" id="rotate">New link</button></div>
 </main>
-<div id="toast" hidden></div>
+<div id="toast" role="status" hidden></div>
 <script>
 (() => {
   const cfg = /*CONFIG*/null;
@@ -62,6 +183,9 @@
   if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
   const $ = (id) => document.getElementById(id);
   const el = (tag, props = {}, ...kids) => { const n = Object.assign(document.createElement(tag), props); n.append(...kids.filter((k) => k !== null && k !== undefined)); return n; };
+  // The chevron at a summary's end, turned while it's open.
+  const CHEV = Object.assign(document.createElement("template"), { innerHTML: '<svg class="chev" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>' }).content.firstChild;
+  const chev = () => CHEV.cloneNode(true);
   let toastTimer = 0;
   const toast = (text) => { $("toast").textContent = text; $("toast").hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => ($("toast").hidden = true), 4000); };
 
@@ -103,17 +227,19 @@
   // Not a login form: a password field asks for a new value (so the browser fills in no saved
   // password, nor a user name beside it), and names hold nothing a browser reads as a login.
   // A private key goes in a textarea, which keeps the line breaks an input drops.
-  const field = (inputs, name, label, type = "text") => {
+  // `mono`: a field for a value read as code (a fingerprint, a key).
+  const field = (inputs, name, label, type = "text", mono = false) => {
     const props = { name: `lib-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", spellcheck: false };
+    if (type !== "checkbox") props.className = "fld" + (mono || type === "textarea" ? " mono" : "");
     const input = (inputs[name] = type === "textarea" ? el("textarea", { ...props, rows: 4 }) : el("input", { ...props, type }));
-    return type === "checkbox" ? el("label", { className: "check" }, input, label) : el("label", { textContent: label }, input);
+    return type === "checkbox" ? el("label", { className: "check" }, input, label) : el("label", { className: "ff" }, el("span", { textContent: label }), input);
   };
 
   // `clears`: the form is emptied once its event is posted; a target's waits for the skill to say
   // it saved it (answered), so a refusal leaves what the user typed.
   function form(title, fields, submit, onsubmit, need = false, clears = true) {
     const inputs = {};
-    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type]) => field(inputs, name, label, type)), el("p", { className: "bad err", hidden: true }), el("button", { className: "act", type: "submit", textContent: submit }));
+    const node = el("form", { className: "card" + (need ? " need" : "") }, title, ...fields.map(([name, label, type, mono]) => field(inputs, name, label, type, mono)), el("p", { className: "bad err", hidden: true }), el("button", { className: "btn pri", type: "submit", textContent: submit }));
     node.onsubmit = async (e) => {
       e.preventDefault();
       node.querySelector(".err").hidden = true;
@@ -130,9 +256,9 @@
   // (sealed on this device) or made by the skill, which then shows the public line for the machine.
   const targetForm = (need) =>
     form(
-      el("div", {}, el("strong", { textContent: need ? `The agent asks for a target: ${need.label}` : "Add a target" }),
+      el("div", { className: "ttl" }, el("strong", { textContent: need ? `The agent asks for a target: ${need.label}` : "Add a target" }),
         el("p", { className: "cap", textContent: "A machine the agent's functions run commands on over SSH. Read the fingerprint on the machine itself: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub" })),
-      [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…"],
+      [...(need ? [] : [["label", "Name, like pi"]]), ["host", "Host or address"], ["port", "Port (22 if empty)"], ["login", "Account to sign in as"], ["fingerprint", "Host key fingerprint, SHA256:…", "text", true],
         ["key", "Private key, without a passphrase (leave empty to make one, or to keep the one saved)", "textarea"],
         ["private", "On my network: a private address. The machine must not be this one, and must not be able to reach this AnythingLLM: its pages carry the page secret", "checkbox"], ["unattended", "May run unattended: scheduled jobs may use it", "checkbox"]],
       "Save",
@@ -151,24 +277,25 @@
   const copyable = (text) => {
     const pre = el("pre", { textContent: text });
     const copy = () => navigator.clipboard.writeText(text).then(() => toast("Copied"), () => getSelection().selectAllChildren(pre));
-    return el("div", {}, pre, el("button", { className: "act quiet", type: "button", textContent: "Copy", onclick: copy }));
+    return el("div", { className: "stack" }, pre, el("button", { className: "btn", type: "button", textContent: "Copy", onclick: copy }));
   };
 
-  const remove = (text, ev, fields, asked = `${text}?`) => el("button", { className: "act quiet", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
+  const remove = (text, ev, fields, asked = `${text}?`) => el("button", { className: "btn del", type: "button", textContent: text, onclick: () => confirm(asked) && post(ev, fields) });
 
   function drawTargets(s) {
     const machines = $("targets");
     machines.replaceChildren(...s.needs.map((n) => targetForm(n)));
     for (const m of s.targets) {
       machines.append(el("div", { className: "card" },
-        el("div", { className: "row" }, el("strong", { textContent: m.label }), el("span", { className: m.status === "signed in" ? "good" : "bad", textContent: m.status })),
-        el("p", { className: "cap", textContent: `${m.login}@${m.host}:${m.port}; ${m.fingerprint}${m.private ? "; on my network" : ""}${m.unattended ? "; may run unattended" : ""}` }),
+        el("div", { className: "row" }, el("strong", { textContent: m.label }), el("span", { className: m.status === "signed in" ? "tag ok" : "tag", textContent: m.status })),
+        el("p", { className: "info", textContent: `${m.login}@${m.host}:${m.port}; ${m.fingerprint}${m.private ? "; on my network" : ""}${m.unattended ? "; may run unattended" : ""}` }),
         m.barred ? el("p", { className: "bad", textContent: `Not used: ${m.barred}.` }) : null,
         ...m.notes.map((n) => el("p", { className: "cap", textContent: n })),
         m.held ? el("p", { className: "cap", textContent: `Kept for locked toolkits (${m.held}): an unlocked toolkit can't use it.` }) : null,
-        m.public ? el("div", {}, el("p", { className: "cap", textContent: `Add this line to ~${m.login}/.ssh/authorized_keys on the machine (restrict keeps it to commands and files):` }), copyable(`restrict ${m.public}`)) : null,
-        el("button", { className: "act", type: "button", textContent: "Try signing in", onclick: () => post("target-check", { label: m.label }) }),
-        remove("Delete", "target-delete", { label: m.label })));
+        m.public ? el("div", { className: "stack" }, el("p", { className: "cap", textContent: `Add this line to ~${m.login}/.ssh/authorized_keys on the machine (restrict keeps it to commands and files):` }), copyable(`restrict ${m.public}`)) : null,
+        el("div", { className: "acts" },
+          el("button", { className: "btn try", type: "button", textContent: "Try signing in", onclick: () => post("target-check", { label: m.label }) }),
+          remove("Delete", "target-delete", { label: m.label }))));
     }
     machines.append(targetForm(null));
   }
@@ -180,24 +307,29 @@
       // A locked toolkit: the agent can't change or remove it, nor this page delete in it, until it's unlocked.
       const lock = t.locked
         ? remove("Unlock", "toolkit-unlock", { service: t.service }, "Unlock? The agent can change its functions again.")
-        : el("button", { className: "act", type: "button", textContent: "Lock", onclick: () => post("toolkit-lock", { service: t.service }) });
+        : el("button", { className: "btn pri", type: "button", textContent: "Lock", onclick: () => post("toolkit-lock", { service: t.service }) });
       toolkits.append(el("div", { className: "card" },
-        el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: t.locked ? "good" : "cap", textContent: t.locked ? `${t.service} · locked` : t.service })),
-        el("p", { className: "cap", textContent: `${t.reach.join(", ") || "no base address or target"}; keys: ${t.secrets.join(", ") || "none"}` }),
-        ...t.functions.map((f) => el("details", {}, el("summary", { textContent: `${f.name}: ${f.description} (v${f.version})` }), el("pre", { textContent: f.source }), t.locked ? null : remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))),
+        el("div", { className: "row" }, el("strong", { textContent: t.title }), el("span", { className: t.locked ? "tag ok" : "svc", textContent: t.locked ? `${t.service} · locked` : t.service })),
+        el("p", { className: "info", textContent: `${t.reach.join(", ") || "no base address or target"}; keys: ${t.secrets.join(", ") || "none"}` }),
+        el("div", { className: "fns" }, ...t.functions.map((f) => el("details", {},
+          el("summary", {}, el("span", {}, el("b", { textContent: f.name }), `: ${f.description} (v${f.version})`), chev()),
+          el("div", { className: "body" }, el("pre", { textContent: f.source }), t.locked ? null : remove("Delete this function", "fn-delete", { fn: `${t.service}.${f.name}` }))))),
         el("p", { className: "cap", textContent: t.locked ? "Locked: the agent can't change or remove it. Unlock it to let it, or to delete here." : "Read its functions, then lock it: the agent can't change a locked toolkit. Locking also pins its targets (machine, account and host key): they stay as they are for it, and unlocked toolkits can't use them." }),
-        lock, " ", t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service })));
+        el("div", { className: "acts" }, lock, t.locked ? null : remove("Delete the toolkit", "toolkit-delete", { service: t.service }))));
     }
 
   }
 
   function drawRuns(s) {
     const runs = $("runs");
-    runs.replaceChildren(...(s.runs.length ? [] : [el("p", { className: "cap", textContent: "No runs yet." })]));
+    // The runs are rows of one tile.
+    const list = el("div", { className: "card list" });
+    runs.replaceChildren(s.runs.length ? list : el("p", { className: "cap", textContent: "No runs yet." }));
     for (const r of s.runs) {
-      runs.append(el("details", { className: "card" },
-        el("summary", {}, el("strong", { textContent: r.fn }), " ", el("span", { className: r.status === "ok" ? "good" : r.status === "running" ? "cap" : "bad", textContent: r.status }), " ",
-          el("span", { className: "cap", textContent: `${new Date(r.ended).toLocaleString()}${r.status === "running" ? "" : `, ${(r.ms / 1000).toFixed(1)} s`}${r.trigger === "job" ? ", scheduled job" : ""}` })),
+      list.append(el("details", {},
+        el("summary", {}, el("span", { className: "who" },
+          el("span", {}, el("b", { textContent: r.fn }), el("span", { className: r.status === "ok" ? "tag ok" : r.status === "running" ? "tag run" : "tag", textContent: r.status })),
+          el("small", { textContent: `${new Date(r.ended).toLocaleString()}${r.status === "running" ? "" : `, ${(r.ms / 1000).toFixed(1)} s`}${r.trigger === "job" ? ", scheduled job" : ""}` })), chev()),
         el("pre", { textContent: r.error || r.result || "" })));
     }
   }

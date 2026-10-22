@@ -12,35 +12,115 @@
    (the browser's) and Addresses (either skill's: addresses.mts). What's done in a section is posted under its
    title and applied by the skill that owns it. The look is
    AnywhereLLM Lite's, as the browser's tab page has it; ?theme=light or dark keeps it to one. */
-:root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--edge:oklch(0.58 0.014 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--accentbg:oklch(0.94 0.028 272);--onaccent:oklch(1 0 0);--hover:oklch(0.925 0.016 75);--badfg:oklch(0.47 0.16 20);--okfg:oklch(0.42 0.08 165);--okbg:oklch(0.945 0.04 165);--warnfg:oklch(0.45 0.1 70);--warnbg:oklch(0.95 0.045 80);
---float:0 12px 32px -8px oklch(0.3 0.04 280 / 0.28),0 2px 6px oklch(0.3 0.03 280 / 0.16);--sans:'Instrument Sans','Noto Sans','Segoe UI',system-ui,-apple-system,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace;color-scheme:light}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--edge:oklch(0.6 0.022 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.78 0.018 280);--accent:oklch(0.78 0.1 272);--accentbg:oklch(0.33 0.06 272);--onaccent:oklch(0.2 0.03 280);--hover:oklch(0.29 0.02 280);--badfg:oklch(0.83 0.085 20);--okfg:oklch(0.82 0.1 165);--okbg:oklch(0.32 0.05 165);--warnfg:oklch(0.84 0.1 80);--warnbg:oklch(0.33 0.05 70);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}}
-:root[data-theme="dark"]{--bg:oklch(0.215 0.018 280);--panel:oklch(0.26 0.02 280);--line:oklch(0.36 0.022 280);--line2:oklch(0.31 0.02 280);--edge:oklch(0.6 0.022 280);--ink:oklch(0.93 0.01 75);--ink2:oklch(0.81 0.014 75);--muted:oklch(0.78 0.018 280);--accent:oklch(0.78 0.1 272);--accentbg:oklch(0.33 0.06 272);--onaccent:oklch(0.2 0.03 280);--hover:oklch(0.29 0.02 280);--badfg:oklch(0.83 0.085 20);--okfg:oklch(0.82 0.1 165);--okbg:oklch(0.32 0.05 165);--warnfg:oklch(0.84 0.1 80);--warnbg:oklch(0.33 0.05 70);--float:0 12px 32px -8px oklch(0 0 0 / 0.5),0 2px 6px oklch(0 0 0 / 0.3);color-scheme:dark}
+/* house tokens: AnywhereLLM Lite's colours (the design canvas's lite.css), the same in every page. Dark
+   follows the device unless <html data-theme> is light or dark; high contrast follows prefers-contrast,
+   and <html data-contrast> more or off forces it. */
+:root{color-scheme:light dark;
+--bg:light-dark(oklch(0.962 0.012 272),oklch(0.19 0.014 272));
+--panel:light-dark(oklch(0.995 0.002 272),oklch(0.27 0.018 272));
+--well:light-dark(oklch(0.94 0.016 272),oklch(0.31 0.02 272));
+--page:light-dark(oklch(0.99 0 0),oklch(0.18 0.01 280));
+--line:light-dark(oklch(0.89 0.014 272),oklch(0.4 0.022 272));
+--line2:light-dark(oklch(0.925 0.012 272),oklch(0.33 0.02 272));
+--ink:light-dark(oklch(0.25 0.03 272),oklch(0.94 0.01 272));
+--ink2:light-dark(oklch(0.38 0.028 272),oklch(0.82 0.014 272));
+--muted:light-dark(oklch(0.46 0.025 272),oklch(0.72 0.02 272));
+--accent:light-dark(oklch(0.54 0.22 272),oklch(0.62 0.18 272));
+--accentbg:light-dark(oklch(0.908 0.044 270),oklch(0.34 0.09 272));
+--accentfg:light-dark(oklch(0.45 0.209 272),oklch(0.834 0.082 269));
+--onaccent:light-dark(oklch(1 0 0),oklch(0.2 0.05 272));
+--hover:light-dark(oklch(0.925 0.016 272),oklch(0.31 0.02 272));
+--sel:light-dark(oklch(0.917 0.04 270),oklch(0.331 0.063 272));
+--okfg:light-dark(oklch(0.468 0.083 184),oklch(0.801 0.12 185));
+--okbg:light-dark(oklch(0.945 0.04 185),oklch(0.32 0.05 185));
+--okdot:light-dark(oklch(0.628 0.111 184),oklch(0.726 0.128 184));
+--warnfg:light-dark(oklch(0.529 0.119 64),oklch(0.83 0.12 65));
+--warnbg:light-dark(oklch(0.944 0.039 66),oklch(0.319 0.05 65));
+--badfg:light-dark(oklch(0.42 0.17 27),oklch(0.7 0.119 27));
+--edge:light-dark(oklch(0.58 0.02 272),oklch(0.6 0.022 272));
+--off:light-dark(oklch(0.84 0.012 272),oklch(0.42 0.02 272));
+--bubble:light-dark(oklch(0.917 0.04 270),oklch(0.319 0.064 271));
+--scrim:light-dark(oklch(0.25 0.03 272 / 0.4),oklch(0.1 0.02 272 / 0.6));
+--shadow:light-dark(oklch(0.35 0.06 272 / 0.14),oklch(0.05 0.02 272 / 0.4));
+--tileedge:transparent;
+--hi:light-dark(transparent,oklch(1 0 0 / 0.06));
+--sh0:light-dark(oklch(0.35 0.06 272 / 0.1),transparent);
+--sh1:light-dark(oklch(0.35 0.06 272 / 0.08),transparent);
+--sh2:light-dark(oklch(0.35 0.06 272 / 0.08),oklch(0.05 0.02 272 / 0.4));
+--sh3:light-dark(oklch(0.35 0.06 272 / 0.08),oklch(0.05 0.02 272 / 0.3));
+--tileshadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh1),0 4px 8px var(--sh2),0 12px 24px var(--sh3);
+--chipshadow:inset 0 1px 0 var(--hi),0 1px 2px var(--sh0),0 4px 8px var(--sh2);
+--fl1:light-dark(oklch(0.35 0.06 272 / 0.28),oklch(0 0 0 / 0.5));
+--fl2:light-dark(oklch(0.35 0.06 272 / 0.16),oklch(0 0 0 / 0.3));
+--float:0 12px 32px -8px var(--fl1),0 2px 6px var(--fl2);
+--glow:0 8px 24px -4px color-mix(in oklab,var(--accent) 35%,transparent);
+--sheetbg:var(--panel);
+--sheetblur:none;
+--sheetedge:transparent;
+--sheethi:light-dark(oklch(1 0 0 / 0.7),oklch(1 0 0 / 0.1));
+--meshA:light-dark(oklch(0.91 0.055 350),oklch(0.30 0.08 340));
+--meshB:light-dark(oklch(0.89 0.07 295),oklch(0.32 0.10 295));
+--meshC:light-dark(oklch(0.91 0.045 255),oklch(0.30 0.07 255))}
+:root[data-theme="light"]{color-scheme:light}
+:root[data-theme="dark"]{color-scheme:dark}
+@media (prefers-contrast: more){:root:not([data-contrast="off"]){
+--ink:light-dark(oklch(0.2 0.03 272),oklch(0.98 0.005 272));
+--ink2:light-dark(oklch(0.3 0.03 272),oklch(0.9 0.01 272));
+--muted:light-dark(oklch(0.38 0.03 272),oklch(0.82 0.015 272));
+--accent:light-dark(oklch(0.45 0.19 272),oklch(0.8 0.12 272));
+--accentfg:light-dark(oklch(0.4 0.19 272),oklch(0.9 0.08 272));
+--line:light-dark(oklch(0.55 0.02 272),oklch(0.65 0.02 272));
+--line2:light-dark(oklch(0.65 0.02 272),oklch(0.55 0.02 272));
+--edge:light-dark(oklch(0.5 0.03 272),oklch(0.75 0.02 272));
+--tileedge:var(--edge);--sheetedge:var(--edge);
+--hi:transparent;--sh0:transparent;--sh1:transparent;--sh2:transparent;--sh3:transparent;--shadow:transparent;
+--float:0 0 0 1px var(--edge);--glow:none;
+--sheetbg:var(--panel);--sheetblur:none;--sheethi:transparent;
+--meshA:transparent;--meshB:transparent;--meshC:transparent}}
+:root[data-contrast="more"]{
+--ink:light-dark(oklch(0.2 0.03 272),oklch(0.98 0.005 272));
+--ink2:light-dark(oklch(0.3 0.03 272),oklch(0.9 0.01 272));
+--muted:light-dark(oklch(0.38 0.03 272),oklch(0.82 0.015 272));
+--accent:light-dark(oklch(0.45 0.19 272),oklch(0.8 0.12 272));
+--accentfg:light-dark(oklch(0.4 0.19 272),oklch(0.9 0.08 272));
+--line:light-dark(oklch(0.55 0.02 272),oklch(0.65 0.02 272));
+--line2:light-dark(oklch(0.65 0.02 272),oklch(0.55 0.02 272));
+--edge:light-dark(oklch(0.5 0.03 272),oklch(0.75 0.02 272));
+--tileedge:var(--edge);--sheetedge:var(--edge);
+--hi:transparent;--sh0:transparent;--sh1:transparent;--sh2:transparent;--sh3:transparent;--shadow:transparent;
+--float:0 0 0 1px var(--edge);--glow:none;
+--sheetbg:var(--panel);--sheetblur:none;--sheethi:transparent;
+--meshA:transparent;--meshB:transparent;--meshC:transparent}
+/* end of house tokens */
+:root{--sans:'Instrument Sans','Noto Sans','Segoe UI',system-ui,-apple-system,sans-serif;--mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--sans);-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
 input{font:inherit;color:var(--ink)}
-:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+input:focus-visible{outline-offset:-3px}
 [hidden]{display:none!important}
 .top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:calc(12px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) 12px max(12px,env(safe-area-inset-left,0px));background:var(--bg)}
 .top h1{flex:1;min-width:0;margin:0;font-size:19px;font-weight:600}
-.rb{flex:none;width:48px;height:48px;border-radius:50%;background:var(--panel);display:flex;align-items:center;justify-content:center;box-shadow:var(--float)}
+.rb{flex:none;width:48px;height:48px;border-radius:50%;background:var(--panel);color:var(--ink);display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px var(--edge),var(--float)}
 main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-right,0px)) calc(32px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:16px}
 .lead,.cap{margin:0;padding:0 8px;font-size:13px;line-height:1.45;color:var(--muted)}
 .seg{display:flex;padding:3px;border-radius:16px;background:var(--hover)}
-.seg button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:14px;line-height:1.2;text-align:center;color:var(--ink)}
+.seg button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap;color:var(--ink)}
 .seg [aria-selected="true"]{background:var(--panel);box-shadow:inset 0 0 0 1.5px var(--edge);color:var(--ink);font-weight:600}
 section{display:flex;flex-direction:column;gap:16px}
 .grp{display:flex;flex-direction:column;gap:16px}
 .grp:empty{display:none}
 .lab{padding:0 20px;margin-bottom:-8px;font-size:12px;font-weight:500;letter-spacing:.48px;text-transform:uppercase;color:var(--muted)}
-.card{background:var(--panel);border:1px solid var(--line2);border-radius:24px;padding:0 20px;display:flex;flex-direction:column}
+.card{background:var(--panel);border:1px solid var(--tileedge);border-radius:24px;padding:0 20px;display:flex;flex-direction:column;box-shadow:var(--tileshadow)}
 .card>*+*{border-top:1px solid var(--line2)}
-.need{border-color:var(--accent)}
+.need{border-color:var(--accent);box-shadow:none}
 .row{min-height:68px;display:flex;align-items:center;gap:12px;padding:10px 0}
 .who{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .who b{font-size:16px;font-weight:500;overflow-wrap:anywhere}
 .who small{font:12px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.addr .who b{font:500 14px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.addr .who small{font-family:var(--sans)}
 .del{flex:none;min-height:44px;padding:0 14px;border-radius:99px;color:var(--badfg);font-size:15px}
 .tag{flex:none;padding:2px 8px;border-radius:6px;font-size:12px;background:var(--warnbg);color:var(--warnfg)}
 .tag.ok{background:var(--okbg);color:var(--okfg)}
@@ -60,24 +140,23 @@ form{display:flex;flex-direction:column;gap:12px;margin:0}
 .ff{display:flex;flex-direction:column;gap:6px}
 .ff>span,.ff>label{padding:0 8px;font-size:13px;color:var(--muted)}
 .fld{width:100%;min-height:52px;padding:0 16px;border-radius:16px;border:1px solid var(--edge);background:var(--bg);color:var(--ink);font-size:16px}
+.fld.mono{font-family:var(--mono)}
 input::placeholder{color:var(--muted);opacity:1}
 .peek{position:relative}
 .peek .fld{padding-right:76px}
-.peek button{position:absolute;right:4px;top:4px;min-width:44px;min-height:44px;padding:0 12px;border-radius:12px;color:var(--accent);font-size:14px;font-weight:600}
+.peek button{position:absolute;right:4px;top:4px;min-width:44px;min-height:44px;padding:0 12px;border-radius:12px;color:var(--accentfg);font-size:14px;font-weight:600}
 .btn{min-height:44px;padding:0 12px;border-radius:16px;border:1px solid var(--edge);background:var(--panel);color:var(--ink);font-size:15px;font-weight:500;text-align:center}
-.pri{background:var(--accent);border-color:var(--accent);color:var(--onaccent)}
+.pri{border:0;border-radius:999px;background:var(--accent);color:var(--onaccent);box-shadow:var(--glow)}
+.row .btn{flex:none;padding:0 16px}
 .bad{color:var(--badfg)}
 .pair{display:flex;gap:12px}.pair .btn{flex:1;padding:4px 12px}
-.add{min-height:60px;display:flex;align-items:center;gap:12px;color:var(--accent);font-size:16px;font-weight:600;width:100%}
+.add{min-height:60px;display:flex;align-items:center;gap:12px;color:var(--accentfg);font-size:16px;font-weight:600;width:100%}
 .add+form{padding-bottom:20px}
 .empty{margin:0;padding:20px 0;font-size:15px;color:var(--muted)}
 .foot{display:flex;flex-direction:column;gap:8px;align-items:flex-start;margin-top:8px}
 .foot .btn{border:0;background:none;color:var(--badfg);padding:0 8px;font-weight:500}
-:root{--scrim:oklch(0.25 0.03 280 / 0.4);--shadow:oklch(0.35 0.04 280 / 0.14)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--scrim:oklch(0.1 0.02 280 / 0.6);--shadow:oklch(0 0 0 / 0.35)}}
-:root[data-theme="dark"]{--scrim:oklch(0.1 0.02 280 / 0.6);--shadow:oklch(0 0 0 / 0.35)}
 .scrim{position:fixed;inset:0;z-index:3;background:var(--scrim);animation:fade .2s ease-out}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:4;max-width:640px;margin:0 auto;gap:0;background:var(--panel);border-radius:28px 28px 0 0;box-shadow:0 -12px 32px -12px var(--shadow);animation:rise .24s cubic-bezier(.2,.8,.2,1)}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:4;max-width:640px;margin:0 auto;gap:0;background:var(--panel);border:1px solid var(--sheetedge);border-bottom:0;border-radius:28px 28px 0 0;box-shadow:0 -12px 32px -12px var(--shadow);animation:rise .24s cubic-bezier(.2,.8,.2,1)}
 .grip{align-self:center;flex:none;width:40px;height:4px;margin-top:10px;border-radius:99px;background:var(--line)}
 .q{display:flex;flex-direction:column;gap:20px;padding:14px 24px calc(28px + env(safe-area-inset-bottom,0px))}
 .q h2{margin:0 0 6px;font-size:19px;font-weight:600}
@@ -85,11 +164,11 @@ input::placeholder{color:var(--muted);opacity:1}
 .two{display:flex;gap:12px}
 .two button{flex:1;min-height:52px;padding:0 12px;border-radius:16px;background:var(--panel);font-size:16px;font-weight:500}
 .two .keep{border:2px solid var(--accent);color:var(--ink)}
-.two .go{border:1px solid var(--edge, var(--line));color:var(--badfg)}
+.two .go{border:1px solid var(--edge);color:var(--badfg)}
 @keyframes rise{from{transform:translateY(100%)}}
 @keyframes fade{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.sheet,.scrim{animation:none}}
-#toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);font-size:14px;text-align:center}
+#toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);box-shadow:var(--float);font-size:14px;text-align:center}
 </style>
 </head>
 <body>
@@ -163,7 +242,7 @@ input::placeholder{color:var(--muted);opacity:1}
   // A password field has Show at its end, which shows what was typed until Hide; it is heard with
   // the first word of the label ("Show key").
   const field = (inputs, name, label, type = "text", mono = false, placeholder = "") => {
-    const input = (inputs[name] = el("input", { className: "fld", type, name: `vault-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", autocapitalize: "off", spellcheck: false, placeholder, style: mono ? "font:14px var(--mono)" : "" }));
+    const input = (inputs[name] = el("input", { type, name: `vault-${name}-${Math.random().toString(36).slice(2, 8)}`, autocomplete: type === "password" ? "new-password" : "off", autocapitalize: "off", spellcheck: false, placeholder, className: mono ? "fld mono" : "fld" }));
     if (type !== "password") return el("label", { className: "ff" }, el("span", { textContent: label }), input);
     input.id = input.name;
     const what = label.split(/[\s,]/)[0].toLowerCase();
@@ -349,14 +428,16 @@ input::placeholder{color:var(--muted);opacity:1}
 
   // ---- Allowed addresses: either skill's, the origins on the user's network the skills may reach.
   let toldAt = null;
+  /** An address's row: the origin is set in mono. */
+  const addr = (node) => (node.classList.add("addr"), node);
   function drawAddresses(as) {
     if (as.result && toldAt !== null && as.result.n !== toldAt) toast(as.result.error);
     toldAt = as.result ? as.result.n : 0;
     const allowed = as.origins.map((a) => {
       const { del } = remove(["Remove this address?", `The skills can't reach ${a.origin} after.`], `Remove ${a.origin}`, () => post("addresses", "address-remove", { origin: a.origin }), { text: "Remove", yes: "Remove" });
-      return row(a.origin, a.added ? `Added ${new Date(a.added).toLocaleDateString()}` : "", del);
+      return addr(row(a.origin, a.added ? `Added ${new Date(a.added).toLocaleDateString()}` : "", del));
     });
-    const refused = as.refused.map((r) => row(r.origin, `Refused ${new Date(r.at).toLocaleString()}`, el("button", { className: "btn", type: "button", textContent: "Allow", onclick: () => post("addresses", "address-allow", { origin: r.origin }) })));
+    const refused = as.refused.map((r) => addr(row(r.origin, `Refused ${new Date(r.at).toLocaleString()}`, el("button", { className: "btn", type: "button", textContent: "Allow", onclick: () => post("addresses", "address-allow", { origin: r.origin }) }))));
     const addForm = form([["origin", "An address, like http://muse-vm:8463", "text", true]], "Allow", (v) => (v.origin ? post("addresses", "address-allow", { origin: v.origin }) : (toast("Write the address first"), false)));
     $("addresses").replaceChildren(lab("Allowed addresses", allowed.length),
       el("div", { className: "card" }, ...allowed, ...(allowed.length ? [] : [el("p", { className: "empty", textContent: "None yet. The skills reach the public web only." })]), addForm),
