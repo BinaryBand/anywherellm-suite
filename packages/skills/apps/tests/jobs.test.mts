@@ -38,7 +38,7 @@ test("a job naming a workspace may list and read there, and do only on an app th
 test("what pages did is told to a chat, never to a job", async () => {
   from("home", "shop", { id: "p1", ev: "add", fields: { text: "Jam" }, patch: [{ op: "add", path: "/items/-", value: { text: "Jam", done: false } }] });
   assert.doesNotMatch(await asJob({ action: "read", workspace: "home", name: "shop" }), /Changes made on app pages/);
-  assert.match(await call("home", { action: "list" }), /^Changes made on app pages since the last call[^\n]*\n- add Jam on shop\n/);
+  assert.match(await call("home", { action: "list" }), /^Changes made on app pages and the apps manager since the last call[^\n]*\n- add Jam on shop\n/);
 });
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -53,7 +53,7 @@ const emptyTrash = () => fs.rmSync(trashDir(), { recursive: true, force: true })
 test("delete moves the app to the trash", async () => {
   emptyTrash();
   await call("home", { action: "create", name: "gone", title: "Gone", starter: "checklist" });
-  assert.match(await call("home", { action: "delete", name: "gone" }), /^Deleted the app gone, its changes and its page\. It's kept in AnythingLLM's storage for now, under apps-lean\/\.trash/);
+  assert.match(await call("home", { action: "delete", name: "gone" }), /^Deleted the app gone, its changes and its page\. It stays in the trash 30 days, and the user restores it from there on the apps manager/);
   assert.deepEqual(fs.readdirSync(trashDir()).map((f) => f.replace(/^\d{13}-home-/, "")), ["gone.json"]);
   assert.ok(!store.list("home").some((a) => a.name === "gone"));
 });

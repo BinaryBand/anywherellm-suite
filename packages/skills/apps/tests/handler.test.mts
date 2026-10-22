@@ -58,7 +58,7 @@ test("another workspace sees none of them, and mistakes come back as words", asy
 
 test("delete takes the app out at once, whatever chat it comes from", async () => {
   await make("home", "temp", "List");
-  assert.match(await call("home", { action: "delete", name: "temp" }), /^Deleted the app temp, its changes and its page\. It's kept/);
+  assert.match(await call("home", { action: "delete", name: "temp" }), /^Deleted the app temp, its changes and its page\. It stays in the trash 30 days/);
   assert.equal((await call("home", { action: "list" })).includes("- temp:"), false);
 });
 

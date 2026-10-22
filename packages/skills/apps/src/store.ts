@@ -382,6 +382,35 @@ function edited(app: Json, file: string, find: unknown, text: unknown): string {
   return was.slice(0, at) + String(text ?? "") + was.slice(at + find.length);
 }
 
+/** The app with its title changed, as the apps manager renames it: app.json written again, so the
+ *  old title is kept among its earlier versions. Its name, which the agent calls it by, stays. */
+export const retitle = (workspace: string, name: unknown, title: unknown): Promise<Json> =>
+  update(workspace, name, (app) => withVersion(app, "app.json", { ...definitionOf(app), title: String(title ?? "").trim() }));
+
+/** The app with its newest data change taken back, only while that is still the change that made
+ *  line `n`: the user takes back what their page showed as the newest, never one made since. */
+export const undoChange = (workspace: string, name: unknown, n: unknown): Promise<{ app: Json; undone: Json }> =>
+  updateWith(workspace, name, (app) => {
+    if ((app.history || []).at(-1)?.n !== n) throw new AppError(`that is no longer ${app.title}'s newest change: take back the one shown now`);
+    return undoOn(app);
+  });
+
+/** The app with its earlier `file` from `t` put back. The file as it is now is kept among the earlier
+ *  versions in turn, so putting one back can itself be put back. */
+export async function putBack(workspace: string, name: unknown, file: unknown, t: string): Promise<Json> {
+  readableCheck(file);
+  return update(
+    workspace,
+    name,
+    (app) => {
+      const kept = (app.versions || []).findLast((v: Json) => v.file === file && v.t === t);
+      if (!kept) throw new AppError(`${app.title} keeps no ${file} from ${t} any more`);
+      return withVersion(app, file, kept.before);
+    },
+    file === "page.html",
+  );
+}
+
 /** The app with `find` in one file replaced, once, with `text`. */
 export async function editFile(workspace: string, name: unknown, file: unknown, find: unknown, text: unknown): Promise<Json> {
   readableCheck(file);
@@ -410,7 +439,7 @@ const trash = (): string => path.join(root(), ".trash");
 const deletedAt = (file: string): number | null => (/^\d{13}-/.test(file) ? Number(file.slice(0, 13)) : null);
 
 /** Takes the app out of its workspace into the trash, where it stays TRASH_DAYS from now: a delete
- *  the user didn't mean can be put back by hand. Those past their days are swept first. A trash
+ *  the user didn't mean can be restored (restore, from the apps manager). Those past their days are swept first. A trash
  *  full of apps still within theirs refuses the delete, so deleting many apps can't push a real
  *  one out. */
 export async function remove(workspace: string, name: unknown): Promise<void> {
@@ -433,3 +462,78 @@ export async function remove(workspace: string, name: unknown): Promise<void> {
     });
   });
 }
+
+/** One app in the trash: `id` is its file there, which restore takes. */
+export interface Trashed {
+  id: string;
+  workspace: string;
+  name: string;
+  title: string;
+  /** When it leaves the trash for good. */
+  until: string;
+}
+
+const TRASHED = /^(\d{13})-(.+)\.json$/;
+
+/** What the trash file `id` holds and where it came from, or null for a file that isn't one or is
+ *  past its days: its name is <ms>-<workspace>-<name>.json, and the app's own name tells where its
+ *  workspace ends. */
+function trashedOf(id: string): (Trashed & { app: Json }) | null {
+  const found = TRASHED.exec(id);
+  if (!found || id.includes("/") || id.includes("\\")) return null;
+  const until = Number(found[1]) + TRASH_DAYS * DAY_MS;
+  if (until < Date.now()) return null;
+  let app: Json;
+  try {
+    app = JSON.parse(fs.readFileSync(path.join(trash(), id), "utf8"));
+  } catch {
+    return null;
+  }
+  const name = app?.name;
+  if (nameProblem(name) || !found[2].endsWith(`-${name}`)) return null;
+  const workspace = found[2].slice(0, -name.length - 1);
+  if (!WORKSPACE.test(workspace)) return null;
+  return { id, workspace, name, title: typeof app.title === "string" ? app.title : name, until: new Date(until).toISOString(), app };
+}
+
+/** The apps in the trash still within their days, the newest deleted first. */
+export function trashed(): Trashed[] {
+  let files: string[];
+  try {
+    files = fs.readdirSync(trash());
+  } catch {
+    return [];
+  }
+  return files
+    .sort()
+    .reverse()
+    .flatMap((id) => {
+      const found = trashedOf(id);
+      if (!found) return [];
+      const { app: _, ...shown } = found;
+      return [shown];
+    });
+}
+
+/** Puts the app in the trash file `id` back in its workspace under its name, with no page address
+ *  (its old one was taken down with it, and may have been shared): the caller publishes it again.
+ *  Refused while the workspace has another app of that name. Answers where it went, and the app. */
+export async function restore(id: string): Promise<{ workspace: string; app: Json }> {
+  const found = trashedOf(id);
+  if (!found) throw new AppError("that app is no longer in the trash");
+  const { workspace, name } = found;
+  // The app's lock, then the trash's, in the order remove takes them.
+  return withLock(workspace, name, () =>
+    locked(`${trash()}.lock`, "the trash", () => {
+      const now = trashedOf(id);
+      if (!now) throw new AppError("that app is no longer in the trash");
+      if (fs.existsSync(fileOf(workspace, name))) throw new AppError(`${workspace} already has an app named ${name}: move that one to the trash first`);
+      fs.mkdirSync(folder(workspace), { recursive: true });
+      const { pageToken: _token, version: _version, ...app } = now.app;
+      save(workspace, app);
+      fs.rmSync(path.join(trash(), id), { force: true });
+      return { workspace, app };
+    }),
+  );
+}
+

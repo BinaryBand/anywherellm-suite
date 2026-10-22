@@ -61,12 +61,17 @@ function summaryOf(card: Json, data: Json, items: Json[] | null): string {
 
 const cell = (s: string): string => s.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 
+/** The card's summary line, as text: what the headline says beside the title. */
+export function summary(app: Json): string {
+  const spec = app.card || {};
+  return summaryOf(spec, app.data, itemsOf(spec, app.data));
+}
+
 /** The card's first line: its title and summary; with an address the title is the link to the app's page. */
 export function headline(app: Json, url?: string | null): string {
-  const spec = app.card || {};
-  const summary = summaryOf(spec, app.data, itemsOf(spec, app.data));
+  const line = summary(app);
   const title = url ? `[${cell(app.title).replace(/[[\]]/g, "\\$&")}](${url})` : cell(app.title);
-  return `**${title}**${summary ? ` · ${cell(summary)}` : ""}`;
+  return `**${title}**${line ? ` · ${cell(line)}` : ""}`;
 }
 
 /** The card's Markdown lines. Items with a tick are a table of ☑ and ☐ (AnythingLLM's chat draws no

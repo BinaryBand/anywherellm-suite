@@ -6,6 +6,7 @@
 import { Told } from "#shared/errors";
 import { card, headline } from "./card.ts";
 import type { HandlerContext } from "./host.ts";
+import * as manager from "./manager.ts";
 import { caughtUp, keepWatching, news, pageUrl, publish, refresh, unpublish, upgrade } from "./page.ts";
 import type { Json } from "./patch.ts";
 import * as parts from "./parts.ts";
@@ -66,12 +67,13 @@ const PLAN_NEEDS =
 const changeLine = (h: Json): string => `- ${h.t} ${h.ev}${h.fields ? ` ${JSON.stringify(h.fields)}` : ""}`;
 
 const ACTIONS = {
-  list: ({ workspace }, _p, self) => {
+  list: async ({ workspace }, _p, self) => {
     const apps = store.list(workspace);
     const listed = apps.length
       ? ["This workspace's apps (change one that fits rather than making another):", ...apps.map((a) => (a.broken ? `- ${a.name}: can't be read` : `- ${a.name}: ${headline(a, urlOf(self, a))}`))]
       : ["This workspace has no apps yet."];
-    return [...listed, "", ...MAKING()].join("\n");
+    const all = await manager.line(baseOf(self));
+    return [...listed, "", ...MAKING(), ...(all ? ["", all] : [])].join("\n");
   },
   create: async ({ workspace }, p, self) => {
     // A starter (or a template named like one) makes a working app; else a template with the
@@ -215,7 +217,7 @@ const ACTIONS = {
     const app = store.read(workspace, p.name);
     await store.remove(workspace, app.name);
     unpublish(app);
-    return `Deleted the app ${app.name}, its changes and its page. It's kept in AnythingLLM's storage for now, under apps-lean/.trash, if the user wants it back.`;
+    return `Deleted the app ${app.name}, its changes and its page. It stays in the trash ${store.TRASH_DAYS} days, and the user restores it from there on the apps manager if they want it back.`;
   },
   guide: (_scope, p) => {
     const topic = String(p.query || "").trim();
@@ -284,14 +286,23 @@ async function run(self: HandlerContext, params: Args): Promise<string> {
   // Pages' changes are applied as they land, by a watch that lasts as long as AnythingLLM's process;
   // a call takes what's waiting first, so it reads every app as its pages left it.
   keepWatching();
+  manager.keepWatching();
   if (!rule.quiet) {
-    // What pages posted, before upgrade writes the pages again.
+    // What the manager and the pages posted, before upgrade writes the pages again.
+    await manager.settle();
+    await manager.caughtUp();
     await caughtUp();
     // A job's process ends within minutes and starts afresh each run: the chat's does this.
     if (!scope.job) await upgrade();
   }
   const reply = await act(scope, params, self);
   if (rule.changes && params.name) await refresh(scope.workspace, params.name);
+  // The manager shows every app as it is now: a chat call makes it the first time, and its state is
+  // written again after a call that may have changed an app (all but read and list).
+  if (!rule.quiet) {
+    if (!scope.job) await manager.show(baseOf(self));
+    if (action !== "read" && action !== "list") manager.refresh();
+  }
   // What pages did is said once, in the workspace's next chat call; a scheduled job is told none.
   const lines = rule.quiet || scope.job ? [] : await news(scope.workspace);
   return lines.length ? [...lines, "", reply].join("\n") : reply;

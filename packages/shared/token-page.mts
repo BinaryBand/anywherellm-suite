@@ -27,6 +27,9 @@ export interface TokenPageSpec<N extends Names> {
   kind: PageKind;
   /** Its folder in the public folder ("library-lean"). */
   folder: string;
+  /** What its files' names start with, before the token ("manager-"), for a page that shares its
+   *  folder with others; none by default. `pattern` matches it too. */
+  prefix?: string;
   /** Where its names are kept. */
   file: () => string;
   /** The page, as a busy lock and a refusal name it. */
@@ -50,6 +53,7 @@ const seam = (kind: PageKind, point: "gap" | "written") => (globalThis as unknow
 
 export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
   const pub = (name: string) => `${spec.folder}/${name}`;
+  const prefix = spec.prefix ?? "";
   const underLock = <T,>(fn: () => T | Promise<T>): Promise<T> => locked(`${spec.file()}.lock`, spec.what, fn);
   /** A names file that isn't JSON is said to be damaged, never quoted: a parse error can quote it. */
   const unquoted = (e: unknown): unknown => (e instanceof SyntaxError ? new Error(`${spec.what}'s names file is damaged (not JSON)`) : e);
@@ -98,7 +102,7 @@ export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
           continue;
         }
         try {
-          renamePublic(pub(name), pub(`${now.token}${found[2]}`));
+          renamePublic(pub(name), pub(`${prefix}${now.token}${found[2]}`));
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code === "ENOENT") continue;
           console.error(`${spec.folder} couldn't move ${found[2]} to the new page: ${(e as Error).message}`);
@@ -155,7 +159,7 @@ export function tokenPage<N extends Names>(spec: TokenPageSpec<N>) {
       seam(spec.kind, "written");
       const current = await underLock(async () => {
         if (read()?.token !== n.token) return false;
-        await noteLink(spec.kind, `/${pub(`${n.token}.html`)}`, rotated);
+        await noteLink(spec.kind, `/${pub(`${prefix}${n.token}.html`)}`, rotated);
         if (hidden) for (const name of others(n.token)) removePublic(pub(name));
         return true;
       });

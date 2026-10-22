@@ -1,21 +1,19 @@
-// The two things install keeps about the Library and Vault pages' links (shared/page-links.mts is the
+// The two things install keeps about the Library, Vault and apps manager pages' links (shared/page-links.mts is the
 // skills' side): the switch that keeps them from the agent, a file the owner makes and removes here
 // (it is the owner's file, but code that runs in the container can write the storage, so it is a
 // guard against the model, not against everything that runs beside it), and the links file the skills
-// keep, which holds the pages' two root-relative paths and, per page, when its link was last replaced.
+// keep, which holds the pages' root-relative paths and, per page, when its link was last replaced.
 // Nothing here reads a page's own state (page.json, vault-page.json): those hold the secrets, and the
 // links file exists so that nobody needs to.
 
 import fs from "node:fs";
 import { writeAtomic } from "#shared/atomic";
 import { Told } from "#shared/errors";
-import { hiddenFile, linksFile, type PageKind } from "#shared/page-links";
+import { hiddenFile, KINDS, linksFile, type PageKind } from "#shared/page-links";
 import { eventsDir } from "#shared/pages";
 import { type Check, refuseLinks, writable } from "./addons.mts";
 
 const PAGE_PATH = /^\/[\w.-]+\/[\w.-]+\.html$/;
-
-const KINDS = ["library", "vault"] as const satisfies PageKind[];
 
 /** The links file as the installer reads it: the paths, and per page when its link was last replaced
  *  by a rotation (ms since the epoch). `rotated` is null when the file records no rotations at all,
@@ -84,16 +82,17 @@ export function show(storage: string): boolean {
 
 /** How many page events wait in AnythingLLM's documents to be applied, by where they were posted: the
  *  Vault's keys section (raw-vault-lean-keys-*), its logins section (raw-vault-lean-logins-*, the
- *  browser's) and the Library page (raw-library-lean-event-*). They carry the secrets of the links as
+ *  browser's), the Library page (raw-library-lean-event-*) and the apps manager (raw-apps-lean-manage-*). They carry the secrets of the links as
  *  they are, and are dropped when the links change. */
 export interface Waiting {
   keys: number;
   logins: number;
   library: number;
+  apps: number;
 }
 
 export function waitingEvents(storage: string): Waiting {
-  const waiting: Waiting = { keys: 0, logins: 0, library: 0 };
+  const waiting: Waiting = { keys: 0, logins: 0, library: 0, apps: 0 };
   let names: string[] = [];
   try {
     names = fs.readdirSync(eventsDir(storage));
@@ -104,6 +103,7 @@ export function waitingEvents(storage: string): Waiting {
     if (name.startsWith("raw-vault-lean-keys-")) waiting.keys++;
     else if (name.startsWith("raw-vault-lean-logins-")) waiting.logins++;
     else if (name.startsWith("raw-library-lean-event-")) waiting.library++;
+    else if (name.startsWith("raw-apps-lean-manage-")) waiting.apps++;
   }
   return waiting;
 }
