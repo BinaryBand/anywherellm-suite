@@ -59,7 +59,7 @@ export const signingKeys = (): SigningKey[] => vault.entries().filter(named()).m
 /** The signing key named `label`; a LibraryError when there's none. */
 function entryOf(label: string): Readonly<vault.Entry> {
   const e = vault.entries().find(named(label));
-  if (!e) throw new LibraryError(`no signing key named "${label}" is saved: the user makes or imports one on the Vault, under Signing`);
+  if (!e) throw new LibraryError(`no signing key named "${label}" is saved: the user makes or imports one on the Vault, under Keys`);
   return e;
 }
 

@@ -154,7 +154,7 @@ function signingLines(): string[] {
   const keys = signing.signingKeys();
   if (!keys.length) return [];
   const line = (k: signing.SigningKey) => `- ${k.label}: signs in ${k.namespace}, ${k.public ? `public key ${k.public} (${k.fingerprint})` : "damaged: the user deletes it on the Vault and imports it again"}${k.unattended ? "; signs in scheduled jobs too" : ""}`;
-  return ["", "Signing keys (kit.secret.sign; the user makes them on the Vault, under Signing):", ...keys.map(line)];
+  return ["", "Signing keys (kit.secret.sign; the user makes them on the Vault, under Keys):", ...keys.map(line)];
 }
 
 /** Whether secret is asked for a sign-in: a preset is given, or the label names one (with no site);

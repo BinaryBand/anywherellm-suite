@@ -8,8 +8,8 @@
 <title>Vault</title>
 <style>
 /* The Vault, shared by the skills that keep secrets (packages/shared/vault-page.mts): a tab for each
-   section a skill wrote, the keys, sign-ins and signing keys (the library's), the logins (the browser's)
-   and the allowed addresses (either skill's: addresses.mts). What's done in a section is posted under its
+   section a skill wrote, Keys (the library's API keys, sign-ins and signing keys, a group each), Logins
+   (the browser's) and Addresses (either skill's: addresses.mts). What's done in a section is posted under its
    title and applied by the skill that owns it. The look is
    AnywhereLLM Lite's, as the browser's tab page has it; ?theme=light or dark keeps it to one. */
 :root{--bg:oklch(0.982 0.008 75);--panel:oklch(0.995 0.003 75);--line:oklch(0.895 0.014 75);--line2:oklch(0.928 0.012 75);--edge:oklch(0.58 0.014 75);--ink:oklch(0.27 0.025 280);--ink2:oklch(0.4 0.025 280);--muted:oklch(0.5 0.02 280);--accent:oklch(0.52 0.16 272);--accentbg:oklch(0.94 0.028 272);--onaccent:oklch(1 0 0);--hover:oklch(0.925 0.016 75);--badfg:oklch(0.47 0.16 20);--okfg:oklch(0.42 0.08 165);--okbg:oklch(0.945 0.04 165);--warnfg:oklch(0.45 0.1 70);--warnbg:oklch(0.95 0.045 80);
@@ -31,6 +31,8 @@ main{max-width:640px;margin:0 auto;padding:4px max(16px,env(safe-area-inset-righ
 .seg button{flex:1;min-height:44px;padding:0 4px;border-radius:13px;font-size:14px;line-height:1.2;text-align:center;color:var(--ink)}
 .seg [aria-selected="true"]{background:var(--panel);box-shadow:inset 0 0 0 1.5px var(--edge);color:var(--ink);font-weight:600}
 section{display:flex;flex-direction:column;gap:16px}
+.grp{display:flex;flex-direction:column;gap:16px}
+.grp:empty{display:none}
 .lab{padding:0 20px;margin-bottom:-8px;font-size:12px;font-weight:500;letter-spacing:.48px;text-transform:uppercase;color:var(--muted)}
 .card{background:var(--panel);border:1px solid var(--line2);border-radius:24px;padding:0 20px;display:flex;flex-direction:column}
 .card>*+*{border-top:1px solid var(--line2)}
@@ -51,6 +53,7 @@ details[open] summary .chev{transform:rotate(180deg)}
 .kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 16px;margin:0;font-size:14px}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;font:13px var(--mono);color:var(--ink2);overflow-wrap:anywhere;align-self:center}
+.kv dd.line{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .say{margin:0;font-size:14px;line-height:1.45;color:var(--ink2)}
 form{display:flex;flex-direction:column;gap:12px;margin:0}
 .need form,.card>form{padding:20px 0}
@@ -90,7 +93,7 @@ input::placeholder{color:var(--muted);opacity:1}
 .link>svg{flex:none;color:var(--muted)}
 .card.solo{padding:20px;gap:12px}
 .card.solo>*+*{border-top:0}
-.one .lead,.one nav,.one #foot{display:none}
+.one main>:not(#keys),.one #keys>:not(#signins){display:none}
 .top h1{flex:1;min-width:0;overflow-wrap:anywhere}
 .top .tag{margin-right:4px}
 #toast{position:fixed;left:20px;right:20px;bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:5;max-width:600px;margin:0 auto;padding:12px 16px;border-radius:16px;background:var(--ink);color:var(--bg);font-size:14px;text-align:center}
@@ -102,17 +105,13 @@ input::placeholder{color:var(--muted);opacity:1}
   <h1>Vault</h1>
 </header>
 <main>
-  <p class="lead">What the agent signs in, calls and signs with. Encrypted on your AnythingLLM server and shared by every workspace. The agent uses each one only on its own site, or in its own namespace, and never reads it.</p>
+  <p class="lead">Encrypted on your server. The agent never sees these.</p>
   <nav class="seg" role="tablist" aria-label="Show">
-    <button role="tab" data-tab="keys" data-section="keys" hidden>Keys</button>
-    <button role="tab" data-tab="signins" data-section="keys" hidden>Sign-ins</button>
-    <button role="tab" data-tab="signing" data-section="keys" hidden>Signing</button>
-    <button role="tab" data-tab="logins" data-section="logins" hidden>Logins</button>
-    <button role="tab" data-tab="addresses" data-section="addresses" hidden>Addresses</button>
+    <button role="tab" data-tab="keys" hidden>Keys</button>
+    <button role="tab" data-tab="logins" hidden>Logins</button>
+    <button role="tab" data-tab="addresses" hidden>Addresses</button>
   </nav>
-  <section id="keys" hidden></section>
-  <section id="signins" hidden></section>
-  <section id="signing" hidden></section>
+  <section id="keys" hidden><div class="grp" id="apikeys"></div><div class="grp" id="signins"></div><div class="grp" id="signing"></div></section>
   <section id="logins" hidden></section>
   <section id="addresses" hidden></section>
   <div class="foot" id="foot"><p class="cap">Anyone with this page's link can see what it shows and act on it.</p></div>
@@ -209,7 +208,7 @@ input::placeholder{color:var(--muted);opacity:1}
     return node;
   }
 
-  const sealedNote = () => el("p", { className: "cap", style: "padding:0", textContent: "Sealed on this device before it is sent; the agent never sees it." });
+  const sealedNote = () => el("p", { className: "cap", style: "padding:0", textContent: "Sealed on this device." });
 
   /** The question open in the sheet ({ close }), if any: busy() reads it, so no reload draws under it. */
   let asking = null;
@@ -264,18 +263,16 @@ input::placeholder{color:var(--muted);opacity:1}
   /** A row of a card: its name over its detail (mono), then `end`, a Delete or a tag. */
   const row = (name, detail, ...end) => el("div", { className: "row" }, el("div", { className: "who" }, el("b", { textContent: name }), el("small", { textContent: detail })), ...end);
 
-  // ---- Keys and sign-ins: the library's section.
+  // ---- Keys, sign-ins and signing keys: the library's section, a group each on the Keys tab.
   let adding = false;
-  /** A tab's label, with how many it holds. */
-  const count = (tab, label, n) => (document.querySelector(`nav [data-tab="${tab}"]`).textContent = `${label} · ${n}`);
+  /** A group's heading, with how many it holds: the tabs carry no counts, so the bar fits a phone. */
+  const lab = (text, n) => el("div", { className: "lab", textContent: n === undefined ? text : `${text} · ${n}` });
 
   /** The library's secret named `name` (any case) in `ks`, if any: a name is one secret. */
   const named = (ks, name) => [...ks.secrets, ...(ks.signing ?? []).map((g) => ({ ...g, kind: "signing" }))].find((x) => x.label.toLowerCase() === name.trim().toLowerCase());
 
   function drawKeys(ks) {
-    const keys = $("keys");
-    count("keys", "Keys", ks.secrets.filter((x) => x.kind === "key").length);
-    count("signins", "Sign-ins", ks.secrets.filter((x) => x.kind === "oauth").length);
+    const keys = $("apikeys");
     const needs = ks.needs.map((n) => {
       const f = form([["value", "Key", "password", false, "Paste the key"]], "Save key", async (v) => {
         if (!v.value) return toast("Paste the key first"), false;
@@ -298,8 +295,7 @@ input::placeholder{color:var(--muted);opacity:1}
       return went;
     }, [sealedNote()]);
     const add = el("button", { className: "add", type: "button", onclick: () => ((adding = !adding), drawKeys(ks)) }, icon(adding ? "M4 8h8" : "M8 3v10M3 8h10"), adding ? "Cancel" : "Add a key");
-    keys.replaceChildren(...needs, el("div", { className: "lab", textContent: "API keys" }), el("div", { className: "card" }, ...saved, ...(saved.length ? [] : [el("p", { className: "empty", textContent: "No keys yet. The agent asks for one when a task needs it." })]), el("div", {}, add, adding ? addForm : null)),
-      el("p", { className: "cap", textContent: "A key goes only to its own site, over https, at most 60 times a minute. Saving under the name of a key replaces that key; a sign-in's name can't be used for a key." }));
+    keys.replaceChildren(...needs, lab("API keys", saved.length), el("div", { className: "card" }, ...saved, ...(saved.length ? [] : [el("p", { className: "empty", textContent: "No keys yet. The agent asks for one when a task needs it." })]), el("div", {}, add, adding ? addForm : null)));
 
     drawSignins(ks);
     drawSigning(ks);
@@ -308,7 +304,6 @@ input::placeholder{color:var(--muted);opacity:1}
   // ---- Sign-ins: a row for each, which opens that provider's own page in place of the list. The
   // page is an entry of the browser's history, so Back returns to the list.
   let keysNow = null;
-  const signinsCap = () => el("p", { className: "cap", textContent: "The agent starts a sign-in when a task needs one, one for each provider. The tokens go only to the site named, and are renewed by themselves as they run out." });
   /** A sign-in's tag: where it is, as the library words it. */
   const signinTag = (o) => el("span", { className: "tag" + (o.tag.ok ? " ok" : ""), textContent: o.tag.text });
   const title = document.querySelector(".top h1"), vaultTitle = title.textContent;
@@ -318,14 +313,15 @@ input::placeholder{color:var(--muted);opacity:1}
   function head(o) {
     document.body.classList.toggle("one", !!o);
     $("close").replaceChildren(...(o ? [icon("M10 3.5 5.5 8l4.5 4.5")] : closeKids));
-    $("close").setAttribute("aria-label", o ? "Back to Sign-ins" : closeLabel);
+    $("close").setAttribute("aria-label", o ? "Back to Keys" : closeLabel);
     title.textContent = o ? o.label : vaultTitle;
     document.querySelector(".top .tag")?.remove();
     if (o) title.after(signinTag(o));
   }
 
-  /** The sign-ins tab: the list, or the page of the one `opened`; back to the list when that one is
-   *  gone (deleted here or elsewhere). */
+  /** The sign-ins group: the list (none while there's no sign-in, which only the agent starts), or
+   *  the page of the one `opened` in place of the Keys tab; back to the list when that one is gone
+   *  (deleted here or elsewhere). */
   function drawSignins(ks) {
     keysNow = ks;
     const oauth = ks.secrets.filter((x) => x.kind === "oauth");
@@ -333,13 +329,13 @@ input::placeholder{color:var(--muted);opacity:1}
     if (opened && !one) return back();
     head(one);
     if (one) {
-      select(document.querySelector('nav [data-tab="signins"]'));
+      select(document.querySelector('nav [data-tab="keys"]'));
       const { del } = remove([`Delete the sign-in ${one.label}?`, `The agent can't reach ${one.site} with it after. Remove its access in the provider's own settings too.`], `Delete the sign-in ${one.label}`, () => post("keys", "key-delete", { label: one.label }), { text: "Delete sign-in", className: "btn bad" });
       const facts = [["Site", one.site], ["Allows", one.scopes], ["Status", one.status]].filter(([, v]) => v);
       return $("signins").replaceChildren(el("div", { className: "card solo" },
         el("dl", { className: "kv" }, ...facts.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })])),
-        one.tag.text === "Enter the code" ? el("p", { className: "say", textContent: "The code is in the agent's answer, with where to enter it. Once the provider takes it, this reads Signed in." }) : null,
-        del), signinsCap());
+        one.tag.text === "Enter the code" ? el("p", { className: "say", textContent: "The code and where to enter it are in the agent's answer." }) : null,
+        del));
     }
     const items = oauth.map((o) => {
       const open = el("button", { className: "row link", type: "button", onclick: () => openSignin(o.label) },
@@ -348,9 +344,7 @@ input::placeholder{color:var(--muted);opacity:1}
       open.setAttribute("aria-label", `${o.label} sign-in, ${o.status}. Open`);
       return open;
     });
-    $("signins").replaceChildren(el("div", { className: "lab", textContent: "Sign-ins" }),
-      el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No sign-ins yet. The agent starts one when a task needs it." })])),
-      signinsCap());
+    $("signins").replaceChildren(...(items.length ? [lab("Sign-ins", items.length), el("div", { className: "card" }, ...items)] : []));
   }
 
   /** Shows the sign-in `label`'s page (null: the list again), with focus on Back, or on the row the
@@ -389,21 +383,25 @@ input::placeholder{color:var(--muted);opacity:1}
   let addingSigning = false;
   function drawSigning(ks) {
     const list = ks.signing ?? [];
-    count("signing", "Signing", list.length);
     const items = list.map((g) => {
       const { del } = remove([`Delete the signing key ${g.label}?`, `Nothing signs as it after, and it can't be made again: its peers would need a new public key.`], `Delete the signing key ${g.label}`, () => post("keys", "signing-delete", { label: g.label }), { text: "Delete signing key", className: "btn bad" });
-      const copy = g.public && el("button", { className: "btn", type: "button", textContent: "Copy public key", onclick: async () => {
-        try { await navigator.clipboard.writeText(g.public); toast("Copied"); } catch (e) { toast("Can't copy here: select the key above and copy it"); }
+      // The open row shows the fingerprint, and the public key itself only where it can't be copied:
+      // the clipboard needs https, and a refusal shows it too.
+      const canCopy = !!(window.isSecureContext && navigator.clipboard);
+      const pub = [el("dt", { textContent: "Public key", hidden: canCopy }), el("dd", { textContent: g.public, hidden: canCopy })];
+      const facts = el("dl", { className: "kv" }, ...(g.fingerprint ? [el("dt", { textContent: "Fingerprint" }), el("dd", { className: "line", title: g.fingerprint, textContent: g.fingerprint })] : []), ...pub);
+      const copy = g.public && canCopy && el("button", { className: "btn", type: "button", textContent: "Copy public key", onclick: async () => {
+        try { await navigator.clipboard.writeText(g.public); toast("Copied"); } catch (e) {
+          for (const x of pub) x.hidden = false;
+          toast("Can't copy here: select the public key and copy it");
+        }
       } });
       const jobs = el("button", { className: "btn", type: "button", textContent: g.unattended ? "Stop it signing in scheduled jobs" : "Let it sign in scheduled jobs", onclick: () => post("keys", "signing-unattended", { label: g.label, on: !g.unattended }) });
       const tag = el("span", { className: "tag" + (g.public ? " ok" : ""), textContent: !g.public ? "Damaged" : g.unattended ? "Chats and jobs" : "Chats" });
       return el("details", {},
         el("summary", {}, row(g.label, g.namespace, tag, el("span", { className: "chev" }, icon("M4 6l4 4 4-4", 14)))),
         el("div", { className: "body" },
-          el("dl", { className: "kv" }, el("dt", { textContent: "Signs in" }), el("dd", { textContent: g.namespace }),
-            el("dt", { textContent: "Public key" }), el("dd", { textContent: g.public ?? "damaged: delete it and import it again" }),
-            ...(g.fingerprint ? [el("dt", { textContent: "Fingerprint" }), el("dd", { textContent: g.fingerprint })] : []),
-            el("dt", { textContent: "Scheduled jobs" }), el("dd", { textContent: g.unattended ? "may sign" : "may not sign" })),
+          g.public ? facts : el("p", { className: "say", textContent: "Damaged: delete it and import it again." }),
           el("div", { className: "pair" }, copy, jobs), del));
     });
     const addForm = form([["label", "Name, like muse"], ["namespace", "The namespace it signs in, like muse-coordination", "text", true], ["seed", "Seed to import, base64 (empty: make a new key)", "password"]], "Save signing key", async (v) => {
@@ -413,31 +411,27 @@ input::placeholder{color:var(--muted);opacity:1}
       const went = v.seed ? await post("keys", "signing-import", { ...fields, sealed: await seal(v.seed) }) : await post("keys", "signing-new", fields);
       if (went) (addingSigning = false), drawSigning(ks);
       return went;
-    }, [el("p", { className: "cap", style: "padding:0", textContent: "A new key is made on your AnythingLLM server. A seed you import is sealed on this device before it is sent. The agent never sees either." })]);
+    }, [sealedNote()]);
     const add = el("button", { className: "add", type: "button", onclick: () => ((addingSigning = !addingSigning), drawSigning(ks)) }, icon(addingSigning ? "M4 8h8" : "M8 3v10M3 8h10"), addingSigning ? "Cancel" : "Add a signing key");
-    $("signing").replaceChildren(el("div", { className: "lab", textContent: "Signing keys" }),
-      el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No signing keys yet. Make one here when a function needs to sign." })]), el("div", {}, add, addingSigning ? addForm : null)),
-      el("p", { className: "cap", textContent: "A function signs with a key by its name and gets the signature, never the key. A key signs only in its own namespace, at most 60 times a minute, and in a scheduled job only when you let it. Give its peers the public key." }));
+    $("signing").replaceChildren(lab("Signing keys", items.length),
+      el("div", { className: "card" }, ...items, ...(items.length ? [] : [el("p", { className: "empty", textContent: "No signing keys yet. Make one here when a function needs to sign." })]), el("div", {}, add, addingSigning ? addForm : null)));
   }
 
   // ---- Logins and passkeys: the browser's section, saved as the user signs in on a tab's page.
   function drawLogins(ls) {
-    count("logins", "Logins", ls.logins.length);
     const rows = ls.logins.map((l) => {
       const passkey = l.kind === "passkey";
       const asked = passkey ? ["Delete this passkey?", `The agent can't sign in to ${l.site} with it after. Remove it in the site's own settings too.`] : ["Delete this login?", `The agent can't sign in to ${l.site} with it after.`];
       const { del } = remove(asked, `Delete the ${passkey ? "passkey" : "login"} for ${l.site}`, () => post("logins", "login-delete", { id: l.id }));
       return row(l.site, [l.user, passkey ? "Passkey" : "Password"].filter(Boolean).join(" · "), del);
     });
-    $("logins").replaceChildren(el("div", { className: "lab", textContent: "Logins" }),
-      el("div", { className: "card" }, ...rows, ...(rows.length ? [] : [el("p", { className: "empty", textContent: "No logins yet. The browser offers to save one when you sign in on its tab's page." })])),
-      el("p", { className: "cap", textContent: "Saved as you sign in on the agent's browser, and typed in there on their own site only. To change a password, sign in on the tab again and save it." }));
+    $("logins").replaceChildren(el("div", { className: "card" }, ...rows, ...(rows.length ? [] : [el("p", { className: "empty", textContent: "No logins yet. The browser offers to save one when you sign in on its tab's page." })])),
+      el("p", { className: "cap", textContent: "To change a password, sign in again on the tab." }));
   }
 
   // ---- Allowed addresses: either skill's, the origins on the user's network the skills may reach.
   let toldAt = null;
   function drawAddresses(as) {
-    count("addresses", "Addresses", as.origins.length);
     if (as.result && toldAt !== null && as.result.n !== toldAt) toast(as.result.error);
     toldAt = as.result ? as.result.n : 0;
     const allowed = as.origins.map((a) => {
@@ -446,11 +440,11 @@ input::placeholder{color:var(--muted);opacity:1}
     });
     const refused = as.refused.map((r) => row(r.origin, `Refused ${new Date(r.at).toLocaleString()}`, el("button", { className: "btn", type: "button", textContent: "Allow", onclick: () => post("addresses", "address-allow", { origin: r.origin }) })));
     const addForm = form([["origin", "An address, like http://muse-vm:8463", "text", true]], "Allow", (v) => (v.origin ? post("addresses", "address-allow", { origin: v.origin }) : (toast("Write the address first"), false)));
-    $("addresses").replaceChildren(el("div", { className: "lab", textContent: "Allowed addresses" }),
+    $("addresses").replaceChildren(lab("Allowed addresses", allowed.length),
       el("div", { className: "card" }, ...allowed, ...(allowed.length ? [] : [el("p", { className: "empty", textContent: "None yet. The skills reach the public web only." })]), addForm),
-      el("div", { className: "lab", textContent: "Recently refused" }),
+      lab("Recently refused"),
       el("div", { className: "card" }, ...refused, ...(refused.length ? [] : [el("p", { className: "empty", textContent: "Nothing refused in the last day." })])),
-      el("p", { className: "cap", textContent: "Each is one scheme, host and port on your own network, which every skill may then reach, and send a key to over plain http. AnythingLLM's own address, this machine's own services and loopback addresses (localhost, 127.0.0.1) can't be added: give the machine's name or address on your network." }));
+      el("p", { className: "cap", textContent: "Machines on your own network the skills may reach. Give a machine's name or network address, not localhost." }));
   }
 
   // ---- The sections there are, each its own state file; a tab for each. A section the user is in
@@ -458,14 +452,11 @@ input::placeholder{color:var(--muted);opacity:1}
   const drawn = { keys: drawKeys, logins: drawLogins, addresses: drawAddresses };
   const shown = new Set();
   const last = {};
-  const busy = (section) => !!asking || [...document.querySelectorAll(`section[data-section="${section}"]`)].some((s) => [...s.querySelectorAll("input")].some((i) => i.value || i === document.activeElement));
+  const busy = (section) => !!asking || [...$(section).querySelectorAll("input")].some((i) => i.value || i === document.activeElement);
   const select = (b) => {
     for (const x of document.querySelectorAll("nav button")) x.setAttribute("aria-selected", String(x === b));
     for (const section of document.querySelectorAll("main section")) section.hidden = section.id !== b.dataset.tab;
   };
-  for (const s of ["keys", "signins", "signing"]) $(s).dataset.section = "keys";
-  $("logins").dataset.section = "logins";
-  $("addresses").dataset.section = "addresses";
   for (const b of document.querySelectorAll("nav button")) b.onclick = () => select(b);
   async function load() {
     try {
@@ -479,7 +470,7 @@ input::placeholder{color:var(--muted);opacity:1}
       }));
       if (!found.some(Boolean)) return toast("This link was replaced: open the page again from where you got it (the agent, AnywhereLLM Lite, or `anywherellm-suite pages`)");
       const tabs = [...document.querySelectorAll("nav button")];
-      for (const b of tabs) b.hidden = !shown.has(b.dataset.section);
+      for (const b of tabs) b.hidden = !shown.has(b.dataset.tab);
       document.querySelector("nav").hidden = tabs.filter((b) => !b.hidden).length < 2; // one tab says nothing
       $("rotatebox").hidden = !shown.size;
       if (!tabs.some((b) => !b.hidden && b.getAttribute("aria-selected") === "true")) select(tabs.find((b) => !b.hidden));

@@ -61,7 +61,7 @@ Safe against: the model learning a key, and a script taking one out. Bounded: a 
 | The SSHSIG format: sign, check, key lines, fingerprints | `src/sshsig.ts` |
 | `kit.crypto` | `src/extensions/crypto.ts` |
 | The vault kind `signing`; the host signs | `src/signing.ts`; joined in `kitFor()` (`runs.ts`) |
-| The Vault's Signing tab (make, import, let into jobs, copy the public key, delete) | `shared/vault.html` (page version 4), its events in `page.ts` |
+| The Vault's signing keys, a group on its Keys tab (make, import, let into jobs, copy the public key, delete) | `shared/vault.html` (page version 4 on), its events in `page.ts` |
 | A channel's own rules (stamps, peers, how a body is normalized) | the `sshsig-channel` snippet: a function the agent saves, not host code |
 | A channel over ntfy: its topics, size limit, framing line, and which channel signs and checks | the `ntfy-channel` snippet, which runs the channel's function with `kit.run`; locked after the channel, every post is signed: its key is then for locked toolkits only |
 
