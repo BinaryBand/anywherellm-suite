@@ -3,6 +3,7 @@
 // written as AnythingLLM's collector writes it.
 
 import assert from "node:assert/strict";
+import dns from "node:dns";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
@@ -29,6 +30,16 @@ process.env.STORAGE_DIR = storage;
 process.env.ANYTHINGLLM_PUBLIC_DIR = publicDir;
 writeAtomic(pageKeyFile(storage), "brx-test\n"); // the pages' key, as `install --page-key` keeps it
 process.env.FENCE_ALLOW = "127.0.0.1";
+
+// The targets' made-up hosts (box.internal...) are not found here, at once, as they are by a resolver
+// that answers: GitHub's runner now and then stalls on such a name, which held a target save past a
+// test's wait.
+const lookup = dns.lookup;
+dns.lookup = ((host: string, ...rest: unknown[]) => {
+  if (!host.endsWith(".internal")) return (lookup as (...a: unknown[]) => unknown)(host, ...rest);
+  const callback = rest.at(-1) as (err: NodeJS.ErrnoException) => void;
+  process.nextTick(callback, Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", syscall: "getaddrinfo", hostname: host }));
+}) as typeof dns.lookup;
 
 // The record of the machine the tests run on, as the installer writes it (shared/thishost.mts): a host
 // key no stand-in shows and no addresses. Without a record kit.ssh refuses every target. A test can
