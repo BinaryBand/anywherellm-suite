@@ -28,7 +28,7 @@ import * as addresses from "#shared/addresses";
 import { mask } from "#shared/answer";
 import { Told } from "#shared/errors";
 import { inTurn, pageHtml, sameSecret, takeEvents, watch } from "#shared/pages";
-import { linksHidden } from "#shared/page-links";
+import { linksHidden, noteStatus } from "#shared/page-links";
 import { type Names, tokenPage } from "#shared/token-page";
 import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
@@ -164,9 +164,23 @@ export async function showVault(base: string | null): Promise<string> {
   return link;
 }
 
+/** How a run that failed ended: one the user stopped didn't fail. */
+const FAILED = new Set(["error", "timeout", "interrupted"]);
+
+/** Keeps when the recent runs that failed ended, newest first, in the links file
+ *  (#shared/page-links), for AnywhereLLM Lite's Library line; a hint, so a failure is only logged. */
+export function noteRuns(): void {
+  try {
+    void noteStatus("library", { failed: recentRuns(20).filter((r) => FAILED.has(r.status)).map((r) => r.ended) });
+  } catch (e) {
+    console.error(`library-lean couldn't keep its status: ${(e as Error).message}`);
+  }
+}
+
 /** Writes both pages' state again, where there are pages, as a run ends; a hint, so a failure is
  *  only logged. */
 export function refresh(base: string | null): void {
+  noteRuns();
   try {
     writeState(base);
     vaultPage.refresh("keys", keysState(read()));

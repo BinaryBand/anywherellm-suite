@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { afterEach, beforeEach } from "node:test";
 import { readKept } from "../install/src/pagelinks.mts";
-import { OPEN_PAGES, hiddenFile, linksFile, linksHidden, noteLink, readLinks } from "./page-links.mts";
+import { MAX_TABS, OPEN_PAGES, hiddenFile, linksFile, linksHidden, noteLink, noteStatus, noteTabs, readAll, readLinks } from "./page-links.mts";
 
 let storage: string;
 let was: string | undefined;
@@ -85,4 +85,31 @@ test("only the paths are read back, as strings", () => {
   assert.deepEqual(readLinks(), { library: "/library-lean/x.html" });
   fs.writeFileSync(linksFile(), JSON.stringify({ rotated: "yes", vault: "/vault-lean/y.html" }));
   assert.deepEqual(readLinks(), { vault: "/vault-lean/y.html" });
+});
+
+test("a workspace's tabs replace the ones listed for it, newest drawn first; another's stay until their browser's time is up", async () => {
+  const now = Date.now();
+  const tab = (n: number, workspace: string, until = now + 60_000) => ({ path: `/browser-lean/${"t".repeat(23)}${n}.html`, workspace, until, drawn: now + n });
+  await noteLink("vault", "/vault-lean/bbb.html");
+  await noteTabs("home", [tab(1, "home"), tab(3, "home")]);
+  await noteTabs("work", [tab(2, "work")]);
+  assert.deepEqual(readAll().browser, [tab(3, "home"), tab(2, "work"), tab(1, "home")]);
+  await noteTabs("home", [tab(4, "home")]);
+  assert.deepEqual(readAll().browser, [tab(4, "home"), tab(2, "work")], "home's old tabs went, work's stayed");
+  await noteTabs("old", [tab(5, "old", now - 1)]);
+  await noteTabs("home", []);
+  assert.deepEqual(readAll().browser, [tab(2, "work")], "one past its time goes at the next write");
+  await noteTabs("many", Array.from({ length: MAX_TABS + 5 }, (_, i) => tab(10 + i, "many")));
+  assert.equal((readAll().browser as unknown[]).length, MAX_TABS);
+  assert.deepEqual(readLinks(), { vault: "/vault-lean/bbb.html" }, "the links themselves are untouched");
+});
+
+test("each skill keeps its own status; one the same as kept isn't written again", async () => {
+  await noteStatus("library", { failed: ["2026-10-23T08:00:00.000Z"] });
+  await noteStatus("apps", { changed: ["2026-10-23T09:00:00Z"] });
+  assert.deepEqual(readAll().status, { library: { failed: ["2026-10-23T08:00:00.000Z"] }, apps: { changed: ["2026-10-23T09:00:00Z"] } });
+  const past = new Date(Date.now() - 60_000);
+  fs.utimesSync(linksFile(), past, past);
+  await noteStatus("apps", { changed: ["2026-10-23T09:00:00Z"] });
+  assert.equal(Math.round(fs.statSync(linksFile()).mtimeMs / 1000), Math.round(past.getTime() / 1000));
 });

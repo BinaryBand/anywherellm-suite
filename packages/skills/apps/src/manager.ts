@@ -16,7 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { jobTimeLeft } from "#shared/anythingllm";
 import { firstLine, Told } from "#shared/errors";
-import { linksHidden, OPEN_PAGES } from "#shared/page-links";
+import { linksHidden, noteStatus, OPEN_PAGES } from "#shared/page-links";
 import { embed, inTurn, pageKey, publicPath, sameSecret, takeEvents, watch } from "#shared/pages";
 import { type Names, tokenPage } from "#shared/token-page";
 import { summary } from "./card.ts";
@@ -94,9 +94,24 @@ async function write(rotated = false, hidden = linksHidden()): Promise<string> {
 /** The page's HTML under the names `n`: the template with what it reads its state and posts with. */
 const html = (n: ManagerFile): string => file("pages/manager.html").replace("/*CONFIG*/null", embed({ token: `${PREFIX}${n.token}`, secret: n.secret, title: TITLE, key: pageKey() }));
 
+/** How many apps' change times the links file keeps. */
+const MAX_CHANGED = 50;
+
+/** Keeps when each app last changed, newest first, in the links file (#shared/page-links), for
+ *  AnywhereLLM Lite's Apps line; a hint, so a failure is only logged. */
+function noteChanges(): void {
+  try {
+    const changed = store.workspaces().flatMap((w) => store.list(w).map((a) => a.changed || "")).filter(Boolean).sort().reverse().slice(0, MAX_CHANGED);
+    void noteStatus("apps", { changed });
+  } catch (e) {
+    console.error(`apps-lean couldn't keep its status: ${(e as Error).message}`);
+  }
+}
+
 /** Writes the manager's state again, where there is a manager, after the apps changed; a hint, so a
  *  failure is only logged. */
 export function refresh(): void {
+  noteChanges();
   try {
     names.refresh((p) => [names.put(`${PREFIX}${p.token}.json`, JSON.stringify(state(p)))]);
   } catch (e) {

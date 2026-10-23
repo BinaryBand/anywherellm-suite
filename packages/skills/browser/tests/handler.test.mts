@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import * as logins from "#shared/logins";
+import { linksFile } from "#shared/page-links";
 import { call as called, hideLinks, post, postVault, publicDir, seal, site, skillDir, storage, tabConfig, tabState, vaultAddresses, vaultLogins, vaultNames, world } from "./harness.mts";
 
 const LOGIN = "https://login.example/";
@@ -222,6 +223,31 @@ test("guide gives the overview, each topic it lists, and names the topics when o
 test("a chat with no thread (AnythingLLM's developer API) gets the workspace's own tab", async () => {
   await called({ action: "open", url: "https://shop.example/" }, { workspace: "api", thread: null });
   assert.ok(JSON.parse(fs.readFileSync(path.join(storage, "browser-lean", "api", "tabs.json"), "utf8"))._, "the tab \"_\"");
+});
+
+test("each tab's state says when its workspace's browser closes, and the open tabs are listed for AnywhereLLM Lite", async () => {
+  const IDLE = 20 * 60 * 1000;
+  const listed = (workspace: string) => (JSON.parse(fs.readFileSync(linksFile(storage), "utf8")).browser as { path: string; workspace: string; until: number }[]).filter((t) => t.workspace === workspace);
+  const settle = () => new Promise((r) => setTimeout(r, 50)); // the links file is written in the background
+  const before = Date.now();
+  await called({ action: "open", url: "https://shop.example/" }, { workspace: "lite", thread: 1 });
+  const first = tabState("lite", "1").until;
+  assert.ok(first >= before + IDLE && first <= Date.now() + IDLE, "20 minutes after its last step");
+  await new Promise((r) => setTimeout(r, 5));
+  await called({ action: "open", url: "https://shop.example/" }, { workspace: "lite", thread: 2 });
+  assert.ok(tabState("lite", "1").until > first, "a step in another chat of the workspace keeps the first tab open too");
+  assert.equal(tabState("lite", "1").until, tabState("lite", "2").until, "one browser, one closing time");
+  await settle();
+  const pages = ["1", "2"].map((tab) => `/browser-lean/${tabConfig("lite", tab).token}.html`);
+  assert.deepEqual(listed("lite").map((t) => t.path), pages.reverse(), "each tab's page, newest drawn first");
+  assert.ok(listed("lite").every((t) => Math.abs(t.until - tabState("lite", "2").until) < 60 * 1000));
+  await called({ action: "open", url: "https://shop.example/" }, { workspace: null });
+  await settle();
+  assert.deepEqual(listed("_jobs"), [], "a scheduled job's tab isn't a chat's");
+  for (const other of ["lite-2", "lite-3", "lite-4"]) await called({ action: "open", url: "https://shop.example/" }, { workspace: other }); // past 3 browsers, the oldest closes
+  await settle();
+  assert.deepEqual(listed("lite"), [], "a closed browser's tabs leave the list");
+  assert.equal(listed("lite-4").length, 1);
 });
 
 test("a workspace's cookies are kept in the vault and given back, and Chrome's profile is never in the storage", async () => {

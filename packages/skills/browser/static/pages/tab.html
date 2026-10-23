@@ -1183,7 +1183,8 @@ input{font:inherit;color:var(--ink)}
     } catch (e) {
       return; // not reached, or not the state file: the next poll tries again
     }
-    if (next.closed) {
+    // Closed, or its browser's time ran out: AnythingLLM restarted under it, which writes no "closed".
+    if (next.closed || !(next.until > Date.now() + skew)) {
       $("gone").hidden = false;
       return tell("agent");
     }

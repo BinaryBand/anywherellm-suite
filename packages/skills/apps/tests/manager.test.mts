@@ -30,6 +30,15 @@ beforeEach(async () => {
   await store.change("home", "groceries", { patch: [{ op: "add", path: "/items/-", value: { text: "Eggs", done: false } }], ev: "add", fields: { text: "Eggs" } });
 });
 
+test("each app's last change is kept in the links file, newest first, for AnywhereLLM Lite's Apps line", async () => {
+  await store.create("work", "notes", { ...definitionFor("list", { title: "Notes" }), data: { items: [] } });
+  await call("home", { action: "do", name: "groceries", ev: "add", patch: [{ op: "add", path: "/items/-", value: { text: "Milk", done: false } }] });
+  await new Promise((r) => setTimeout(r, 50)); // the links file is written in the background
+  const changed = links().status.apps.changed;
+  assert.deepEqual(changed, [store.read("home", "groceries").changed, store.read("work", "notes").changed].sort().reverse());
+  assert.ok(changed.every((t: string) => /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(t)), "times, in UTC");
+});
+
 test("a chat call makes the manager beside the apps' pages, keeps its path as apps, and list gives its link", async () => {
   const listed = await settled();
   const files = fs.readdirSync(pub());

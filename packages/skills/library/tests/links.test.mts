@@ -9,7 +9,7 @@ import test from "node:test";
 import { linksFile, readLinks } from "#shared/page-links";
 import { vaultNames as vaultNamesIn } from "#shared/test-helpers";
 import { readKept } from "../../../install/src/pagelinks.mts";
-import { call, hideLinks, library, pageState, post, publicDir, reset, storage } from "./harness.mts";
+import { call, hideLinks, idOf, library, pageState, post, publicDir, reset, runRecord, storage, until } from "./harness.mts";
 
 test.beforeEach(reset);
 
@@ -313,4 +313,12 @@ test("both pages' secrets are hidden from an error text, not only the tokens", a
   assert.match(said, /aren't available here/, said);
   assert.ok(!said.includes(vaultSecret), `the Vault's secret is in the answer: ${said}`);
   assert.ok(!said.includes(pageSecret), `the Library page's secret is in the answer: ${said}`);
+});
+
+test("the failed runs' ends are kept in the links file, for AnywhereLLM Lite's Library line; a run that worked isn't one", async () => {
+  const status = () => JSON.parse(fs.readFileSync(linksFile(), "utf8")).status?.library;
+  await call({ action: "save", service: "ex", toolkit: { base_urls: ["https://api.example.com"] }, function: { name: "ok", description: "Works.", source: "async function main() { return 1; }" }, test: {} });
+  const said = await call({ action: "save", service: "ex", function: { name: "bad", description: "Fails.", source: "async function main() { throw new Error('no'); }" }, test: {} });
+  await until(() => status()?.failed?.length === 1);
+  assert.deepEqual(status(), { failed: [runRecord(idOf(said)).ended] });
 });

@@ -16,18 +16,20 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as addresses from "#shared/addresses";
+import { perProcess } from "#shared/anythingllm";
 import { writeJson } from "#shared/atomic";
 import { Told } from "#shared/errors";
 import { hostOf } from "#shared/fence";
 import * as logins from "#shared/logins";
-import { linksHidden } from "#shared/page-links";
-import { inTurn, newSecret, pageHtml, publicPath, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
+import { linksHidden, noteTabs, type TabLink } from "#shared/page-links";
+import { inTurn, newSecret, pageHtml, publicPath, readPublic, removePublic, sameSecret, takeEvents, watch, writePublic } from "#shared/pages";
 import * as vault from "#shared/vault";
 import * as vaultPage from "#shared/vault-page";
 import { isUnsent, submitted, typeIn } from "./act";
 import * as passkey from "./passkey";
+import { JOBS } from "./scope";
 import { type Snap, asksPassword, fieldOf, isPasswordLine, lineOf, readPage } from "./snapshot";
-import { type Entry, NEED_MS, type Need, OFFER_MS, type Tab, VIEWPORT, clip, holder, live, note, say, state, statics, workspaceDir } from "./state";
+import { type Entry, IDLE_MS, NEED_MS, type Need, OFFER_MS, type Tab, VIEWPORT, clip, holder, live, note, say, state, statics, workspaceDir } from "./state";
 import * as takeover from "./takeover";
 
 const TITLE = "browser-lean-event";
@@ -82,6 +84,57 @@ export function forgetTab(workspace: string, key: string): void {
   } catch {
     // no folder to write in
   }
+  listTabs(workspace);
+}
+
+/** How far a browser's closing time moves before its tabs are listed again with it. */
+const RELIST_MS = 60 * 1000;
+
+/** What each workspace's tabs were last listed as, to list them again only when that changes. */
+const listed = () => perProcess("browser-lean.listed", () => new Map<string, { tokens: string; until: number }>());
+
+/** Lists a workspace's drawn tabs in the links file (#shared/page-links), for AnywhereLLM Lite's
+ *  Browser row: each one's page, and when the browser closes. Again only when a tab came or went, or
+ *  the closing time moved RELIST_MS (each tab's state has it exactly). None of a scheduled job's. */
+function listTabs(workspace: string): void {
+  if (workspace === JOBS) return;
+  const entry = state().browsers.get(workspace);
+  const until = entry ? entry.last + IDLE_MS : 0;
+  const tabs: TabLink[] = [];
+  for (const key of entry?.tabs.keys() ?? []) {
+    try {
+      const names = namesOf(workspace, key, false);
+      const there = names && readPublic(pub(names.token, ".json"));
+      const st = there ? JSON.parse(there) : null;
+      if (st && !st.closed) tabs.push({ path: `/${pub(names!.token, ".html")}`, workspace, until, drawn: Number(st.shot) || 0 });
+    } catch {
+      // not drawn where it can be read: not listed
+    }
+  }
+  const tokens = tabs.map((t) => t.path).sort().join(" ");
+  const was = listed().get(workspace);
+  if (was && was.tokens === tokens && Math.abs(until - was.until) < RELIST_MS) return;
+  listed().set(workspace, { tokens, until });
+  void noteTabs(workspace, tabs);
+}
+
+/** Writes when a workspace's browser closes into each of its tabs' states that's there: a step in one
+ *  chat keeps every tab of the workspace open. */
+export function restamp(workspace: string, entry: Entry): void {
+  const until = entry.last + IDLE_MS;
+  for (const key of entry.tabs.keys()) {
+    try {
+      const names = namesOf(workspace, key, false);
+      const there = names && readPublic(pub(names.token, ".json"));
+      if (!there) continue; // not drawn yet
+      const st = JSON.parse(there);
+      if (st.closed || st.until === until) continue;
+      writePublic(pub(names.token, ".json"), JSON.stringify({ ...st, until }), there);
+    } catch {
+      // no folder to write in, or a state that isn't one: the next draw writes it whole
+    }
+  }
+  listTabs(workspace);
 }
 
 /** What the agent waits for the user to enter on the tab's page, or null: one that ran out goes. */
@@ -103,6 +156,7 @@ function tabState(at: Tab, title: string, url: string, snap: Snap, vaultLink: st
     url: url.slice(0, 2000),
     host,
     shot: Date.now(),
+    until: at.entry.last + IDLE_MS,
     size: { w: screen.width, h: screen.height },
     who: held ? "user" : "agent",
     fields: held ? snap.fields : [],
@@ -135,6 +189,7 @@ async function draw(at: Tab, card: boolean, { snap, title }: Read): Promise<stri
   } catch {
     return null;
   }
+  listTabs(at.workspace);
   const until = Date.now() + WATCH_MS;
   watch(TITLE, drain, () => until);
   return names.token;

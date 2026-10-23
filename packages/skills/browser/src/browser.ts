@@ -18,14 +18,13 @@ import { firstLine } from "#shared/errors";
 import { ACT_MS, NAVIGATE_MS, settle } from "./act";
 import { BrowserError } from "./errors";
 import type { Browser, Page, Puppeteer } from "./host";
-import { forgetTab, redraw } from "./page";
+import { forgetTab, redraw, restamp } from "./page";
 import * as passkey from "./passkey";
 import * as sessions from "./sessions";
-import { type Entry, type Tab, VIEWPORT, note, state, threadKey } from "./state";
+import { type Entry, IDLE_MS, type Tab, VIEWPORT, note, state, threadKey } from "./state";
 
 /** Where a system Chrome or Chromium is looked for, after the ones Puppeteer downloaded (Linux only, so far). */
 const SYSTEM_CHROMES = ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome"];
-const IDLE_MS = 20 * 60 * 1000;
 /** How long after a step its browser's cookies are saved. */
 const SAVE_MS = 10 * 1000;
 const MAX_BROWSERS = 3;
@@ -119,12 +118,13 @@ async function closeEntry(workspace: string): Promise<void> {
   await (await entry.ready.catch(() => null))?.close().catch(() => {});
 }
 
-/** Keeps a workspace's browser open IDLE_MS from now. */
+/** Keeps a workspace's browser open IDLE_MS from now, which each of its tabs' states says. */
 function touch(workspace: string, entry: Entry): void {
   entry.last = Date.now();
   clearTimeout(entry.timer ?? undefined);
   entry.timer = setTimeout(() => void closeEntry(workspace), IDLE_MS);
   entry.timer.unref?.();
+  restamp(workspace, entry);
 }
 
 async function launch(workspace: string): Promise<Browser> {

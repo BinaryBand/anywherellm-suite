@@ -13,6 +13,8 @@ import { workspaceOf } from "#shared/anythingllm";
 import type { HandlerContext } from "./host";
 import { NO_THREAD, state } from "./state";
 
+/** The workspace of a call with none: a scheduled job's. */
+export const JOBS = "_jobs";
 /** How long a tab stays with the run that last used it. */
 const LEASE_MS = 2 * 60 * 1000;
 
@@ -39,7 +41,7 @@ function apiTab(workspace: string, agent: object, now: number): string {
 
 export function scopeOf(self: HandlerContext | undefined, now = Date.now()): Scope {
   const invocation = self?.super?.handlerProps?.invocation ?? {};
-  const scope: Scope = { workspace: workspaceOf(self) ?? "_jobs" };
+  const scope: Scope = { workspace: workspaceOf(self) ?? JOBS };
   const thread = invocation.thread_id === null || invocation.thread_id === undefined ? NaN : Number(invocation.thread_id);
   if (Number.isInteger(thread)) scope.thread = thread;
   else if (self?.super && typeof self.super === "object") {

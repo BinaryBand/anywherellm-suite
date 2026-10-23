@@ -349,6 +349,7 @@ export const runtime = {
       // failed partway.
       listing.refresh(this.logger);
       addresses.refresh();
+      page.noteRuns(); // a run found interrupted
     }
   },
 };

@@ -37,6 +37,7 @@ Read `<token>.json` with a query that changes (`?t=<now>`) or no cache: it's rew
 | `url` | string | the tab's address, at most 2000 characters |
 | `host` | string | its host |
 | `shot` | number | when the state and picture were written, ms since 1970 |
+| `until` | number | when the tab's browser closes unless the agent or the user does a step first, ms since 1970 by AnythingLLM's clock (its `Date` header): the workspace's one browser, so every tab of the workspace has the same, and a step in any of its chats moves it. A tab past its `until` is closed, though its state may not say so: a restart of AnythingLLM closes its tabs without writing `closed` |
 | `size` | `{w, h}` | the tab's screen, in CSS pixels |
 | `who` | `"agent"` or `"user"` | who holds the tab (`user`: taken over on its page) |
 | `fields` | array | the fields in view, only while the user holds the tab |
@@ -45,7 +46,7 @@ Read `<token>.json` with a query that changes (`?t=<now>`) or no cache: it's rew
 | `msg` | `{text, id}` or null | a line for the page to show once ("Saved for example.com"; a login the site seems to have refused). It stays in the state for up to a minute, so show each `id` once |
 | `vault` | string or null | the path of the Vault on this host (`/vault-lean/<token>.html`), where the saved logins and passkeys are listed and deleted; null where it couldn't be written, or when the links to the Library page and the Vault are kept from the agent (the tab's page then shows no Vault button) |
 
-A closed tab's state is `{"closed": true}`, and its other files are gone.
+A closed tab's state is `{"closed": true}`, and its other files are gone. The open tabs of every chat (a scheduled job's aren't) are listed in the links file for the bridge, which passes them on (`browser` in [page-links.md](page-links.md)), so a client finds the tabs of chats it hasn't read too.
 
 ### `need`
 

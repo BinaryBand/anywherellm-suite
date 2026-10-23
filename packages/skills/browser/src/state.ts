@@ -15,6 +15,8 @@ export const VIEWPORT = { width: 430, height: 932, deviceScaleFactor: 2 };
 /** The screens a tab's page may ask for, in CSS pixels; wider than phoneMax is drawn at 1x, so a
  *  picture stays a few hundred kilobytes. */
 const SCREEN = { minWidth: 320, maxWidth: 1920, minHeight: 400, maxHeight: 1600, phoneMax: 900 };
+/** How long a workspace's browser stays open unused; its tabs' states say when it closes (`until`). */
+export const IDLE_MS = 20 * 60 * 1000;
 /** How long the user holds a tab without a step before it's the agent's again. */
 const HOLD_MS = 10 * 60 * 1000;
 /** How long a login or a passkey waits to be saved, or for the user's answer to the offer. */
