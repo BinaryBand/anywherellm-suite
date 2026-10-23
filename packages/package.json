@@ -10,8 +10,10 @@
     "shared:test": "node --test --test-timeout=120000 --test-force-exit \"shared/*.test.mts\" \"*.test.mts\"",
     "install:test": "node build.mjs install && npm run -s install:unit",
     "skills:test": "node build.mjs skills && npm run -s skills:unit",
+    "wake:test": "node build.mjs wake && npm run -s wake:unit",
     "install:unit": "node --test --test-timeout=120000 \"install/tests/*.test.mts\"",
-    "skills:unit": "node --test --test-timeout=120000 --test-force-exit \"skills/*/tests/*.test.mts\""
+    "skills:unit": "node --test --test-timeout=120000 --test-force-exit \"skills/*/tests/*.test.mts\"",
+    "wake:unit": "node --test --test-timeout=120000 \"wake/tests/*.test.mts\""
   },
   "devDependencies": {
     "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",

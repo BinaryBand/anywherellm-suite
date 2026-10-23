@@ -342,7 +342,7 @@ test("the ntfy-channel function through a signing channel: signs and frames what
   await savedChannel({ key: "muse", namespace: "test-ns", me: "me", public: mine, max_age_days: 3, peers: { peer: { key: lineOf(peer), confirmed: true } } });
   const { posted, arrives } = await savedNtfy(t, { inbox: ["inbox"], outbox: { "peer-topic": "peer" }, max_bytes: 4000, since: "2h", max_messages: 50, channel: "chan.channel", framing: { line: "Payload-SHA256" } });
   const send = (input: Record<string, unknown>) => ntfy("send", input);
-  const read = async () => (await ntfy("read")).messages.map((m: Record<string, string>) => [m.framing, m.verify, m.payload]);
+  const read = async () => (await ntfy("read")).messages.map((m: Record<string, string>) => (m.withheld ? { ...m, id: undefined, time: undefined } : [m.framing, m.verify, m.payload]));
 
   const sent = await send({ topic: "peer-topic", text: "Reply text", title: "Re" });
   assert.equal(sent.signed, true);
@@ -373,13 +373,24 @@ test("the ntfy-channel function through a signing channel: signs and frames what
   const quoting = `Quoting:\n-----BEGIN SSH SIGNATURE-----\nAAAA\n-----END SSH SIGNATURE-----\n\nSigned: peer to me at ${now}Z\n`;
   const signedQuote = `${quoting}${keygenSign(peer, "test-ns", quoting)}`;
   arrives("inbox", `Payload-SHA256: ${sha(quoting)}\n${signedQuote}`);
-  assert.deepEqual(await read(), [
+  // What fails a check is withheld: its header and the reason, never its text.
+  const posing = `Posing.\n\nSigned: muse to me at ${now}Z\n`;
+  arrives("inbox", `Payload-SHA256: ${sha(posing)}\n${posing}${keygenSign(peer, "test-ns", posing)}`, "[muse]\u0007 urgent\n" + "x".repeat(100));
+  const elsewhere = `For another.\n\nSigned: peer to other at ${now}Z\n`;
+  arrives("inbox", `Payload-SHA256: ${sha(elsewhere)}\n${elsewhere}${keygenSign(peer, "test-ns", elsewhere)}`);
+  arrives("inbox", `Payload-SHA256: ${"0".repeat(64)}\nJust text, framed wrong.`);
+  const shown = await read();
+  assert.deepEqual(shown, [
     ["ok", "result=VALID signer=peer key-confirmed=yes stamp=ok", signed],
-    ["mismatch", "result=INVALID reason=bad-signature", signed.replace("From the peer.", "From someone.")],
-    ["missing", "result=VALID signer=peer key-confirmed=yes stamp=ok", signed],
+    { withheld: "result=INVALID reason=bad-signature", title: "", claimed_from: "peer", id: undefined, time: undefined },
+    { withheld: "framing=missing", title: "", claimed_from: "peer", id: undefined, time: undefined },
     ["missing", "result=UNSIGNED", "Just text."],
     ["ok", "result=VALID signer=peer key-confirmed=yes stamp=ok", signedQuote],
+    { withheld: "stamp=bad", title: `[muse] urgent ${"x".repeat(65)}…`, claimed_from: "muse", id: undefined, time: undefined },
+    { withheld: "stamp=bad", title: "", claimed_from: "peer", id: undefined, time: undefined },
+    { withheld: "framing=mismatch", title: "", id: undefined, time: undefined },
   ]);
+  for (const text of ["From someone.", "Posing.", "For another.", "framed wrong"]) assert.ok(!JSON.stringify(shown).includes(text), `${text} isn't shown`);
 
   assert.match(await send({ topic: "peer-topic", text: "x".repeat(3700) }), /over the 4000-byte limit: nothing was sent/, "the limit counts the signature and the frame");
   postVault({ ev: "signing-delete", label: "muse" });

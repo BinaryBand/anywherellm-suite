@@ -33,3 +33,27 @@ test("health passes for what install set up", run, () => {
   assert.match(done.stdout, /ok +the library skill/);
   assert.match(done.stdout, /ok +the pages' key/);
 });
+
+test("wake: a job runs when the wake asks, also when it's switched off", run, async () => {
+  // The wake's own client (packages/wake), logged in with the password in the storage's .env. The
+  // throwaway has no model set up, so each run fails at once; that a run is made is what counts.
+  const { Anything } = await import("../packages/wake/src/anything.mts");
+  const base = env("E2E_ALLM_URL");
+  const api = new Anything(base, `${env("E2E_STORAGE")}/.env`);
+  const login = await request(`${base}/api/request-token`, { method: "POST", body: { password: env("E2E_PASSWORD") } });
+  const token = String((login.json as { token?: unknown }).token);
+  const made = await request(`${base}/api/scheduled-jobs/new`, { method: "POST", token, body: { name: "wake e2e", prompt: "Say hi.", tools: null, schedule: "0 0 1 1 *" } });
+  const id = Number((made.json as { job: { id: number } }).job.id);
+  assert.equal(await api.jobName(id), "wake e2e");
+  const runs = async () => ((await api.call("GET", `/scheduled-jobs/${id}/runs`)) as { runs: unknown[] }).runs.length;
+  const settled = async (n: number) => {
+    for (let i = 0; i < 300 && ((await runs()) < n || (await api.busy(id))); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(await runs(), n);
+  };
+  await api.trigger(id);
+  await settled(1);
+  const off = await request(`${base}/api/scheduled-jobs/${id}`, { method: "PUT", token, body: { enabled: false } });
+  assert.equal((off.json as { job: { enabled: boolean } }).job.enabled, false);
+  await api.trigger(id);
+  await settled(2);
+});

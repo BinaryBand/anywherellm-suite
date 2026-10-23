@@ -39,13 +39,14 @@ async function sign(kit, to, text) {
   return `${body}\n${signature}`;
 }
 
-/** The last stamp of a body: "ok" when it's to us and recent, "bad" when it isn't, "none" without one. */
-function stamp(body) {
+/** The last stamp of a body `who` signed: "ok" when it's from `who`, to us and recent, "bad" when it
+ *  isn't, "none" without one. */
+function stamp(body, who) {
   const found = [...body.matchAll(/^Signed: (\S+) to (\S+) at (\S+)$/gm)].at(-1);
   if (!found) return "none";
   const at = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?(Z|[+-]\d\d:\d\d)$/.test(found[3]) ? Date.parse(found[3]) : NaN;
   const age = Date.now() - at;
-  return found[2] === CHANNEL.me && age >= -SKEW_MS && age <= CHANNEL.max_age_days * 86400 * 1000 ? "ok" : "bad";
+  return found[1] === who && found[2] === CHANNEL.me && age >= -SKEW_MS && age <= CHANNEL.max_age_days * 86400 * 1000 ? "ok" : "bad";
 }
 
 async function verify(kit, text) {
@@ -56,7 +57,7 @@ async function verify(kit, text) {
   const checked = await kit.crypto.sshsig.verify({ signature: text.slice(i), data: body, namespace: CHANNEL.namespace, keys: peers.map(([, p]) => p.key) });
   if (!checked.valid) return `result=INVALID reason=${checked.reason}`;
   const [who, peer] = peers.find(([, p]) => p.key === checked.key);
-  return `result=VALID signer=${who} key-confirmed=${peer.confirmed ? "yes" : "no"} stamp=${stamp(body)}`;
+  return `result=VALID signer=${who} key-confirmed=${peer.confirmed ? "yes" : "no"} stamp=${stamp(body, who)}`;
 }
 
 async function main(input, kit) {

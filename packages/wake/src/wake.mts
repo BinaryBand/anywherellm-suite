@@ -1,0 +1,130 @@
+// The wake: each topic in WAKE followed as a stream; a message starts a burst, and when the burst
+// has been quiet for BURST_MS the topic's job is run, once, if none of its runs is going and its
+// last run the wake started is GAP_MS behind. Messages that come while it waits or while a run
+// goes make one more run after. The last message a run was started for is kept per topic, so a
+// restart (or ntfy coming back) runs the job once for what came while the wake was away.
+
+import { readJson, writeJson } from "#shared/atomic";
+import { firstLine } from "#shared/errors";
+import type { Anything } from "./anything.mts";
+import { follow } from "./ntfy.mts";
+import type { Rule, Settings } from "./settings.mts";
+
+/** How long to wait before asking again whether a run has ended, or after AnythingLLM failed (ms). */
+export const RECHECK_MS = 15_000;
+const RECONNECT_MS = [1_000, 2_000, 5_000, 15_000, 30_000, 60_000]; // waits between tries at the stream
+
+type Api = Pick<Anything, "busy" | "trigger">;
+export type Log = (line: string) => void;
+
+export interface Timing {
+  burstMs: number;
+  gapMs: number;
+  recheckMs?: number;
+}
+
+/** One topic's job: when to run it. `note` each message; `onRun` hears of each run started, with
+ *  the last message id it covers. */
+export class Waker {
+  readonly #rule: Rule;
+  readonly #api: Api;
+  readonly #timing: Required<Timing>;
+  readonly #log: Log;
+  readonly #onRun: (id: string) => void;
+  #latest: string | null = null; // the newest message noted
+  #covered: string | null = null; // the newest message a run was started for
+  #timer: NodeJS.Timeout | undefined;
+  #lastRun = -Infinity;
+  #stopped = false;
+
+  constructor(rule: Rule, api: Api, timing: Timing, log: Log, onRun: (id: string) => void = () => {}) {
+    this.#rule = rule;
+    this.#api = api;
+    this.#timing = { ...timing, recheckMs: timing.recheckMs ?? RECHECK_MS };
+    this.#log = log;
+    this.#onRun = onRun;
+  }
+
+  /** A message arrived: (re)starts the burst's wait. */
+  note(id: string): void {
+    this.#latest = id;
+    this.#arm(this.#timing.burstMs);
+  }
+
+  /** Stops its timer: no run starts after. */
+  stop(): void {
+    this.#stopped = true;
+    clearTimeout(this.#timer);
+  }
+
+  #arm(ms: number): void {
+    if (this.#stopped) return;
+    clearTimeout(this.#timer);
+    this.#timer = setTimeout(() => void this.#fire(), ms);
+  }
+
+  async #fire(): Promise<void> {
+    const { topic, job } = this.#rule;
+    const latest = this.#latest;
+    if (latest === null || latest === this.#covered) return;
+    const wait = this.#lastRun + this.#timing.gapMs - Date.now();
+    if (wait > 0) return this.#arm(wait);
+    try {
+      if (await this.#api.busy(job)) return this.#arm(this.#timing.recheckMs);
+      await this.#api.trigger(job);
+    } catch (e) {
+      this.#log(`${topic}: job ${job} not run: ${firstLine(e)}; trying again in ${Math.round(this.#timing.recheckMs / 1000)} s`);
+      return this.#arm(this.#timing.recheckMs);
+    }
+    this.#lastRun = Date.now();
+    this.#covered = latest;
+    this.#log(`${topic}: ran job ${job} (up to message ${latest})`);
+    this.#onRun(latest);
+    if (this.#latest !== latest) this.#arm(this.#timing.burstMs); // more came while it was asked
+  }
+}
+
+/** The last message each topic's run was started for, as the state file keeps it. */
+type State = Record<string, string>;
+
+/** Follows every topic of the settings until `signal` aborts. (Tests shorten the waits.) */
+export async function serve(settings: Settings, api: Api, log: Log, signal: AbortSignal, { reconnectMs = RECONNECT_MS, recheckMs = RECHECK_MS } = {}): Promise<void> {
+  const saved = readJson<State>(settings.stateFile, () => ({}));
+  const timing = { burstMs: settings.burstMs, gapMs: settings.gapMs, recheckMs };
+  await Promise.all(
+    settings.rules.map(async (rule) => {
+      const waker = new Waker(rule, api, timing, log, (id) => {
+        saved[rule.topic] = id;
+        writeJson(settings.stateFile, saved);
+      });
+      signal.addEventListener("abort", () => waker.stop(), { once: true });
+      let since = saved[rule.topic];
+      let tries = 0;
+      while (!signal.aborted) {
+        try {
+          await follow(settings.ntfyUrl, settings.ntfyToken, rule.topic, {
+            since,
+            signal,
+            onOpen: () => {
+              if (tries) log(`${rule.topic}: following again`);
+              tries = 0;
+            },
+            onMessage: (id) => {
+              since = id;
+              waker.note(id);
+            },
+          });
+          if (signal.aborted) return;
+          log(`${rule.topic}: ntfy ended the stream`);
+        } catch (e) {
+          log(firstLine(e));
+        }
+        const wait = reconnectMs[Math.min(tries++, reconnectMs.length - 1)];
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, wait);
+          signal.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
+        });
+      }
+    }),
+  );
+}

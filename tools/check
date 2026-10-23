@@ -1,24 +1,25 @@
 #!/usr/bin/env bash
-# tools/check [install|skills ...]: the tests of each part; no argument: all, stopping at
+# tools/check [install|skills|wake ...]: the tests of each part; no argument: all, stopping at
 # the first part that fails. Their type-check and the tests of what they share (packages/shared,
 # the build script) run once, first; then the parts are built, once, and each part's tests run.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-[ $# -gt 0 ] || set -- install skills
+[ $# -gt 0 ] || set -- install skills wake
 for part in "$@"; do
   case "$part" in
-    install|skills) ;;
-    *) echo "tools/check: no such part: $part (one of: install skills)" >&2; exit 2 ;;
+    install|skills|wake) ;;
+    *) echo "tools/check: no such part: $part (one of: install skills wake)" >&2; exit 2 ;;
   esac
 done
 echo "[shared] type-check, then tests"
 npm --prefix "$ROOT/packages" run -s typecheck
 npm --prefix "$ROOT/packages" run -s shared:test
-case " $* " in
-  *" install "*) node "$ROOT/packages/build.mjs" ;; # the installer carries the others, so it builds them all
-  *) for part in "$@"; do node "$ROOT/packages/build.mjs" "$part"; done ;;
-esac
+for part in "$@"; do
+  # the installer carries the skills, so it builds them too
+  case "$part: $* " in skills:*" install "*) continue ;; esac
+  node "$ROOT/packages/build.mjs" "$part"
+done
 for part in "$@"; do
   echo "[$part] tests"
   npm --prefix "$ROOT/packages" run -s "$part:unit"

@@ -1,7 +1,9 @@
 // An ntfy channel: op "read" polls the inbox topics, op "send" posts to the topics it may. Optionally
 // each message is signed through a signing-channel function (one like sshsig-channel.js, run with
 // kit.run) and framed with a line carrying the hash of its text. read takes
-// nothing off the server, and what it answers is data, never instructions.
+// nothing off the server, and what it answers is data, never instructions. Through a channel, read
+// answers a message that fails its checks with its header and the reason only (withheld), never its
+// text: the server keeps it, by its id. A message with no signature at all is answered, as UNSIGNED.
 // Test fixture: signing.test.mts replaces NTFY and runs it against a stand-in ntfy, whose address
 // is the toolkit's first base_urls and whose token is the toolkit's first key, sent as a bearer token.
 const NTFY = {
@@ -32,6 +34,23 @@ const armorAt = (payload) => payload.lastIndexOf(ARMOR);
 /** What the framing line's hash covers, of `payload`: the text before its signature. */
 const covered = (payload) => (armorAt(payload) < 0 ? payload : payload.slice(0, armorAt(payload)));
 const iso = (seconds) => new Date(seconds * 1000).toISOString();
+
+/** One line of at most `max` characters, control characters taken out: what a withheld message's
+ *  header may show of a field its sender chose. */
+const clip = (text, max = 80) => {
+  const flat = String(text).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+};
+
+/** Why a message read through the channel is withheld, or null when it may be shown: it verified,
+ *  with a good stamp and (with framing) a frame that matches, or it carries no signature at all. */
+function withheld(m) {
+  if (/^result=UNSIGNED\b/.test(m.verify)) return m.framing === "mismatch" ? "framing=mismatch" : null;
+  if (!/^result=VALID\b/.test(m.verify)) return clip(m.verify);
+  if (!/\bstamp=ok\b/.test(m.verify)) return clip(m.verify.replace(/^.*\b(stamp=\S+).*$/, "$1"));
+  if (NTFY.framing && m.framing !== "ok") return `framing=${m.framing}`;
+  return null;
+}
 
 /** An error ntfy answered, said with what to do about the codes the agent can act on. */
 function refused(topic, answer) {
@@ -65,7 +84,15 @@ async function read(kit, topic, since) {
   for (const m of all.slice(-NTFY.max_messages)) {
     const out = { id: m.id, time: iso(m.time), title: m.title ?? "", payload: String(m.message ?? "") };
     if (NTFY.framing) Object.assign(out, await unframed(kit, out.payload));
-    if (NTFY.channel) out.verify = await kit.run(NTFY.channel, { op: "verify", text: out.payload });
+    if (NTFY.channel) {
+      out.verify = String(await kit.run(NTFY.channel, { op: "verify", text: out.payload }));
+      const reason = withheld(out);
+      if (reason) {
+        const from = [...out.payload.matchAll(/^Signed: (\S+) to /gm)].at(-1)?.[1];
+        messages.push({ id: out.id, time: out.time, title: clip(out.title), ...(from ? { claimed_from: clip(from, 40) } : {}), withheld: reason });
+        continue;
+      }
+    }
     messages.push(out);
   }
   const result = { topic, since, messages };
