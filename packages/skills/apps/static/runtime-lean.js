@@ -131,7 +131,7 @@ var AppsLean = (() => {
   // part's, see each tap first and keep it from the page; scrolling still works.
   const PICKS = 5, WORDS = 1000;
   const chat = window.AnywhereLLMApps && window.AnywhereLLMApps.postMessage ? window.AnywhereLLMApps : null;
-  let picking = false, picks = [], text = "", sending = false, failed = "", row = null;
+  let picking = false, picks = [], text = "", sending = false, failed = "";
   const host = document.createElement("div");
   const ui = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
   const ours = (e) => (e.composedPath ? e.composedPath().includes(host) : host.contains(e.target));
@@ -149,29 +149,19 @@ var AppsLean = (() => {
     };
   }
   const outline = (el, on) => { el.style.outline = on ? "3px solid var(--accent, #6a5cff)" : ""; el.style.outlineOffset = on ? "2px" : ""; };
-  /** A row made of the page's first heading, for the button beside it; none when there's no heading,
-   *  or it's hidden or inside a link or a control, where a tap on the button would do more. */
-  function heading() {
-    const h1 = document.querySelector && document.querySelector("h1");
-    if (!h1 || !h1.parentNode || (h1.closest && h1.closest("a,button,label,summary,dialog,[hidden]")) || (h1.getClientRects && !h1.getClientRects().length)) return null;
-    const r = document.createElement("div");
-    r.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:12px";
-    h1.parentNode.insertBefore(r, h1);
-    h1.style.flex = "1";
-    h1.style.minWidth = "0";
-    r.append(h1);
-    return r;
-  }
+  // The shut button is a 44 px round icon in the page's top right corner, level with the top of
+  // its content and over it, scrolling away with the page. The page's first block keeps clear of
+  // the corner's 60 px, whatever the app put there.
+  const CORNER = 60;
+  const clear = document.createElement("style");
+  // Wide enough to reach past the button's left edge, and tall enough that what follows starts
+  // under it.
+  clear.textContent = `main>:first-child{padding-right:max(0px,calc(${CORNER}px - var(--pad,20px) - max(0px,(100vw - 640px) / 2)));min-height:max(0px,calc(44px - var(--gap,14px)))}` +
+    `main.center>:first-child{padding-left:max(0px,calc(${CORNER}px - var(--pad,20px) - max(0px,(100vw - 640px) / 2)))}`;
   function place() {
-    // Shut, the button is beside the heading (else in the top right corner, scrolling away with the
-    // page); open, the tray is on the body, out of the page's layout. Put back if the page took it out.
-    const open = picking || picks.length;
-    if (!open && !(row && row.isConnected)) row = heading();
-    const into = open || !row ? document.body : row;
-    if (host.parentNode !== into) into.append(host);
-    // The shut button sits in the row, or in the corner when the page no longer has one.
-    const shut = !open && ui.querySelector ? ui.querySelector(".b") : null;
-    if (shut) shut.classList.toggle("in", !!row);
+    // Open, the tray is on the body too, out of the page's layout. Put back if the page took either out.
+    if (host.parentNode !== document.body) document.body.append(host);
+    if (!clear.isConnected) (document.head || document.body).append(clear);
   }
   function tray() {
     if (!document.body) return;
@@ -179,8 +169,10 @@ var AppsLean = (() => {
     const open = picking || picks.length;
     ui.innerHTML = `<style>
       :host{all:initial;display:block}
-      .b{position:absolute;right:14px;top:14px;z-index:2147483646;min-height:44px;padding:0 16px;border-radius:14px;border:1px solid var(--line,#ccc);background:var(--panel,#fff);color:var(--ink,#222);font:600 15px system-ui,sans-serif}
-      .b.in{position:static}
+      :host{--tile:var(--bg,#fff);--tile-edge:transparent;--shadow-tile:var(--lift,none)}
+      @media (prefers-contrast:more){:host{--tile-edge:var(--edge,#666);--shadow-tile:none}}
+      .b{position:absolute;right:16px;top:var(--pad,20px);z-index:2147483646;width:44px;height:44px;padding:0;border-radius:50%;border:1px solid var(--tile-edge);background:var(--tile);color:var(--ink,#222);box-shadow:var(--shadow-tile);display:flex;align-items:center;justify-content:center}
+      .b:focus-visible{outline:3px solid var(--accent,#6a5cff);outline-offset:3px}
       .c{padding:6px 12px;border-radius:99px;background:var(--soft,#eef);font-size:14px;font-weight:600}
       .t{position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:70vh;overflow:auto;padding:14px 16px 18px;border-radius:18px 18px 0 0;background:var(--panel,#fff);color:var(--ink,#222);box-shadow:0 -8px 28px rgba(0,0,0,.18);font:15px/1.45 system-ui,sans-serif;display:flex;flex-direction:column;gap:10px}
       .r{display:flex;gap:8px;justify-content:space-between;align-items:center}
@@ -188,7 +180,7 @@ var AppsLean = (() => {
       .p{background:var(--accent,#6a5cff);color:var(--on-accent,#fff);border:0}
       textarea{width:100%;box-sizing:border-box;min-height:64px;padding:10px;border-radius:12px;border:1px solid var(--line,#ccc);font:inherit;color:inherit;background:var(--bg,#fff)}
       small{color:var(--muted,#666)}
-    </style>` + (!open ? `<button class="b${row ? " in" : ""}" data-a="start" type="button">Comment</button>` : picking
+    </style>` + (!open ? `<button class="b" data-a="start" type="button" aria-label="Comment" title="Comment"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2.5h9a1.5 1.5 0 0 1 1.5 1.5v5.5a1.5 1.5 0 0 1-1.5 1.5H7.5L4.5 13.5V11h-1A1.5 1.5 0 0 1 2 9.5V4a1.5 1.5 0 0 1 1.5-1.5Z"/></svg></button>` : picking
       ? `<div class="t" role="dialog" aria-label="Pick what to comment on"><div class="r"><b>Tap what you want to comment on</b><small>${picks.length} of ${PICKS}</small></div><div class="r"><button data-a="cancel" type="button">Cancel</button><button class="p" data-a="describe" type="button"${picks.length ? "" : " disabled"}>${picks.length ? "Comment on " + picks.length + (picks.length === 1 ? " pick" : " picks") : "Pick something first"}</button></div></div>`
       : `<div class="t" role="dialog" aria-label="Write your comment"><b>${picks.length} picked</b><div class="r" style="flex-wrap:wrap;justify-content:flex-start">${picks.map((p, i) => `<span class="c">${i + 1}. ${esc(p.where.part || p.where.ref || p.where.tag)}${p.where.shown ? ": " + esc(p.where.shown) : ""}</span>`).join("")}</div><label><small>What do you want to say about these?</small><textarea data-text maxlength="${WORDS}" placeholder="A question or a change">${esc(text)}</textarea></label><small>${failed ? esc(failed) : "It goes to the chat as your message, and the agent answers there."}</small><div class="r"><button data-a="back" type="button">Back</button><button class="p" data-a="send" type="button"${text.trim() ? "" : " disabled"}>Send to the chat</button></div></div>`);
   }
@@ -265,10 +257,10 @@ var AppsLean = (() => {
       }, { capture: true });
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tray);
     else tray();
-    // A page that draws itself again can take the button out with what it replaces: it goes back at
-    // once, as it was (its shadow root goes with it).
+    // A page that draws itself again can take the button, or the corner's rule, out with what it
+    // replaces: each goes back at once, as it was (the button's shadow root goes with it).
     if (typeof MutationObserver === "function")
-      new MutationObserver(() => host.isConnected || !document.body || place()).observe(document.documentElement, { childList: true, subtree: true });
+      new MutationObserver(() => (host.isConnected && clear.isConnected) || !document.body || place()).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   window.fetch = (url, opts) => {
