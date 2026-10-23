@@ -16,10 +16,8 @@
 //           two files, which the Hub's upload and install's text payload both need. The VENDORED
 //           packages' versions are inlined as VENDORED_VERSIONS ("puppeteer-core@24.43.1 ws@8.22.0
 //           ..."), for the per-process keys that keep a reloaded skill off an older copy.
-//   wake    wake/src/main.mts -> wake/dist/anywherellm-wake.cjs, the service that runs a scheduled
-//           job when an ntfy message arrives, for the host's Node 22. Allowed: wake/src/ and shared/.
 //
-// usage: node build.mjs [install | skills [skill ...] | wake]   (no argument: every part)
+// usage: node build.mjs [install | skills [skill ...]]   (no argument: every part)
 import { build } from "esbuild";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -182,13 +180,6 @@ async function buildInstall() {
   console.log(`built install -> ${path.relative(here, outfile)}`);
 }
 
-async function buildWake() {
-  const outfile = path.join(here, "wake", "dist", "anywherellm-wake.cjs");
-  await bundle({ entry: "wake/src/main.mts", outfile, target: "node22", allowed: ["wake/src/", "shared/"], label: "the wake" });
-  fs.chmodSync(outfile, 0o755);
-  console.log(`built wake -> ${path.relative(here, outfile)}`);
-}
-
 /** The skills: the folders of packages/skills with a src/handler.ts. */
 const skillNames = () => fs.readdirSync(path.join(here, "skills")).filter((name) => fs.existsSync(path.join(here, "skills", name, "src", "handler.ts")));
 
@@ -223,8 +214,7 @@ async function buildSkills(names) {
 
 if (process.argv[1] === self) {
   const [part, ...names] = process.argv.slice(2);
-  if (part && !["install", "skills", "wake"].includes(part)) throw new Error(`usage: node build.mjs [install | skills [skill ...] | wake], not ${part}`);
+  if (part && !["install", "skills"].includes(part)) throw new Error(`usage: node build.mjs [install | skills [skill ...]], not ${part}`);
   if (!part || part === "install") await buildInstall(); // builds the skills first
-  if (!part || part === "wake") await buildWake();
-  if (part === "skills") await buildSkills(names);
+  else await buildSkills(names);
 }

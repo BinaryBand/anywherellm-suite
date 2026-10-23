@@ -1,12 +1,11 @@
-// AnythingLLM, from the wake: its internal API (`/api`), the one its own pages use, since the
-// developer API (/api/v1) has no scheduled jobs. It logs in as the pages do, `POST
-// /api/request-token` with the password (AUTH_TOKEN in AnythingLLM's .env, read afresh at each
-// login), keeps the token and logs in again after a 401. No password set: none is sent. Only
-// single-user mode, where the job routes are. No error text holds the password or a token.
+// AnythingLLM, from inside its own process: its internal API (`/api`), the one its own pages use,
+// since the developer API (/api/v1) has no scheduled jobs. It logs in as the pages do, `POST
+// /api/request-token` with the password (AUTH_TOKEN, in AnythingLLM's environment), keeps the token
+// and logs in again after a 401. No password set: none is sent. Only single-user mode, where the job
+// routes are. No error text holds the password or a token.
 
 import { Told } from "#shared/errors";
 import { request } from "#shared/upstream";
-import { readEnv } from "./settings.mts";
 
 /** A job's run, as `GET /api/scheduled-jobs/<id>/runs` lists it (the newest 50, newest first). */
 interface Run {
@@ -24,20 +23,21 @@ const reason = (json: unknown): string => {
 
 export class Anything {
   readonly #base: string;
-  readonly #envFile: string | null;
+  readonly #password: () => string;
   #token: string | null = null;
 
-  constructor(base: string, envFile: string | null) {
+  /** `password` gives AnythingLLM's password when a login needs it ("" for none). */
+  constructor(base: string, password: () => string) {
     this.#base = base.replace(/\/+$/, "");
-    this.#envFile = envFile;
+    this.#password = password;
   }
 
   async #login(): Promise<string> {
-    const password = this.#envFile ? readEnv(this.#envFile).AUTH_TOKEN || "" : "";
+    const password = this.#password();
     if (!password) return "";
     const { status, json } = await request(`${this.#base}/api/request-token`, { method: "POST", body: { password } });
     const token = (json as { token?: unknown } | null)?.token;
-    if (status !== 200 || !token) throw new Told(`AnythingLLM refused the login with the password in ${this.#envFile}${reason(json) || ` (${status})`}`);
+    if (status !== 200 || !token) throw new Told(`AnythingLLM refused the login with its AUTH_TOKEN${reason(json) || ` (${status})`}`);
     return String(token);
   }
 

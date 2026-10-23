@@ -6,9 +6,9 @@
 
 import { readJson, writeJson } from "#shared/atomic";
 import { firstLine } from "#shared/errors";
-import type { Anything } from "./anything.mts";
-import { follow } from "./ntfy.mts";
-import type { Rule, Settings } from "./settings.mts";
+import type { Anything } from "./anything.ts";
+import { follow } from "./ntfy.ts";
+import { BURST_MS, GAP_MS, type Rule, type Settings } from "./settings.ts";
 
 /** How long to wait before asking again whether a run has ended, or after AnythingLLM failed (ms). */
 export const RECHECK_MS = 15_000;
@@ -87,15 +87,25 @@ export class Waker {
 /** The last message each topic's run was started for, as the state file keeps it. */
 type State = Record<string, string>;
 
-/** Follows every topic of the settings until `signal` aborts. (Tests shorten the waits.) */
-export async function serve(settings: Settings, api: Api, log: Log, signal: AbortSignal, { reconnectMs = RECONNECT_MS, recheckMs = RECHECK_MS } = {}): Promise<void> {
-  const saved = readJson<State>(settings.stateFile, () => ({}));
-  const timing = { burstMs: settings.burstMs, gapMs: settings.gapMs, recheckMs };
+export interface Options {
+  /** Where the last message each topic's run was started for is kept. */
+  stateFile: string;
+  /** Tests shorten the waits. */
+  burstMs?: number;
+  gapMs?: number;
+  recheckMs?: number;
+  reconnectMs?: number[];
+}
+
+/** Follows every topic of the settings until `signal` aborts. */
+export async function serve(settings: Settings, api: Api, log: Log, signal: AbortSignal, { stateFile, burstMs = BURST_MS, gapMs = GAP_MS, recheckMs = RECHECK_MS, reconnectMs = RECONNECT_MS }: Options): Promise<void> {
+  const saved = readJson<State>(stateFile, () => ({}));
+  const timing = { burstMs, gapMs, recheckMs };
   await Promise.all(
     settings.rules.map(async (rule) => {
       const waker = new Waker(rule, api, timing, log, (id) => {
         saved[rule.topic] = id;
-        writeJson(settings.stateFile, saved);
+        writeJson(stateFile, saved);
       });
       signal.addEventListener("abort", () => waker.stop(), { once: true });
       let since = saved[rule.topic];

@@ -24,8 +24,6 @@
     "*.test.mts",
     "../tools/*.mts",
     "skills/*/src",
-    "skills/*/tests/*.mts",
-    "wake/src",
-    "wake/tests"
+    "skills/*/tests/*.mts"
   ]
 }

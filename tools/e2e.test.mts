@@ -35,11 +35,11 @@ test("health passes for what install set up", run, () => {
 });
 
 test("wake: a job runs when the wake asks, also when it's switched off", run, async () => {
-  // The wake's own client (packages/wake), logged in with the password in the storage's .env. The
+  // The wake skill's own client, logged in with AnythingLLM's password as the skill is. The
   // throwaway has no model set up, so each run fails at once; that a run is made is what counts.
-  const { Anything } = await import("../packages/wake/src/anything.mts");
+  const { Anything } = await import("../packages/skills/wake/src/anything.ts");
   const base = env("E2E_ALLM_URL");
-  const api = new Anything(base, `${env("E2E_STORAGE")}/.env`);
+  const api = new Anything(base, () => env("E2E_PASSWORD"));
   const login = await request(`${base}/api/request-token`, { method: "POST", body: { password: env("E2E_PASSWORD") } });
   const token = String((login.json as { token?: unknown }).token);
   const made = await request(`${base}/api/scheduled-jobs/new`, { method: "POST", token, body: { name: "wake e2e", prompt: "Say hi.", tools: null, schedule: "0 0 1 1 *" } });

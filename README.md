@@ -4,9 +4,8 @@ Agent skills that a stock AnythingLLM runs itself, and the command that installs
 
 | Part | Folder | Runs | Toolchain |
 | --- | --- | --- | --- |
-| Agent skills (library, browser, notebook, apps) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS and ssh2; browser bundles Puppeteer and runs the Chrome AnythingLLM's image ships, or the system's) |
+| Agent skills (library, browser, notebook, apps, wake) | `packages/skills/<name>` | inside AnythingLLM's own process | Node 18+; nothing installed beside them (library bundles QuickJS and ssh2; browser bundles Puppeteer and runs the Chrome AnythingLLM's image ships, or the system's) |
 | The installer | `packages/install` | the command you run | Node 18+, no dependencies shipped |
-| The wake | `packages/wake` | a systemd user service on the host (Linux) | Node 22+, one file, `anywherellm-wake.cjs`; installs on its own |
 
 `packages/` holds what runs inside AnythingLLM and what puts it there. `docs/browser-tab.md` and `docs/page-links.md` are what the parts agree on with the phone app and the bridge; `docs/fence-lean.md` is the fence's own files.
 
@@ -45,7 +44,6 @@ The library's keys and the browser's logins and passkeys are in one encrypted fi
 ```text
 packages/install/   the installer (TypeScript; ships as one file, anywherellm-suite.cjs)
 packages/skills/    one folder per skill; each ships as its own zip, and inside the installer
-packages/wake/      runs a scheduled job when an ntfy message arrives (one file, anywherellm-wake.cjs)
 packages/shared/    helpers the JavaScript parts bundle in (writeAtomic, the vault, the fence, AnythingLLM's login)
 packages/package.json, tsconfig.json   the toolchain: one install, one type-check
 tools/              check, package, install, e2e, e2e-skill; versions.env, the AnythingLLM image every check uses (the test lab reads it too)

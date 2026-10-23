@@ -27,7 +27,7 @@ function cliAsync(extra: Record<string, string>, ...args: string[]): Promise<{ s
   });
 }
 
-for (const [name, pages] of [["apps", true], ["browser", true], ["library", true], ["notebook", false]] as const) {
+for (const [name, pages] of [["apps", true], ["browser", true], ["library", true], ["notebook", false], ["wake", false]] as const) {
   test(`the ${name} skill installs alone into a fresh storage, and health finds it`, async (t) => {
     // A stand-in AnythingLLM that takes the pages' key, as its browser extension's check does.
     const anythingllm = http.createServer((req, res) => ((res.statusCode = req.url === "/api/browser-extension/check" ? 200 : 404), res.end("{}")));

@@ -10,9 +10,9 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { close, listen } from "#shared/test-helpers";
-import { Anything } from "../src/anything.mts";
-import { loadSettings, rulesOf, type Settings } from "../src/settings.mts";
-import { serve } from "../src/wake.mts";
+import { Anything } from "../src/anything.ts";
+import { rulesOf, settingsIn, type Settings } from "../src/settings.ts";
+import { serve, type Options } from "../src/wake.ts";
 
 const NTFY_TOKEN = "tk_readonly_secret";
 const PASSWORD = "allm-password";
@@ -97,23 +97,15 @@ async function setup() {
   const ntfy = fakeNtfy();
   const allm = fakeAnything();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wake-"));
-  fs.writeFileSync(path.join(dir, ".env"), `SERVER_PORT=3001\nAUTH_TOKEN='${PASSWORD}'\n`);
-  const settings: Settings = {
-    ntfyUrl: `http://127.0.0.1:${await listen(ntfy.server)}`,
-    ntfyToken: NTFY_TOKEN,
-    rules: [{ topic: "inbox", job: 26 }],
-    burstMs: 80,
-    gapMs: 0,
-    envFile: path.join(dir, ".env"),
-    anythingllmUrl: `http://127.0.0.1:${await listen(allm.server)}`,
-    stateFile: path.join(dir, "state", "state.json"),
-  };
+  const settings: Settings = { ntfyUrl: `http://127.0.0.1:${await listen(ntfy.server)}`, ntfyToken: NTFY_TOKEN, rules: [{ topic: "inbox", job: 26 }] };
+  const base = `http://127.0.0.1:${await listen(allm.server)}`;
+  const opts: Options = { stateFile: path.join(dir, "state", "state.json"), burstMs: 80, gapMs: 0, reconnectMs: [20], recheckMs: 30 };
   const lines: string[] = [];
   let stop = new AbortController();
   let running: Promise<void> = Promise.resolve();
   const start = () => {
     stop = new AbortController();
-    running = serve(settings, new Anything(settings.anythingllmUrl, settings.envFile), (l) => lines.push(l), stop.signal, { reconnectMs: [20], recheckMs: 30 });
+    running = serve(settings, new Anything(base, () => PASSWORD), (l) => lines.push(l), stop.signal, opts);
   };
   const halt = async () => {
     stop.abort();
@@ -126,7 +118,7 @@ async function setup() {
     for (const l of lines) assert.ok(!l.includes(BODY) && !l.includes(NTFY_TOKEN) && !l.includes(PASSWORD) && !l.includes("jwt-"), `a log line said too much: ${l}`);
     fs.rmSync(dir, { recursive: true, force: true });
   };
-  return { ntfy, allm, settings, lines, start, halt, done };
+  return { ntfy, allm, settings, opts, lines, start, halt, done };
 }
 
 test("a burst of messages runs the job once, and the last one is kept", async () => {
@@ -140,8 +132,8 @@ test("a burst of messages runs the job once, and the last one is kept", async ()
   await until(() => t.allm.state.triggers === 1);
   await sleep(200);
   assert.equal(t.allm.state.triggers, 1);
-  assert.deepEqual(JSON.parse(fs.readFileSync(t.settings.stateFile, "utf8")), { inbox: "m3" });
-  assert.equal((fs.statSync(t.settings.stateFile).mode & 0o777).toString(8), "600");
+  assert.deepEqual(JSON.parse(fs.readFileSync(t.opts.stateFile, "utf8")), { inbox: "m3" });
+  assert.equal((fs.statSync(t.opts.stateFile).mode & 0o777).toString(8), "600");
   await t.done();
 });
 
@@ -177,7 +169,7 @@ test("a restart follows from the saved message and runs once for what came meanw
   assert.equal(t.ntfy.asked.at(-1), "m1");
   await sleep(200);
   assert.equal(t.allm.state.triggers, 2);
-  assert.deepEqual(JSON.parse(fs.readFileSync(t.settings.stateFile, "utf8")), { inbox: "m3" });
+  assert.deepEqual(JSON.parse(fs.readFileSync(t.opts.stateFile, "utf8")), { inbox: "m3" });
   await t.done();
 });
 
@@ -228,7 +220,7 @@ test("a token AnythingLLM no longer takes means a new login", async () => {
 
 test("runs are kept GAP_MS apart", async () => {
   const t = await setup();
-  t.settings.gapMs = 600;
+  t.opts.gapMs = 600;
   t.start();
   await until(() => t.ntfy.following() === 1);
   t.ntfy.publish("m1");
@@ -250,23 +242,15 @@ test("a refused ntfy token is said, and tried again", async () => {
   await t.done();
 });
 
-test("settings: WAKE pairs, defaults, and what isn't a pair", () => {
+test("settings: the skill's own, from its plugin.json, and WAKE's pairs", () => {
   assert.deepEqual(rulesOf(" anythingllm=26, alerts = 31 ,"), [
     { topic: "anythingllm", job: 26 },
     { topic: "alerts", job: 31 },
   ]);
   for (const bad of ["anythingllm", "anythingllm=x", "a/b=2", "a=0", "a=1=2"]) assert.throws(() => rulesOf(bad), /WAKE/);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "wake-settings-"));
-  const file = path.join(dir, "wake.env");
-  fs.writeFileSync(file, "NTFY_URL=https://ntfy.example/\nNTFY_TOKEN='tk'\nWAKE=inbox=26\nANYTHINGLLM_STORAGE=/srv/s\n");
-  const s = loadSettings({ env: { WAKE_ENV_FILE: file, XDG_STATE_HOME: dir }, home: "/nowhere" });
-  assert.equal(s.ntfyUrl, "https://ntfy.example");
-  assert.equal(s.ntfyToken, "tk");
-  assert.equal(s.burstMs, 30_000);
-  assert.equal(s.gapMs, 120_000);
-  assert.equal(s.envFile, "/srv/s/.env");
-  assert.equal(s.anythingllmUrl, "http://127.0.0.1:3001");
-  assert.equal(s.stateFile, path.join(dir, "anywherellm-wake", "state.json"));
-  assert.throws(() => loadSettings({ env: { WAKE_ENV_FILE: file, BURST_MS: "30s" }, home: "/nowhere" }), /BURST_MS/);
+  const file = path.join(dir, "plugin.json");
+  fs.writeFileSync(file, JSON.stringify({ setup_args: { NTFY_URL: { value: "https://ntfy.example/" }, NTFY_TOKEN: { value: " tk " }, WAKE: { value: "inbox=26" } } }));
+  assert.deepEqual(settingsIn(file), { ntfyUrl: "https://ntfy.example", ntfyToken: "tk", rules: [{ topic: "inbox", job: 26 }] });
   fs.rmSync(dir, { recursive: true, force: true });
 });
