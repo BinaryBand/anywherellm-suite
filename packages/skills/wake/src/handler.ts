@@ -58,8 +58,16 @@ export function listen(): void {
   };
   log(`following ${settings.rules.map((r) => `${r.topic} for job ${r.job}`).join(", ")}`);
   const api = new Anything(anythingllmUrl(process.env), () => process.env.AUTH_TOKEN || "");
-  serve(settings, api, log, stop.signal, { stateFile: stateFile() }).catch((e) => log(`stopped: ${firstLine(e)}`));
-  h.current = { key, stop: () => stop.abort(), lines };
+  const listener: Listener = { key, stop: () => stop.abort(), lines };
+  h.current = listener;
+  serve(settings, api, log, stop.signal, { stateFile: stateFile() }).catch((e) => {
+    log(`stopped: ${firstLine(e)}`);
+    // Not listening any more: status says so, and the next load starts it again.
+    const now = held();
+    if (now.current !== listener) return;
+    now.current = null;
+    now.problem = `it stopped: ${firstLine(e)}`;
+  });
 }
 
 function status(): string {
