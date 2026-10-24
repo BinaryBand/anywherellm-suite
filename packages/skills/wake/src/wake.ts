@@ -86,11 +86,7 @@ export class Waker {
     this.#lastRun = Date.now();
     this.#covered = latest;
     this.#log(`${topic}: ran job ${job} (up to message ${latest})`);
-    try {
-      this.#onRun(latest);
-    } catch (e) {
-      this.#log(`${topic}: the run's message wasn't kept: ${firstLine(e)}`);
-    }
+    this.#onRun(latest);
     if (this.#latest !== latest) this.#arm(this.#timing.burstMs); // more came while it was asked
   }
 }
@@ -115,10 +111,14 @@ export async function serve(settings: Settings, api: Api, log: Log, signal: Abor
   await Promise.all(
     settings.rules.map(async (rule) => {
       const waker = new Waker(rule, api, timing, log, (id) => {
-        // Read again: a listener stopped for new settings may have written it meanwhile.
-        const now = readJson<State>(stateFile, () => ({}));
-        now[rule.topic] = id;
-        writeJson(stateFile, now);
+        try {
+          // Read again: a listener stopped for new settings may have written it meanwhile.
+          const now = readJson<State>(stateFile, () => ({}));
+          now[rule.topic] = id;
+          writeJson(stateFile, now);
+        } catch (e) {
+          log(`${rule.topic}: the run's message wasn't kept: ${firstLine(e)}`);
+        }
       });
       signal.addEventListener("abort", () => waker.stop(), { once: true });
       let since = saved[rule.topic];

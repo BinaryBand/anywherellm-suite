@@ -63,10 +63,9 @@ export function listen(): void {
   serve(settings, api, log, stop.signal, { stateFile: stateFile() }).catch((e) => {
     log(`stopped: ${firstLine(e)}`);
     // Not listening any more: status says so, and the next load starts it again.
-    const now = held();
-    if (now.current !== listener) return;
-    now.current = null;
-    now.problem = `it stopped: ${firstLine(e)}`;
+    if (h.current !== listener) return;
+    h.current = null;
+    h.problem = `it stopped: ${firstLine(e)}`;
   });
 }
 
