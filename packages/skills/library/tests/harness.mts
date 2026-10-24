@@ -36,7 +36,7 @@ process.env.FENCE_ALLOW = "127.0.0.1";
 // test's wait.
 const lookup = dns.lookup;
 dns.lookup = ((host: string, ...rest: unknown[]) => {
-  if (!host.endsWith(".internal")) return (lookup as (...a: unknown[]) => unknown)(host, ...rest);
+  if (!host.endsWith(".internal")) return Reflect.apply(lookup, dns, [host, ...rest]);
   const callback = rest.at(-1) as (err: NodeJS.ErrnoException) => void;
   process.nextTick(callback, Object.assign(new Error(`getaddrinfo ENOTFOUND ${host}`), { code: "ENOTFOUND", syscall: "getaddrinfo", hostname: host }));
 }) as typeof dns.lookup;
